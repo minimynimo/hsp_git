@@ -24,8 +24,7 @@ batch_size = 64
 
 filter_size_list = [32, 64, 128]
 kernel_size_list = [4,6, 8]
-#nb_stacks_list = [1, 2, 3]
-nb_stacks_list = [3]
+nb_stacks_list = [1,2,3]
 
 loc, ver = "JP", 2
 
@@ -130,7 +129,7 @@ def create_sequences(data, targets, timesteps):
         y.append(targets[i+timesteps])
     return np.array(X), np.array(y)
 
-log_file = output_dir + f'/TCN_hyperparam_log3.txt'
+log_file = output_dir + f'/TCN_hyperparam_log2.txt'
 if os.path.exists(log_file):
     open(log_file, 'w').close()
 log_file = open(log_file, 'a')
@@ -141,6 +140,7 @@ results_eva = []
 for nb_filters in filter_size_list:
     for kernel_size in kernel_size_list:
         for nb_stacks in nb_stacks_list:
+            log_file.write("START=================\n")
             log_file.write(f"nb_filters: {nb_filters}, kernel_size: {kernel_size}, nb_stacks: {nb_stacks}\n")
             for file_num in file_list:
                 start_time = datetime.now()
