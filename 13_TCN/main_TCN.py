@@ -18,7 +18,11 @@ from datetime import datetime
 benchmark_list = ["KGE","NSE","E1", "VE", "d","RMSE","MAE"]
 
 batch_size, timesteps, input_dim = 32, 365, 3
-epochs = 100
+epochs = 50
+dilations_list = [2, 4, 8, 16]
+kernel_size_list = [4,6,8]
+filter_size_list = [32, 64, 128]
+
 
 loc, ver = "JP", 2
 
@@ -123,9 +127,9 @@ def create_sequences(data, targets, timesteps):
         y.append(targets[i+timesteps])
     return np.array(X), np.array(y)
 
-if os.path.exists(output_dir + f'/TCN_log.txt'):
+if os.path.exists(output_dir + f'/TCN_hyperparam_log3.txt'):
     open(output_dir + f'/TCN_log.txt', 'w').close()
-log_file = open(output_dir + f'/TCN_log.txt', 'a')
+log_file = open(output_dir + f'/TCN_hyperparam_log3.txt', 'a')
 
 results_cal = []
 results_eva = []
@@ -181,6 +185,9 @@ for file_num in file_list:
 
     
     model_out = TCN(
+        nb_filters=nb_filters,
+        kernel_size=kernel_size,
+        dilations=dilations,
         return_sequences=False
     )(model_in)
     model_out = Dense(1, activation='linear')(model_out)
