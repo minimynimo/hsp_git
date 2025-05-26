@@ -78,7 +78,6 @@ for file_num in range(1, file_tot_num + 1):
     log_file.write(f"FILE_{file_num}\n")
     log_file.write(f"start: {start_time_st}\n")
     log_file.flush()
-    
 
     ##############
     # Data set up#

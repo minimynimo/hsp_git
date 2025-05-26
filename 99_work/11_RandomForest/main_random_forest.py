@@ -15,8 +15,12 @@ loc, ver = "JP", 2
 
 ver_name = "ver1_1" if ver == 1 else "ver2_0"   
 
+attribute_dir = f'/data0/funato/3_gis_data/{loc}/0_data/river_basin/dataset_{loc}'
+
 if loc == "JP" and ver == 2:
     file_tot_num = 87
+    columns_drop = ['grdc_no','river','station','WaterArea','ForestArea','ForestAreaRatio','WaterAreaRatio','lat_org','long_org', 'land_GolfCourse','land_GolfCourse_Ratio']
+    attribute_values = pd.read_csv(f'{attribute_dir}/basin_data_limited_met&soil&geology&land_{ver_name}.csv', encoding= 'UTF-8', index_col=0, header=0)
 varssim_dir = f"/data0/funato/2_MERV/{loc}/varssim_nocal/{ver_name}"
 
 file_list = list(range(1, file_tot_num+1))
@@ -37,6 +41,21 @@ output_dir = f"/data0/funato/hsp/0_out/11_RandomForest/{loc}"
 os.makedirs(output_dir, exist_ok=True)
 os.makedirs(output_dir + "/predict", exist_ok=True)
 os.makedirs(output_dir + "/results", exist_ok=True)
+
+
+# clean attribute values and normalize
+attribute_values_dropped = attribute_values.drop(columns=[col for col in columns_drop if col in attribute_values.columns]) # 87,193
+print(attribute_values_dropped.head())
+
+# Convert all columns except 'File_num' to numeric, coercing errors to NaN
+cols_to_numeric = [col for col in attribute_values_dropped.columns if col != 'File_num']
+attribute_values_dropped[cols_to_numeric] = attribute_values_dropped[cols_to_numeric].apply(pd.to_numeric, errors='coerce')
+attribute_values_numeric = attribute_values_dropped.drop(columns=['File_num']) if 'File_num' in attribute_values_dropped.columns else attribute_values_dropped
+attribute_mean = attribute_values_numeric.mean()
+attribute_std = attribute_values_numeric.std()
+attribute_valued_dropped = attribute_values_dropped.copy()
+attribute_valued_dropped.loc[:, attribute_values_numeric.columns] = (attribute_values_numeric - attribute_mean) / attribute_std
+
 
 def file_name(input_num, total_len):
     car_len = len(str(input_num))
@@ -59,6 +78,16 @@ def load_data(file_num):
     df = df.reindex(full_date_range)
     
     return df
+
+def load_attribute_values(input_data, file_num):
+    # input_data ; 2190, 3
+    attribute_row = attribute_valued_dropped[attribute_valued_dropped.index == file_num]
+    attribute_list = attribute_row.iloc[0] # 194,
+    attribute_list = attribute_list.drop('File_num') if 'File_num' in attribute_list.index else attribute_list #193
+    static_attributes = np.array([attribute_list.values] * input_data.shape[0])
+    input_data = np.hstack((input_data, static_attributes))
+    return input_data # 2190, 196
+
 
 def BMK(obs_data,sim_data,benchmark):    
     if benchmark == "NSE":
@@ -142,6 +171,10 @@ for file_num in file_list:
 
     input_cal = input_cal[:-1] #2898
     input_eva = input_eva[:-1] #1089
+
+    # add static attributes using load_attribute_values function
+    input_cal = load_attribute_values(input_cal, file_num)
+    input_eva = load_attribute_values(input_eva, file_num)
 
     target_cal = df_cal['Obs flow'].values[1:] #2898
     target_eva = df_eva['Obs flow'].values[1:] #1089

@@ -17,24 +17,31 @@ from datetime import datetime
 
 benchmark_list = ["KGE","NSE","E1", "VE", "d","RMSE","MAE"]
 
-timesteps, input_dim = 365, 3
+
+loc, ver = "JP", 2
+
+ver_name = "ver1_1" if ver == 1 else "ver2_0"   
+
+attribute_dir = f'/data0/funato/3_gis_data/{loc}/0_data/river_basin/dataset_{loc}'
+
+if loc == "JP" and ver == 2:
+    file_tot_num = 87
+    columns_drop = ['grdc_no','river','station','WaterArea','ForestArea','ForestAreaRatio','WaterAreaRatio','lat_org','long_org', 'land_GolfCourse','land_GolfCourse_Ratio']
+    attribute_values = pd.read_csv(f'{attribute_dir}/basin_data_limited_met&soil&geology&land_{ver_name}.csv', encoding= 'UTF-8', index_col=0, header=0)
+varssim_dir = f"/data0/funato/2_MERV/{loc}/varssim_nocal/{ver_name}"
+
+file_list = list(range(1, file_tot_num+1))
+#file_list = list(range(20,30))
+
+input_dim = 3 + len(attribute_values.columns) - len(columns_drop)  # 3 meteorological + 193 attributes
+
+timesteps, input_dim = 365, input_dim
 epochs = 50
 batch_size = 64
 nb_filters = 128
 kernel_size = 4
 nb_stacks = 1
 
-
-loc, ver = "JP", 2
-
-ver_name = "ver1_1" if ver == 1 else "ver2_0"   
-
-if loc == "JP" and ver == 2:
-    file_tot_num = 87
-varssim_dir = f"/data0/funato/2_MERV/{loc}/varssim_nocal/{ver_name}"
-
-file_list = list(range(1, file_tot_num+1))
-#file_list = list(range(20,30))
 
 start_date_cal = '1993-01-01'
 end_date_cal = '2000-12-31'
@@ -49,6 +56,20 @@ os.makedirs(output_dir + "/results", exist_ok=True)
 early_stopping = EarlyStopping(
     monitor='val_loss', patience=5, restore_best_weights=True
 )
+
+# clean attribute values and normalize
+attribute_values_dropped = attribute_values.drop(columns=[col for col in columns_drop if col in attribute_values.columns]) # 87,193
+print(attribute_values_dropped.head())
+
+# Convert all columns except 'File_num' to numeric, coercing errors to NaN
+cols_to_numeric = [col for col in attribute_values_dropped.columns if col != 'File_num']
+attribute_values_dropped[cols_to_numeric] = attribute_values_dropped[cols_to_numeric].apply(pd.to_numeric, errors='coerce')
+attribute_values_numeric = attribute_values_dropped.drop(columns=['File_num']) if 'File_num' in attribute_values_dropped.columns else attribute_values_dropped
+attribute_mean = attribute_values_numeric.mean()
+attribute_std = attribute_values_numeric.std()
+attribute_valued_dropped = attribute_values_dropped.copy()
+attribute_valued_dropped.loc[:, attribute_values_numeric.columns] = (attribute_values_numeric - attribute_mean) / attribute_std
+
 
 def file_name(input_num, total_len):
     car_len = len(str(input_num))
@@ -71,6 +92,16 @@ def load_data(file_num):
     df = df.reindex(full_date_range)
     
     return df
+
+def load_attribute_values(input_data, file_num):
+    # input_data ; 2190, 3
+    attribute_row = attribute_valued_dropped[attribute_valued_dropped.index == file_num]
+    attribute_list = attribute_row.iloc[0] # 194,
+    attribute_list = attribute_list.drop('File_num') if 'File_num' in attribute_list.index else attribute_list #193
+    static_attributes = np.array([attribute_list.values] * input_data.shape[0])
+    input_data = np.hstack((input_data, static_attributes))
+    return input_data # 2190, 196
+
 
 def BMK(obs_data,sim_data,benchmark):    
     if benchmark == "NSE":
@@ -164,6 +195,10 @@ for file_num in file_list:
     scaler = StandardScaler()
     input_cal = scaler.fit_transform(input_cal)
     input_eva = scaler.transform(input_eva)
+
+    # add static attributes using load_attribute_values function
+    input_cal = load_attribute_values(input_cal, file_num)
+    input_eva = load_attribute_values(input_eva, file_num)
 
     target_cal = df_cal['Obs flow'].values[1:] #2898
     target_eva = df_eva['Obs flow'].values[1:] #1089
