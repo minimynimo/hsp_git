@@ -27,6 +27,12 @@ end_date_cal = '2000-12-31'
 start_date_eva = '2001-01-01'
 end_date_eva = '2006-12-31'
 
+max_depth = 15
+max_features = 0.7
+n_estimators = 100
+max_samples = 0.5
+min_samples_split = 2
+
 output_dir = f"/data0/funato/hsp/0_out/11_RandomForest/{loc}"
 os.makedirs(output_dir, exist_ok=True)
 os.makedirs(output_dir + "/predict", exist_ok=True)
@@ -141,7 +147,7 @@ for file_num in file_list:
     target_eva = df_eva['Obs flow'].values[1:] #1089
 
 
-    rf = RandomForestRegressor(n_estimators=100, oob_score=True,max_features='sqrt', random_state=42, n_jobs=-1)
+    rf = RandomForestRegressor(max_depth=max_depth, max_features = max_features, n_estimators=n_estimators, min_samples_split=min_samples_split, oob_score=True, random_state=42, n_jobs=-1)
     
     rf.fit(input_cal, target_cal)
     

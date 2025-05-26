@@ -26,6 +26,9 @@ end_date_cal = '2000-12-31'
 start_date_eva = '2001-01-01'
 end_date_eva = '2006-12-31'
 
+n_estimators = 500
+learning_rate = 0.1
+
 output_dir = f"/data0/funato/hsp/0_out/12_XGBoost/{loc}"
 os.makedirs(output_dir, exist_ok=True)
 os.makedirs(output_dir + "/predict", exist_ok=True)
@@ -146,9 +149,9 @@ for file_num in file_list:
 
     xgb_model = xgb.XGBRegressor(
         objective='reg:squarederror',
-        n_estimators=300,
+        n_estimators=n_estimators,
         max_depth=4,              # allow slightly more complexity
-        learning_rate=0.03,       # slightly faster learning
+        learning_rate=learning_rate,       # slightly faster learning
         subsample=0.8,            
         colsample_bytree=0.8,
         reg_alpha=0.5,            # slightly less L1 regularization

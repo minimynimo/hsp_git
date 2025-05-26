@@ -22,9 +22,9 @@ timesteps, input_dim = 365, 3
 epochs = 50
 batch_size = 64
 
-filter_size_list = [32, 64, 128]
-kernel_size_list = [4,6, 8]
-nb_stacks_list = [1,2,3]
+filter_size_list = [512]
+kernel_size_list = [4]
+nb_stacks_list = [1]
 
 loc, ver = "JP", 2
 

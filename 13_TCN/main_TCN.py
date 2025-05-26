@@ -17,11 +17,12 @@ from datetime import datetime
 
 benchmark_list = ["KGE","NSE","E1", "VE", "d","RMSE","MAE"]
 
-batch_size, timesteps, input_dim = 32, 365, 3
+timesteps, input_dim = 365, 3
 epochs = 50
-dilations_list = [2, 4, 8, 16]
-kernel_size_list = [4,6,8]
-filter_size_list = [32, 64, 128]
+batch_size = 64
+nb_filters = 128
+kernel_size = 4
+nb_stacks = 1
 
 
 loc, ver = "JP", 2
@@ -187,9 +188,10 @@ for file_num in file_list:
     model_out = TCN(
         nb_filters=nb_filters,
         kernel_size=kernel_size,
-        dilations=dilations,
+        nb_stacks=nb_stacks,
         return_sequences=False
     )(model_in)
+    
     model_out = Dense(1, activation='linear')(model_out)
 
     TCN_model = Model(inputs=[model_in], outputs=[model_out])

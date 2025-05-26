@@ -6,8 +6,9 @@ import matplotlib.pyplot as plt
 cal_eva = ['cal', 'eva']
 benchmark_list = ['KGE', 'NSE', 'E1', 'VE','d', 'RMSE', 'MAE']
 
-model = 'RandomForest'  # 'RandomForest', 'XGBoost', 'TCN'
+#model = 'RandomForest'  # 'RandomForest', 'XGBoost', 'TCN'
 #model = 'XGBoost'  # 'RandomForest', 'XGBoost', 'TCN'
+model = 'TCN'  # 'RandomForest', 'XGBoost', 'TCN'
 
 output_dir = f'/data0/funato/hsp/0_out/1_fig/hyperparam/{model}'
 os.makedirs(output_dir, exist_ok=True)
