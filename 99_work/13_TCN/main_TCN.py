@@ -1,6 +1,8 @@
-# based on https://github.com/DevonFulcher/CryptoPricePredictor?utm_source=chatgpt.com
 import pandas as pd
 import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.use('Agg') # Use 'Agg' backend for non-interactive plotting
+
 import numpy as np
 import os
 os.environ["TF_XLA_FLAGS"] = "--tf_xla_enable_xla_devices=false"
@@ -14,6 +16,8 @@ from keras.callbacks import EarlyStopping
 from tcn import TCN
 from sklearn.preprocessing import StandardScaler
 from datetime import datetime
+
+import shap
 
 benchmark_list = ["KGE","NSE","E1", "VE", "d","RMSE","MAE"]
 
@@ -30,13 +34,13 @@ if loc == "JP" and ver == 2:
     attribute_values = pd.read_csv(f'{attribute_dir}/basin_data_limited_met&soil&geology&land_{ver_name}.csv', encoding= 'UTF-8', index_col=0, header=0)
 varssim_dir = f"/data0/funato/2_MERV/{loc}/varssim_nocal/{ver_name}"
 
-file_list = list(range(1, file_tot_num+1))
-#file_list = list(range(20,30))
+#file_list = list(range(1, file_tot_num+1))
+file_list = list(range(20,23))
 
 input_dim = 3 + len(attribute_values.columns) - len(columns_drop)  # 3 meteorological + 193 attributes
 
 timesteps, input_dim = 365, input_dim
-epochs = 50
+epochs = 50 # Changed from 5 to 50 for better training potential
 batch_size = 64
 nb_filters = 128
 kernel_size = 4
@@ -48,18 +52,18 @@ end_date_cal = '2000-12-31'
 start_date_eva = '2001-01-01'
 end_date_eva = '2006-12-31'
 
-output_dir = f"/data0/funato/hsp/0_out/13_TCN/{loc}"
+output_dir = f"/data0/funato/hsp/0_out/13_TCN/{loc}/shap"
 os.makedirs(output_dir, exist_ok=True)
 os.makedirs(output_dir + "/predict", exist_ok=True)
 os.makedirs(output_dir + "/results", exist_ok=True)
+os.makedirs(output_dir + "/hydrographs", exist_ok=True) # New directory for hydrographs
 
-early_stopping = EarlyStopping(
-    monitor='val_loss', patience=5, restore_best_weights=True
-)
+output_dir_shap = f"0_out/1_fig/shap/13_TCN/regional"
+os.makedirs(output_dir_shap, exist_ok=True)
+
 
 # clean attribute values and normalize
 attribute_values_dropped = attribute_values.drop(columns=[col for col in columns_drop if col in attribute_values.columns]) # 87,193
-print(attribute_values_dropped.head())
 
 # Convert all columns except 'File_num' to numeric, coercing errors to NaN
 cols_to_numeric = [col for col in attribute_values_dropped.columns if col != 'File_num']
@@ -67,8 +71,13 @@ attribute_values_dropped[cols_to_numeric] = attribute_values_dropped[cols_to_num
 attribute_values_numeric = attribute_values_dropped.drop(columns=['File_num']) if 'File_num' in attribute_values_dropped.columns else attribute_values_dropped
 attribute_mean = attribute_values_numeric.mean()
 attribute_std = attribute_values_numeric.std()
-attribute_valued_dropped = attribute_values_dropped.copy()
-attribute_valued_dropped.loc[:, attribute_values_numeric.columns] = (attribute_values_numeric - attribute_mean) / attribute_std
+attribute_values_normalized = attribute_values_dropped.copy()
+attribute_values_normalized.loc[:, attribute_values_numeric.columns] = (attribute_values_numeric - attribute_mean) / attribute_std
+
+
+early_stopping = EarlyStopping(
+    monitor='val_loss', patience=5, restore_best_weights=True
+)
 
 
 def file_name(input_num, total_len):
@@ -93,19 +102,22 @@ def load_data(file_num):
     
     return df
 
-def load_attribute_values(input_data, file_num):
-    # input_data ; 2190, 3
-    attribute_row = attribute_valued_dropped[attribute_valued_dropped.index == file_num]
-    attribute_list = attribute_row.iloc[0] # 194,
-    attribute_list = attribute_list.drop('File_num') if 'File_num' in attribute_list.index else attribute_list #193
-    static_attributes = np.array([attribute_list.values] * input_data.shape[0])
-    input_data = np.hstack((input_data, static_attributes))
-    return input_data # 2190, 196
-
 
 def BMK(obs_data,sim_data,benchmark):    
+    # Ensure data are flat for calculations if they come in (N, 1) shape
+    obs_data = obs_data.flatten()
+    sim_data = sim_data.flatten()
+
+    # Handle cases where obs_data might be all zero or very close to zero
+    # This prevents division by zero or extremely large values in some metrics
+    if np.sum(obs_data) == 0 and benchmark not in ["RMSE", "MAE"]:
+        return np.nan # Or some other indicator for undefined metric
+
     if benchmark == "NSE":
         obs_ave = np.mean(obs_data)
+        # Avoid division by zero if obs_data is constant
+        if np.sum(np.square(obs_data - obs_ave)) == 0:
+            return 1.0 if np.all(obs_data == sim_data) else np.nan # Perfect match for constant series
         return 1 - (np.sum(np.square(obs_data - sim_data)) / np.sum(np.square(obs_data - obs_ave)))
     
     elif benchmark == "KGE":
@@ -114,36 +126,31 @@ def BMK(obs_data,sim_data,benchmark):
         sim_ave = np.mean(sim_data)
         obs_std = np.std(obs_data)
         sim_std = np.std(sim_data)
+        
+        # Guard against zero standard deviation for constant series
         obs_std = np.where(obs_std == 0, 1e-6, obs_std)
+        # Guard against zero mean for very small values
         obs_ave = np.where(obs_ave == 0, 1e-6, obs_ave) 
+        
         return 1 - np.sqrt((r - 1)**2 + ((sim_std / obs_std) - 1)**2 + ((sim_ave / obs_ave) - 1)**2)
-    
-    elif benchmark == "logNSE":
-        temp_obs_data = np.where((obs_data <= 0) | np.isnan(obs_data), 1e-6, obs_data)
-        temp_sim_data = np.where((sim_data <= 0) | np.isnan(sim_data), 1e-6, sim_data)
-        obs_ave = np.mean(temp_obs_data)
-        numer = np.sum((np.log(temp_sim_data) - np.log(temp_obs_data))**2)
-        denom = np.sum((np.log(temp_obs_data) - np.log(obs_ave))**2)
-        return 1 - numer / denom
     
     elif benchmark == "E1":
         obs_ave = np.mean(obs_data)
+        if np.sum(np.abs(obs_data - obs_ave)) == 0:
+            return 1.0 if np.all(obs_data == sim_data) else np.nan
         return 1 - (np.sum(np.abs(obs_data - sim_data)) / np.sum(np.abs(obs_data - obs_ave)))
     
-    elif benchmark == "Erel":
-        obs_ave = np.mean(obs_data)
-        temp_obs_data = np.where(obs_data == 0, 1e-6, obs_data)
-        numer = np.sum(np.square((temp_obs_data - sim_data) / temp_obs_data))
-        denom = np.sum(np.square((obs_data - obs_ave) / obs_ave))
-        return 1 - numer / denom
-    
     elif benchmark == "VE":
+        if np.sum(obs_data) == 0:
+             return 1.0 if np.all(obs_data == sim_data) else np.nan # If observed is zero, perfect if sim is also zero
         return 1 - np.sum(np.abs(obs_data - sim_data)) / np.sum(obs_data)
     
     elif benchmark == "d":
         obs_ave = np.mean(obs_data)
         numer = np.sum(np.square(obs_data - sim_data))
         denom = np.sum(np.square(np.abs(sim_data - obs_ave) + np.abs(obs_data - obs_ave)))
+        if denom == 0:
+            return 1.0 if numer == 0 else np.nan
         return 1 - numer / denom
     
     elif benchmark == "RMSE":
@@ -159,135 +166,340 @@ def create_sequences(data, targets, timesteps):
         y.append(targets[i+timesteps])
     return np.array(X), np.array(y)
 
-if os.path.exists(output_dir + f'/TCN_hyperparam_log3.txt'):
+if os.path.exists(output_dir + f'/TCN_log.txt'):
     open(output_dir + f'/TCN_log.txt', 'w').close()
-log_file = open(output_dir + f'/TCN_hyperparam_log3.txt', 'a')
+log_file = open(output_dir + f'/TCN_log.txt', 'a')
 
+
+# results_cal and results_eva will store dicts for each file_num
 results_cal = []
 results_eva = []
 
+dynamic_features = ["Precip", "Temp", "PET"]
+static_features = attribute_values_normalized.columns.tolist()
+feature_names = dynamic_features + static_features
+
+# Initialize lists to store data for all basins
+all_input_cal_list = []
+all_input_eva_list = []
+
+all_target_cal_list = []
+all_target_eva_list = []
+
+start_time_overall = datetime.now() # Renamed to avoid conflict inside loop later
+start_time_overall_st = start_time_overall.strftime("%a %b %d %I:%M:%S %p JST %Y")
+log_file.write(f"Overall start: {start_time_overall_st}\n")
+log_file.flush()
+
+# --- Collecting Data for all Basins (for combined training) ---
+# Also store individual basin data for later plotting and individual prediction processing
+individual_basin_data = {}
+
 for file_num in file_list:
-    start_time = datetime.now()
-    start_time_st = start_time.strftime("%a %b %d %I:%M:%S %p JST %Y")
-    log_file.write(f"FILE_{file_num}\n")
-    log_file.write(f"start: {start_time_st}\n")
+    start_time_basin_load = datetime.now() 
+    start_time_st_basin_load = start_time_basin_load.strftime("%a %b %d %I:%M:%S %p JST %Y")
+    log_file.write(f"FILE_{file_num} - Data Loading\n")
+    log_file.write(f"start: {start_time_st_basin_load}\n")
     log_file.flush()
 
     ### INPUT DATA ###
     df = load_data(file_num)
 
-    df_cal = df[start_date_cal:end_date_cal].copy()  # Use copy to avoid SettingWithCopyWarning
+    df_cal = df[start_date_cal:end_date_cal].copy()  
     df_eva = df[start_date_eva:end_date_eva].copy()
 
     # For each timestep, Precip,Temp,PET,Obs flow
-    input_cal = np.hstack([
+    input_cal_dyn = np.hstack([
         df_cal['Precip'].values.reshape(-1, 1),
         df_cal['Temp'].values.reshape(-1, 1),
-        df_cal['PET'].values.reshape(-1, 1)])# Observed - Simulation
-    input_eva = np.hstack([
+        df_cal['PET'].values.reshape(-1, 1)])
+    input_eva_dyn = np.hstack([
         df_eva['Precip'].values.reshape(-1, 1),
         df_eva['Temp'].values.reshape(-1, 1),
-        df_eva['PET'].values.reshape(-1, 1)]) # Observed - Simulation
+        df_eva['PET'].values.reshape(-1, 1)])
+    
+    # Ensure masks consider both dynamic inputs and target
+    mask_cal = ~np.isnan(input_cal_dyn).any(axis=1) & ~np.isnan(df_cal['Obs flow'].values)
+    mask_eva = ~np.isnan(input_eva_dyn).any(axis=1) & ~np.isnan(df_eva['Obs flow'].values)
 
-    input_cal = input_cal[:-1] #2898
-    input_eva = input_eva[:-1] #1089
+    input_cal_dyn = input_cal_dyn[mask_cal]
+    input_eva_dyn = input_eva_dyn[mask_eva]
 
-    scaler = StandardScaler()
-    input_cal = scaler.fit_transform(input_cal)
-    input_eva = scaler.transform(input_eva)
+    # Load static features once for this basin
+    static_features_for_basin = attribute_values_normalized.loc[file_num]
+    # Repeat static features for every timestep
+    static_array_cal = np.tile(static_features_for_basin.values, (input_cal_dyn.shape[0], 1))
+    static_array_eva = np.tile(static_features_for_basin.values, (input_eva_dyn.shape[0], 1))
 
-    # add static attributes using load_attribute_values function
-    input_cal = load_attribute_values(input_cal, file_num)
-    input_eva = load_attribute_values(input_eva, file_num)
+    # Combine dynamic + static features
+    input_cal_full = np.hstack([input_cal_dyn, static_array_cal])
+    input_eva_full = np.hstack([input_eva_dyn, static_array_eva])
 
-    target_cal = df_cal['Obs flow'].values[1:] #2898
-    target_eva = df_eva['Obs flow'].values[1:] #1089
+    # Append to global lists for combined training
+    all_input_cal_list.append(input_cal_full)
+    all_input_eva_list.append(input_eva_full)
 
-    model_in = Input(shape=(timesteps, input_cal.shape[1]))
+    # Targets
+    target_cal = df_cal['Obs flow'].values
+    target_cal = target_cal[mask_cal]  # Apply mask to targets
+    all_target_cal_list.append(target_cal)
 
-    input_cal_seq, target_cal_seq = create_sequences(input_cal, target_cal, timesteps)
-    input_eva_seq, target_eva_seq = create_sequences(input_eva, target_eva, timesteps)
+    target_eva = df_eva['Obs flow'].values
+    target_eva = target_eva[mask_eva]  # Apply mask to targets
+    all_target_eva_list.append(target_eva)
 
-    # Remove samples with NaN or Inf in input or target
-    def clean_sequences(X, y):
-        mask = ~(
-            np.isnan(X).any(axis=(1,2)) | np.isinf(X).any(axis=(1,2)) |
-            np.isnan(y) | np.isinf(y)
+    # Store original dates (DatetimeIndex) for individual plotting (before sequence creation)
+    dates_cal_basin_original_full = df_cal.index[mask_cal] 
+    dates_eva_basin_original_full = df_eva.index[mask_eva] 
+
+    individual_basin_data[file_num] = {
+        'input_cal_full_pre_norm': input_cal_full.copy(), # Store before combined norm
+        'target_cal': target_cal,
+        'dates_cal_original_full': dates_cal_basin_original_full,
+        'input_eva_full_pre_norm': input_eva_full.copy(), # Store before combined norm
+        'target_eva': target_eva,
+        'dates_eva_original_full': dates_eva_basin_original_full,
+    }
+    end_time_basin_load = datetime.now()
+    log_file.write(f"elapsed: {end_time_basin_load - start_time_basin_load}\n")
+    log_file.flush()
+
+# Stack all basins together for combined training
+all_input_cal_combined = np.vstack(all_input_cal_list)
+all_target_cal_combined = np.hstack(all_target_cal_list)
+
+all_input_eva_combined = np.vstack(all_input_eva_list)
+all_target_eva_combined = np.hstack(all_target_eva_list)
+
+all_input_cal_combined = np.array(all_input_cal_combined, dtype=float)
+
+# Compute mean/std for normalization of dynamic features from the *combined* calibration data
+mean_dyn_combined = np.mean(all_input_cal_combined[:, :3], axis=0)
+std_dyn_combined = np.std(all_input_cal_combined[:, :3], axis=0)
+
+# Normalize dynamic features for combined training
+all_input_cal_combined[:, :3] = (all_input_cal_combined[:, :3] - mean_dyn_combined) / std_dyn_combined
+all_input_eva_combined[:, :3] = (all_input_eva_combined[:, :3] - mean_dyn_combined) / std_dyn_combined
+
+
+# Create sequences for combined data for model training
+input_cal_seq_combined, target_cal_seq_combined = create_sequences(all_input_cal_combined, all_target_cal_combined, timesteps)
+input_eva_seq_combined, target_eva_seq_combined = create_sequences(all_input_eva_combined, all_target_eva_combined, timesteps)
+
+
+log_file.write(f"Model Training Starting\n")
+log_file.flush()
+
+model_in = Input(shape=(timesteps, all_input_cal_combined.shape[1])) # (365, 196)
+
+# TCN block 
+model_out = TCN(
+    nb_filters=nb_filters,
+    kernel_size=kernel_size,
+    nb_stacks=nb_stacks,
+    return_sequences=False
+)(model_in)
+
+# Output
+model_out = Dense(1, activation='linear')(model_out)
+
+# Build and compile
+TCN_model = Model(inputs=model_in, outputs=model_out)
+TCN_model.compile(optimizer='adam', loss='mse')
+
+
+# Fit the model
+TCN_model.fit(input_cal_seq_combined, target_cal_seq_combined, epochs=epochs, validation_split=0.2, callbacks=[early_stopping])
+
+log_file.write(f"Model Training Finished\n")
+log_file.flush()
+
+
+### SHAP Analysis (only on a subset of the combined calibration data) ###
+# Background data (e.g., 50 samples)
+background = input_cal_seq_combined[np.random.choice(input_cal_seq_combined.shape[0], 50, replace=False)]
+
+# Samples to explain (e.g., 10-100)
+X_sample = input_cal_seq_combined[:100]
+
+explainer = shap.GradientExplainer((TCN_model.input, TCN_model.output), background)
+shap_values = explainer.shap_values(X_sample)
+
+shap_array = np.stack(shap_values, axis=0)  # Shape: (100, 365, 196, 1)
+shap_vals_mean = shap_array.mean(axis=1)  # Shape: (100, 196, 1)
+shap_vals_mean = shap_vals_mean.squeeze(axis=-1)  # Remove the last dimension, now shape: (100, 196)
+
+# Average input over time for visualization
+X_sample_mean = X_sample.mean(axis=1)  # Shape: (samples, features)
+
+X_sample_df = pd.DataFrame(X_sample_mean, columns=feature_names)
+
+# SHAP summary plot (beeswarm)
+plt.figure(figsize=(10, 8))
+shap.summary_plot(shap_vals_mean, X_sample_df, show=False)
+plt.tight_layout()
+plt.savefig(f"{output_dir_shap}/TCN_shap_summary_beeswarm.png")
+plt.close()
+
+# bar plot
+plt.figure(figsize=(10, 8))
+shap.summary_plot(shap_vals_mean, X_sample_df, plot_type="bar", show=False)
+plt.tight_layout()
+plt.savefig(f"{output_dir_shap}/TCN_shap_summary_bar.png")
+plt.close()
+
+
+# SHAP dependence plots (top 3 features based on summary plot)
+for i in range(min(3, len(feature_names))): # Plot for up to top 3 features
+    plt.figure(figsize=(8, 6))
+    shap.dependence_plot(i, shap_vals_mean, X_sample_df, show=False)
+    plt.tight_layout()
+    plt.savefig(f"{output_dir_shap}/TCN_shap_dependence_{feature_names[i].replace('/', '_')}.png") 
+    plt.close()
+
+base_values = TCN_model.predict(X_sample).flatten() # Ensure base_values is 1D
+
+# Force plots (top 3 examples)
+for i in range(min(3, X_sample.shape[0])): # Plot for up to top 3 samples
+    shap.save_html(
+        f"{output_dir_shap}/force_plot_sample_{i}.html",
+        shap.force_plot(
+            base_value=base_values[i],
+            shap_values=shap_vals_mean[i],
+            features=X_sample_df.iloc[i],
+            feature_names=feature_names
         )
-        return X[mask], y[mask]
+    )
 
-    input_cal_seq, target_cal_seq = clean_sequences(input_cal_seq, target_cal_seq)
-    input_eva_seq, target_eva_seq = clean_sequences(input_eva_seq, target_eva_seq)
+log_file.write(f"SHAP Analysis Finished\n")
+log_file.flush()
 
+# --- Prepare CSV files for individual basin predictions (write headers once) ---
+# Date ranges for combined predictions (needed for CSV headers)
+all_dates_cal_orig_flat = np.hstack([d.to_numpy() for d in [v['dates_cal_original_full'] for k, v in individual_basin_data.items()]])
+all_dates_eva_orig_flat = np.hstack([d.to_numpy() for d in [v['dates_eva_original_full'] for k, v in individual_basin_data.items()]])
+
+# Dates for the actual sequences used in prediction (shifted by timesteps)
+predict_cal_dates_combined_for_csv = all_dates_cal_orig_flat[timesteps:]
+predict_eva_dates_combined_for_csv = all_dates_eva_orig_flat[timesteps:]
+
+date_row_cal_csv = ['Date'] + [str(pd.to_datetime(date).date()) for date in predict_cal_dates_combined_for_csv]
+date_row_eva_csv = ['Date'] + [str(pd.to_datetime(date).date()) for date in predict_eva_dates_combined_for_csv]
+
+# Write header rows to CSV files (mode='w' to overwrite if they exist from previous runs)
+with open(output_dir + f"/predict/TCN_predict_cal.csv", 'w') as file:
+    pd.DataFrame([date_row_cal_csv]).to_csv(file, header=False, index=False)
+with open(output_dir + f"/predict/TCN_predict_eva.csv", 'w') as file:
+    pd.DataFrame([date_row_eva_csv]).to_csv(file, header=False, index=False)
+
+
+# --- Loop to process, plot, and evaluate EACH individual file ---
+for file_num in file_list:
+    start_time_basin_eval = datetime.now()
+    start_time_st_basin_eval = start_time_basin_eval.strftime("%a %b %d %I:%M:%S %p JST %Y")
+    log_file.write(f"FILE_{file_num} - Evaluation and Plotting\n")
+    log_file.write(f"start: {start_time_st_basin_eval}\n")
+    log_file.flush()
+
+    basin_data = individual_basin_data[file_num]
+
+    # --- Calibration Data for current basin ---
+    # Use the pre-normalized input data from `individual_basin_data`
+    input_cal_full_basin = basin_data['input_cal_full_pre_norm'].copy() # Need copy to modify for normalization
+    target_cal_basin = basin_data['target_cal']
+    dates_cal_basin_original_full = basin_data['dates_cal_original_full'] 
+
+    # Normalize dynamic features using the *combined* mean/std from combined training data
+    input_cal_full_basin[:, :3] = (input_cal_full_basin[:, :3] - mean_dyn_combined) / std_dyn_combined
     
-    model_out = TCN(
-        nb_filters=nb_filters,
-        kernel_size=kernel_size,
-        nb_stacks=nb_stacks,
-        return_sequences=False
-    )(model_in)
-    
-    model_out = Dense(1, activation='linear')(model_out)
+    input_cal_seq_basin, target_cal_seq_basin = create_sequences(input_cal_full_basin, target_cal_basin, timesteps)
+    predict_cal_basin = TCN_model.predict(input_cal_seq_basin).flatten()
+    predict_cal_basin[predict_cal_basin < 0] = 0
 
-    TCN_model = Model(inputs=[model_in], outputs=[model_out])
-    TCN_model.compile(optimizer='adam', loss='mse')
+    # Adjust dates for the predictions based on timesteps and convert to numpy
+    dates_cal_plot = dates_cal_basin_original_full[timesteps:].to_numpy()
 
-    TCN_model.fit(input_cal_seq, target_cal_seq, epochs=epochs, validation_split=0.2, callbacks=[early_stopping])
+    # Plot for individual basin Calibration
+    plt.figure(figsize=(15, 6))
+    plt.plot(dates_cal_plot, target_cal_seq_basin, label='Observed', color='blue', alpha=0.7)
+    plt.plot(dates_cal_plot, predict_cal_basin, label='Predicted', color='red', alpha=0.7)
+    plt.title(f'Hydrograph (Calibration) - File {file_num}')
+    plt.xlabel('Date')
+    plt.ylabel('Observed Flow')
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_dir, "hydrographs", f"hydrograph_cal_file_{file_num}.png"))
+    plt.close()
 
-    predict_cal = TCN_model.predict(input_cal_seq)
-    predict_eva = TCN_model.predict(input_eva_seq)
+    # --- Evaluation Data for current basin ---
+    input_eva_full_basin = basin_data['input_eva_full_pre_norm'].copy() # Need copy to modify for normalization
+    target_eva_basin = basin_data['target_eva']
+    dates_eva_basin_original_full = basin_data['dates_eva_original_full'] 
 
-    predict_cal[predict_cal < 0] = 0
-    predict_eva[predict_eva < 0] = 0
+    # Normalize dynamic features using the *combined* mean/std
+    input_eva_full_basin[:, :3] = (input_eva_full_basin[:, :3] - mean_dyn_combined) / std_dyn_combined
 
-    print("target_cal_seq", target_cal_seq.shape, "predict_cal", predict_cal.shape)
-    print("target_eva_seq", target_eva_seq.shape, "predict_eva", predict_eva.shape)
+    input_eva_seq_basin, target_eva_seq_basin = create_sequences(input_eva_full_basin, target_eva_basin, timesteps)
+    predict_eva_basin = TCN_model.predict(input_eva_seq_basin).flatten()
+    predict_eva_basin[predict_eva_basin < 0] = 0
 
-    print(f"file_num: {file_num}, NSE_cal: {BMK(target_cal_seq, predict_cal, 'NSE')}, NSE_eva: {BMK(target_eva_seq, predict_eva, 'NSE')}")
+    # Adjust dates for the predictions based on timesteps and convert to numpy
+    dates_eva_plot = dates_eva_basin_original_full[timesteps:].to_numpy()
 
+    # Plot for individual basin Evaluation
+    plt.figure(figsize=(15, 6))
+    plt.plot(dates_eva_plot, target_eva_seq_basin, label='Observed', color='blue', alpha=0.7)
+    plt.plot(dates_eva_plot, predict_eva_basin, label='Predicted', color='red', alpha=0.7)
+    plt.title(f'Hydrograph (Evaluation) - File {file_num}')
+    plt.xlabel('Date')
+    plt.ylabel('Observed Flow')
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_dir, "hydrographs", f"hydrograph_eva_file_{file_num}.png"))
+    plt.close()
 
-    file_row_cal = [f'file_{file_num}_cal'] + list(predict_cal.flatten())
-    file_row_eva = [f'file_{file_num}_eva'] + list(predict_eva.flatten())
+    # --- Prepare data for CSV saving (individual file) ---
+    # Ensure predict_cal_basin and target_cal_seq_basin match lengths with dates_cal_plot
+    # (which they should due to create_sequences)
+    file_row_cal = [f'file_{file_num}_cal'] + list(predict_cal_basin) # Use individual basin predictions
+    file_row_eva = [f'file_{file_num}_eva'] + list(predict_eva_basin) # Use individual basin predictions
 
-    if file_num == 1:
-        predict_cal_dates = pd.date_range(start=pd.to_datetime(start_date_cal) + pd.DateOffset(days=1), periods=len(predict_cal))
-        predict_eva_dates = pd.date_range(start=pd.to_datetime(start_date_eva) + pd.DateOffset(days=1), periods=len(predict_eva))
-
-        date_row_cal = list(['Date'] + [str(date.date()) for date in predict_cal_dates])
-        date_row_eva = list(['Date'] + [str(date.date()) for date in predict_eva_dates])
-
-        predict_cal_df = pd.DataFrame([date_row_cal])
-        predict_eva_df = pd.DataFrame([date_row_eva])
-
-        predict_cal_df.to_csv(output_dir + f"/predict/TCN_predict_cal.csv", mode='w', index=False, header=False)
-        predict_eva_df.to_csv(output_dir + f"/predict/TCN_predict_eva.csv", mode='w', index=False, header=False)
-
+    # Append individual file's prediction data to the pre-initialized CSVs
     with open(output_dir + f"/predict/TCN_predict_cal.csv", 'a') as file:
         pd.DataFrame([file_row_cal]).to_csv(file, header=False, index=False)
     with open(output_dir + f"/predict/TCN_predict_eva.csv", 'a') as file:
         pd.DataFrame([file_row_eva]).to_csv(file, header=False, index=False)
 
+
+    # --- Calculate and store benchmark results for individual basins ---
     file_results_cal = {'file_num': file_num}
     file_results_eva = {'file_num': file_num}
 
-    # Loop over each benchmark and add results to the current file's dictionary
     for benchmark in benchmark_list:
         file_results_cal.update({
-            f'TCN_{benchmark}_cal': BMK(target_cal_seq, predict_cal.flatten(), benchmark)
+            f'TCN_{benchmark}_cal': BMK(target_cal_seq_basin, predict_cal_basin, benchmark)
         })
         file_results_eva.update({
-            f'TCN_{benchmark}_eva': BMK(target_eva_seq, predict_eva.flatten(), benchmark)
+            f'TCN_{benchmark}_eva': BMK(target_eva_seq_basin, predict_eva_basin, benchmark)
         })  
-    
+
     results_cal.append(file_results_cal)
     results_eva.append(file_results_eva)
 
+    print(f"file_num: {file_num}, NSE_cal: {BMK(target_cal_seq_basin, predict_cal_basin, 'NSE'):.4f}, NSE_eva: {BMK(target_eva_seq_basin, predict_eva_basin, 'NSE'):.4f}")
 
-    end_time = datetime.now()
-    end_time_st = end_time.strftime("%a %b %d %I:%M:%S %p JST %Y")
-    log_file.write(f"end: {end_time_st}\n")
-    log_file.write(f"elapsed: {end_time - start_time}\n")
+    end_time_basin_eval = datetime.now()
+    log_file.write(f"end: {end_time_basin_eval}\n")
+    log_file.write(f"elapsed: {end_time_basin_eval - start_time_basin_eval}\n")
+    log_file.flush()
 
+
+end_time_overall = datetime.now()
+end_time_overall_st = end_time_overall.strftime("%a %b %d %I:%M:%S %p JST %Y")
+log_file.write(f"Overall end: {end_time_overall_st}\n")
+log_file.write(f"Overall elapsed: {end_time_overall - start_time_overall}\n")
 log_file.write(f"DONE\n")
 log_file.close()
 
