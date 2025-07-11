@@ -15,7 +15,7 @@ input_df = pd.read_csv(input_data, header=0, index_col=0)
 
 # Relationship between original precipitation and peak discharge for different scenarios
 flow_columns_to_plot = {
-    'Original Simulation': 'peak_flow_og',
+    'Original': 'peak_flow_1_rate0',
     'Peak 10%': 'peak_flow_1_rate10', # This will be the actual column name after replace
     'Peak 30%': 'peak_flow_1_rate30',
     'Peak 50%': 'peak_flow_1_rate50',
@@ -28,7 +28,7 @@ flow_columns_to_plot = {
 # The band of variability is shown by the shaded area around the regression line, indicating the uncertainty in the relationship.
 
 flow_columns_to_plot_actual = {
-    'Original Simulation': 'peak_flow_og',
+    'Original': 'peak_flow_peak1_rate0',
     'Peak1_rate10': 'peak_flow_peak1_rate10',
     'Peak1_rate30': 'peak_flow_peak1_rate30',
     'Peak1_rate50': 'peak_flow_peak1_rate50',

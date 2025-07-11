@@ -12,7 +12,7 @@ os.makedirs(output_dir, exist_ok=True)
 
 comparison_df = pd.read_csv(input_data, header=0, index_col=None)
 
-sim_discharge_cols = ['og', 
+sim_discharge_cols = ['peak1_rate0'
                     'peak1_rate10', 'peak1_rate30', 'peak1_rate50',
                     'peak3_rate10', 'peak3_rate30', 'peak3_rate50',
                     'peak5_rate10', 'peak5_rate30', 'peak5_rate50']
