@@ -29,9 +29,9 @@ window_size = 365 # Length of the meteorological record provided to the network
 batch_size = 512 # Number of samples in each batch
 dropout_rate = 0.1 # Dropout rate of the final fully connected Layer [0.0, 1.0]
 
-loc, ver = "JP", 2
+#loc, ver = "JP", 2
 #loc, ver = "US", 2
-#loc, ver = "GB", 2
+loc, ver = "GB", 2
 #loc, ver = "AUS", 2
 
 benchmark_list = ["KGE","NSE","E1", "VE", "d","RMSE","MAE"]
@@ -47,9 +47,12 @@ elif loc == "US":
 elif loc == "AUS":
     file_tot_num = 84
 elif loc == "GB":
-    file_tot_num = 396
+    file_tot_num = 424
 
-varssim_dir = f"/data0/funato/2_MERV/{loc}/varssim_nocal/{ver_name}"
+if loc == "JP" and ver == 2:
+    varssim_dir = f"/data0/funato/2_MERV/{loc}/varssim_nocal/{ver_name}"
+elif loc == "GB" and ver == 2:
+    varssim_dir = f"/data0/funato/hsp/2_MERV/varssim_HBV"
 
 
 # Globals
@@ -57,7 +60,7 @@ varssim_dir = f"/data0/funato/2_MERV/{loc}/varssim_nocal/{ver_name}"
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu") # This line checks if GPU is available
 print(f"Using device: {DEVICE}")
 
-output_dir = f"/data0/funato/0_out/99_out/{loc}/LSTM_testtime/"
+output_dir = f"/data0/funato/0_out/99_out/{loc}/LSTM/"
 os.makedirs(output_dir, exist_ok=True)
 os.makedirs(output_dir + '/predict', exist_ok=True)
 os.makedirs(output_dir + '/results', exist_ok=True)

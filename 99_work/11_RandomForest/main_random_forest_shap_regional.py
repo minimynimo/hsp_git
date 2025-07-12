@@ -1,62 +1,75 @@
-# based on https://github.com/urgedata/pythondata/blob/master/rf_timeseries/Random%20Forest%20for%20Time%20Series%20Forecasting.ipynb?utm_source=chatgpt.com
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 import os
 
 from sklearn.ensemble import RandomForestRegressor
-from sklearn.model_selection import train_test_split
-
 from datetime import datetime
 
 import shap
 
-benchmark_list = ["KGE","NSE","E1", "VE", "d","RMSE","MAE"]
+benchmark_list = ["KGE", "NSE", "E1", "VE", "d", "RMSE", "MAE"]
 
+# loc, ver = "JP", 2
+loc, ver = "GB", 2
 
-loc, ver = "JP", 2
+ver_name = "ver1_1" if ver == 1 else "ver2_0"
 
-ver_name = "ver1_1" if ver == 1 else "ver2_0"   
+attribute_dir = f'/data0/funato/hsp/3_gis_data/{loc}/0_data/river_basin/dataset_{loc}'
 
-attribute_dir = f'/data0/funato/3_gis_data/{loc}/0_data/river_basin/dataset_{loc}'
+syn_precip_cols = ['syn_no_precip', 'syn_p_pet', 'syn_peak1_rate0',
+                   'syn_peak1_rate10', 'syn_peak1_rate30', 'syn_peak1_rate50',
+                   'syn_peak3_rate10', 'syn_peak3_rate30', 'syn_peak3_rate50',
+                   'syn_peak5_rate10', 'syn_peak5_rate30', 'syn_peak5_rate50']
+
+dynamic_features = ["Precip", "Temp", "PET"]
 
 if loc == "JP" and ver == 2:
     file_tot_num = 87
-    columns_drop = ['grdc_no','river','station','WaterArea','ForestArea','ForestAreaRatio','WaterAreaRatio','lat_org','long_org', 'land_GolfCourse','land_GolfCourse_Ratio']
-    attribute_values = pd.read_csv(f'{attribute_dir}/basin_data_limited_met&soil&geology&land_{ver_name}.csv', encoding= 'UTF-8', index_col=0, header=0)
-varssim_dir = f"/data0/funato/2_MERV/{loc}/varssim_nocal/{ver_name}"
+    columns_drop = ['grdc_no', 'river', 'station', 'WaterArea', 'ForestArea', 'ForestAreaRatio', 'WaterAreaRatio', 'lat_org', 'long_org', 'land_GolfCourse', 'land_GolfCourse_Ratio']
+    attribute_values = pd.read_csv(f'{attribute_dir}/basin_data_limited_met&soil&geology&land_{ver_name}.csv', encoding='UTF-8', index_col=0, header=0)
+    varssim_dir = f"/data0/funato/2_MERV/{loc}/varssim_nocal/{ver_name}"
+elif loc == "GB" and ver == 2:
+    file_tot_num = 424
+    columns_drop = ['gauge_id']
+    attribute_values = pd.read_csv(f'{attribute_dir}/camelsgb_attribute_combined.csv', encoding='UTF-8', index_col=0, header=0)
+    varssim_dir = f"/data0/funato/hsp/2_MERV/varssim_HBV"
 
-file_list = list(range(1, file_tot_num+1))
-#file_list = list(range(20,21))
+file_list = list(range(1, file_tot_num + 1))
+# file_list = list(range(20,21)) # Uncomment for quick test with one file
 
 start_date_cal = '1993-01-01'
 end_date_cal = '2000-12-31'
 start_date_eva = '2001-01-01'
-end_date_eva = '2006-12-31'
+end_date_eva = '2006-12-31' # Original end date for standard evaluation
 
-max_depth = 15
+max_depth = 5
 max_features = 0.7
 n_estimators = 100
 max_samples = 0.5
 min_samples_split = 2
 
-output_dir = f"/data0/funato/hsp/0_out/11_RandomForest/{loc}/shap"
+output_dir = f"/data0/funato/hsp/0_out/11_RandomForest/{loc}/shap/regional"
 os.makedirs(output_dir, exist_ok=True)
 os.makedirs(output_dir + "/predict", exist_ok=True)
 os.makedirs(output_dir + "/results", exist_ok=True)
+os.makedirs(output_dir + "/predict/synthetic", exist_ok=True)
 
 output_dir_shap = f"0_out/1_fig/shap/11_RandomForest/regional"
 os.makedirs(output_dir_shap, exist_ok=True)
 
+# Clean attribute values and normalize (global normalization for static attributes)
+attribute_values_dropped = attribute_values.drop(columns=[col for col in columns_drop if col in attribute_values.columns])
 
-# clean attribute values and normalize
-attribute_values_dropped = attribute_values.drop(columns=[col for col in columns_drop if col in attribute_values.columns]) # 87,193
-#print(attribute_values_dropped.head())
-
-# Convert all columns except 'File_num' to numeric, coercing errors to NaN
 cols_to_numeric = [col for col in attribute_values_dropped.columns if col != 'File_num']
 attribute_values_dropped[cols_to_numeric] = attribute_values_dropped[cols_to_numeric].apply(pd.to_numeric, errors='coerce')
+
 attribute_values_numeric = attribute_values_dropped.drop(columns=['File_num']) if 'File_num' in attribute_values_dropped.columns else attribute_values_dropped
+
+for col in attribute_values_numeric.columns:
+    if attribute_values_numeric[col].dtype == 'int64':
+        attribute_values_numeric[col] = attribute_values_numeric[col].astype('float64')
+
 attribute_mean = attribute_values_numeric.mean()
 attribute_std = attribute_values_numeric.std()
 attribute_values_normalized = attribute_values_dropped.copy()
@@ -70,35 +83,27 @@ def file_name(input_num, total_len):
 
 def load_data(file_num):
     df = pd.read_csv(f"{varssim_dir}/varssim{file_name(file_num, 3)}.csv")
-    
     if loc == "JP":
         df['Date'] = pd.to_datetime(df[['Year', 'Month', 'Day']])
     else:
         df['Date'] = pd.to_datetime(df['Date'])
     df.set_index('Date', inplace=True)
-    
-    # Create a date range that covers the entire period
     full_date_range = pd.date_range(start=start_date_cal, end=end_date_eva)
-    
-    # Reindex the DataFrame to this date range, filling missing values with NaNs
     df = df.reindex(full_date_range)
-    
     return df
 
-def load_attribute_values(input_data, file_num):
-    # input_data ; 2190, 3
+def load_attribute_values_for_basin(basin_dynamic_data, file_num):
     attribute_row = attribute_values_normalized[attribute_values_normalized.index == file_num]
-    attribute_list = attribute_row.iloc[0] # 194,
-    attribute_list = attribute_list.drop('File_num') if 'File_num' in attribute_list.index else attribute_list #193
-    static_attributes = np.array([attribute_list.values] * input_data.shape[0])
-    input_data = np.hstack((input_data, static_attributes))
-    return input_data # 2190, 196
+    attribute_list = attribute_row.iloc[0]
+    attribute_list = attribute_list.drop('File_num') if 'File_num' in attribute_list.index else attribute_list
+    static_attributes_array = np.array([attribute_list.values] * basin_dynamic_data.shape[0])
+    combined_data = np.hstack((basin_dynamic_data, static_attributes_array))
+    return combined_data
 
-def BMK(obs_data,sim_data,benchmark):    
+def BMK(obs_data, sim_data, benchmark):
     if benchmark == "NSE":
         obs_ave = np.mean(obs_data)
         return 1 - (np.sum(np.square(obs_data - sim_data)) / np.sum(np.square(obs_data - obs_ave)))
-    
     elif benchmark == "KGE":
         r = np.corrcoef(obs_data, sim_data)[0, 1]
         obs_ave = np.mean(obs_data)
@@ -106,9 +111,8 @@ def BMK(obs_data,sim_data,benchmark):
         obs_std = np.std(obs_data)
         sim_std = np.std(sim_data)
         obs_std = np.where(obs_std == 0, 1e-6, obs_std)
-        obs_ave = np.where(obs_ave == 0, 1e-6, obs_ave) 
+        obs_ave = np.where(obs_ave == 0, 1e-6, obs_ave)
         return 1 - np.sqrt((r - 1)**2 + ((sim_std / obs_std) - 1)**2 + ((sim_ave / obs_ave) - 1)**2)
-    
     elif benchmark == "logNSE":
         temp_obs_data = np.where((obs_data <= 0) | np.isnan(obs_data), 1e-6, obs_data)
         temp_sim_data = np.where((sim_data <= 0) | np.isnan(sim_data), 1e-6, sim_data)
@@ -116,252 +120,326 @@ def BMK(obs_data,sim_data,benchmark):
         numer = np.sum((np.log(temp_sim_data) - np.log(temp_obs_data))**2)
         denom = np.sum((np.log(temp_obs_data) - np.log(obs_ave))**2)
         return 1 - numer / denom
-    
     elif benchmark == "E1":
         obs_ave = np.mean(obs_data)
         return 1 - (np.sum(np.abs(obs_data - sim_data)) / np.sum(np.abs(obs_data - obs_ave)))
-    
     elif benchmark == "Erel":
         obs_ave = np.mean(obs_data)
         temp_obs_data = np.where(obs_data == 0, 1e-6, obs_data)
         numer = np.sum(np.square((temp_obs_data - sim_data) / temp_obs_data))
         denom = np.sum(np.square((obs_data - obs_ave) / obs_ave))
         return 1 - numer / denom
-    
     elif benchmark == "VE":
         return 1 - np.sum(np.abs(obs_data - sim_data)) / np.sum(obs_data)
-    
     elif benchmark == "d":
         obs_ave = np.mean(obs_data)
         numer = np.sum(np.square(obs_data - sim_data))
         denom = np.sum(np.square(np.abs(sim_data - obs_ave) + np.abs(obs_data - obs_ave)))
         return 1 - numer / denom
-    
     elif benchmark == "RMSE":
         return np.sqrt(np.mean(np.square(obs_data - sim_data)))
-    
     elif benchmark == "MAE":
         return np.mean(np.abs(obs_data - sim_data))
-    
 
-if os.path.exists(output_dir + f'/RF_log.txt'):
-    open(output_dir + f'/RF_log.txt', 'w').close()
-log_file = open(output_dir + f'/RF_log.txt', 'a')
+all_input_cal_raw = []
+all_target_cal_raw = []
+all_input_eva_raw = []
+all_target_eva_raw = []
 
-results_cal = []
-results_eva = []
+basin_cal_info = {}
+basin_eva_info = {}
+basin_syn_cal_info = {}
+basin_syn_eva_info = {}
 
-dynamic_features = ["Precip", "Temp", "PET"]
-static_features = attribute_values_normalized.columns.tolist()
-feature_names = dynamic_features + static_features
-
-all_input_cal = []
-all_input_eva = []
-
-all_target_cal = []
-all_target_eva = []
-
-all_input_cal = []
-all_target_cal = []
-
-all_input_eva = []
-all_target_eva = []
-
-start_time = datetime.now()
-start_time_st = start_time.strftime("%a %b %d %I:%M:%S %p JST %Y")
-log_file.write(f"start: {start_time_st}\n")
+start_time_total = datetime.now()
+start_time_total_st = start_time_total.strftime("%a %b %d %I:%M:%S %p JST %Y")
+log_file = open(output_dir + f'/RF_log.txt', 'w')
+log_file.write(f"Regional training start: {start_time_total_st}\n")
 log_file.flush()
 
-for file_num in file_list:
+print("Collecting and preprocessing data from all basins...")
+for file_idx, file_num in enumerate(file_list):
+    log_file.write(f"  Processing FILE_{file_num}\n")
+    log_file.flush()
+
     df = load_data(file_num)
     df_cal = df[start_date_cal:end_date_cal].copy()
     df_eva = df[start_date_eva:end_date_eva].copy()
 
-    # Extract dynamic features as before
-    input_cal_dyn = np.hstack([
-        df_cal['Precip'].shift(1).values.reshape(-1,1),
-        df_cal['Temp'].shift(1).values.reshape(-1,1),
-        df_cal['PET'].shift(1).values.reshape(-1,1)
+    input_cal_dynamic_shifted_raw = np.hstack([
+        df_cal['Precip'].shift(1).values.reshape(-1, 1),
+        df_cal['Temp'].shift(1).values.reshape(-1, 1),
+        df_cal['PET'].shift(1).values.reshape(-1, 1)
     ])
-    input_eva_dyn = np.hstack([
-        df_eva['Precip'].shift(1).values.reshape(-1,1),
-        df_eva['Temp'].shift(1).values.reshape(-1,1),
-        df_eva['PET'].shift(1).values.reshape(-1,1)
+    
+    input_cal_dynamic_aligned = input_cal_dynamic_shifted_raw[1:]
+    target_cal_aligned = df_cal['Obs flow'].values[1:]
+
+    valid_cal_rows = ~np.isnan(input_cal_dynamic_aligned).any(axis=1)
+    
+    input_cal_cleaned_dynamic = input_cal_dynamic_aligned[valid_cal_rows]
+    target_cal_cleaned = target_cal_aligned[valid_cal_rows]
+
+    current_cal_start_idx = len(all_input_cal_raw)
+    all_input_cal_raw.append(input_cal_cleaned_dynamic)
+    all_target_cal_raw.append(target_cal_cleaned)
+
+    dates_for_cal = pd.date_range(
+        start=pd.to_datetime(start_date_cal) + pd.DateOffset(days=2),
+        periods=len(input_cal_cleaned_dynamic)
+    )[valid_cal_rows]
+    basin_cal_info[file_num] = {'start_idx': current_cal_start_idx, 'length': len(input_cal_cleaned_dynamic), 'dates': dates_for_cal}
+
+    input_eva_dynamic_shifted_raw = np.hstack([
+        df_eva['Precip'].shift(1).values.reshape(-1, 1),
+        df_eva['Temp'].shift(1).values.reshape(-1, 1),
+        df_eva['PET'].shift(1).values.reshape(-1, 1)
     ])
+    
+    input_eva_dynamic_aligned = input_eva_dynamic_shifted_raw[1:]
+    target_eva_aligned = df_eva['Obs flow'].values[1:]
 
-    mask_cal = ~np.isnan(input_cal_dyn).any(axis=1)
-    mask_eva = ~np.isnan(input_eva_dyn).any(axis=1)
+    valid_eva_rows = ~np.isnan(input_eva_dynamic_aligned).any(axis=1)
 
-    input_cal_dyn = input_cal_dyn[mask_cal]
-    input_eva_dyn = input_eva_dyn[mask_eva]
+    input_eva_cleaned_dynamic = input_eva_dynamic_aligned[valid_eva_rows]
+    target_eva_cleaned = target_eva_aligned[valid_eva_rows]
 
-    # Load static features once for this basin
-    static_features = attribute_values_normalized.loc[file_num]  # or however you index basins
-    # Repeat static features for every timestep
-    static_array_cal = np.tile(static_features.values, (input_cal_dyn.shape[0], 1))
-    static_array_eva = np.tile(static_features.values, (input_eva_dyn.shape[0], 1))
+    current_eva_start_idx = len(all_input_eva_raw)
+    all_input_eva_raw.append(input_eva_cleaned_dynamic)
+    all_target_eva_raw.append(target_eva_cleaned)
 
-    # Combine dynamic + static features
-    input_cal_full = np.hstack([input_cal_dyn, static_array_cal])
-    input_eva_full = np.hstack([input_eva_dyn, static_array_eva])
+    dates_for_eva = pd.date_range(
+        start=pd.to_datetime(start_date_eva) + pd.DateOffset(days=2),
+        periods=len(input_eva_cleaned_dynamic)
+    )[valid_eva_rows]
+    basin_eva_info[file_num] = {'start_idx': current_eva_start_idx, 'length': len(input_eva_cleaned_dynamic), 'dates': dates_for_eva}
 
-    # Append to global lists
-    all_input_cal.append(input_cal_full)
-    all_input_eva.append(input_eva_full)
+all_input_cal_stacked = np.vstack(all_input_cal_raw)
+all_target_cal_stacked = np.hstack(all_target_cal_raw)
+all_input_eva_stacked = np.vstack(all_input_eva_raw)
+all_target_eva_stacked = np.hstack(all_target_eva_raw)
 
-    # Targets
-    target_cal = df_cal['Obs flow'].values
-    target_cal = target_cal[mask_cal]  # Apply mask to targets
+print("Normalizing dynamic features using aggregated calibration data...")
+mean_dynamic_features = np.mean(all_input_cal_stacked[:, :3], axis=0)
+std_dynamic_features = np.std(all_input_cal_stacked[:, :3], axis=0)
+std_dynamic_features = np.where(std_dynamic_features == 0, 1e-6, std_dynamic_features)
 
-    # Debugging: Check the dimensions of target_cal and mask_cal
-    #print("Length of target_cal:", len(target_cal))
-    #print("Length of mask_cal:", len(mask_cal))
+all_input_cal_normalized_dynamic = (all_input_cal_stacked[:, :3] - mean_dynamic_features) / std_dynamic_features
+all_input_eva_normalized_dynamic = (all_input_eva_stacked[:, :3] - mean_dynamic_features) / std_dynamic_features
 
-    # Apply the mask
-    all_target_cal.append(target_cal)
+X_train_final_list = []
+X_eval_final_list = []
 
-    target_eva = df_eva['Obs flow'].values
-    target_eva = target_eva[mask_eva]  # Apply mask to targets
-    all_target_eva.append(target_eva)
+print("Combining dynamic and static features for all basins...")
+current_cal_idx = 0
+current_eva_idx = 0
+for file_num in file_list:
+    cal_len = basin_cal_info[file_num]['length']
+    eva_len = basin_eva_info[file_num]['length']
 
-# Stack all basins together
-all_input_cal = np.vstack(all_input_cal)
-all_target_cal = np.hstack(all_target_cal)
+    basin_cal_dynamic = all_input_cal_normalized_dynamic[current_cal_idx : current_cal_idx + cal_len]
+    basin_eva_dynamic = all_input_eva_normalized_dynamic[current_eva_idx : current_eva_idx + eva_len]
 
-all_input_eva = np.vstack(all_input_eva)
-all_target_eva = np.hstack(all_target_eva)
+    X_train_final_list.append(load_attribute_values_for_basin(basin_cal_dynamic, file_num))
+    X_eval_final_list.append(load_attribute_values_for_basin(basin_eva_dynamic, file_num))
 
-all_input_cal = np.vstack(all_input_cal)
-all_input_eva = np.vstack(all_input_eva)
+    current_cal_idx += cal_len
+    current_eva_idx += eva_len
 
-all_target_cal = np.hstack(all_target_cal)
-all_target_eva = np.hstack(all_target_eva)
+X_train_final = np.vstack(X_train_final_list)
+X_eval_final = np.vstack(X_eval_final_list)
 
-mean_dyn = np.mean(all_input_cal[:, :3], axis=0)
+print("Training the regional Random Forest model...")
+all_feature_names = dynamic_features + [col for col in attribute_values_normalized.columns if col != 'File_num']
 
-# Debugging: Check the type and content of all_input_cal
-#print("Type of all_input_cal:", type(all_input_cal))
-#print("Shape of all_input_cal:", all_input_cal.shape)
-#print("First few rows of all_input_cal[:, :3]:", all_input_cal[:, :3])
+assert X_train_final.shape[1] == len(all_feature_names), \
+    f"Number of features ({X_train_final.shape[1]}) in X_train_final does not match all_feature_names length ({len(all_feature_names)})"
 
-all_input_cal = np.array(all_input_cal, dtype=float)
+rf = RandomForestRegressor(max_depth=max_depth, max_features=max_features, n_estimators=n_estimators, min_samples_split=min_samples_split, oob_score=True, random_state=42, n_jobs=-1)
 
-# Compute standard deviation
-std_dyn = np.std(all_input_cal[:, :3], axis=0)
+rf.fit(X_train_final, all_target_cal_stacked)
+print("Regional Random Forest model trained.")
 
-# Normalize dynamic features
-all_input_cal[:, :3] = (all_input_cal[:, :3] - mean_dyn) / std_dyn
-all_input_eva[:, :3] = (all_input_eva[:, :3] - mean_dyn) / std_dyn
+predict_cal_aggregated = rf.predict(X_train_final)
+predict_eva_aggregated = rf.predict(X_eval_final)
 
+predict_cal_aggregated[predict_cal_aggregated < 0] = 0
+predict_eva_aggregated[predict_eva_aggregated < 0] = 0
 
-rf = RandomForestRegressor(max_depth=max_depth, max_features = max_features, n_estimators=n_estimators, min_samples_split=min_samples_split, oob_score=True, random_state=42, n_jobs=-1)
+print("Performing SHAP analysis...")
+X_train_final_df_for_shap = pd.DataFrame(X_train_final, columns=all_feature_names)
 
-rf.fit(all_input_cal, all_target_cal)
+explainer = shap.Explainer(rf, X_train_final_df_for_shap)
+shap_values = explainer(X_train_final_df_for_shap, check_additivity=False)
 
-predict_cal=rf.predict(all_input_cal)
-predict_eva=rf.predict(all_input_eva)
-
-### SHAP values ###
-# SHAP Analysis for RandomForestRegressor
-all_input_cal_df = pd.DataFrame(all_input_cal, columns=feature_names)
-
-explainer = shap.Explainer(rf, all_input_cal_df)
-shap_values = explainer(all_input_cal_df, check_additivity=False)
-
-# Debugging: Check the shape and columns of all_input_cal_df
-print("Shape of all_input_cal_df:", all_input_cal_df.shape)
-print("Columns of all_input_cal_df:", all_input_cal_df.columns)
-
-# Debugging: Check the shape of all_input_cal
-print("Shape of all_input_cal:", all_input_cal.shape)
+print("Shape of X_train_final_df_for_shap:", X_train_final_df_for_shap.shape)
+print("Columns of X_train_final_df_for_shap:", X_train_final_df_for_shap.columns)
 print("Model expects features:", rf.n_features_in_)
 
-shap.summary_plot(shap_values, all_input_cal_df, plot_type="bar", show=False)
-plt.savefig(f"{output_dir_shap}/RF_shap_eva_file_regional_summary_bar.png")
+shap.summary_plot(shap_values, X_train_final_df_for_shap, plot_type="bar", show=False)
+plt.savefig(f"{output_dir_shap}/RF_shap_regional_summary_bar.png")
+plt.close()
 
-shap.summary_plot(shap_values, all_input_cal_df, show=False)
-plt.savefig(f"{output_dir_shap}/RF_shap_eva_file_summary.png")
+shap.summary_plot(shap_values, X_train_final_df_for_shap, show=False)
+plt.savefig(f"{output_dir_shap}/RF_shap_regional_summary.png")
+plt.close()
 
-# Ensure shap_values is in the correct format
 if isinstance(shap_values, shap.Explanation):
-    shap_values = shap_values.values
+    shap_values_array = shap_values.values
+    base_values = explainer.expected_value
+else:
+    shap_values_array = shap_values
+    base_values = explainer.expected_value
 
-shap.dependence_plot(0, shap_values, all_input_cal_df, show=False)
-plt.savefig(f"{output_dir_shap}/RF_shap_eva_file_dependence_0.png")
+for i in range(min(3, X_train_final_df_for_shap.shape[1])):
+    shap.dependence_plot(i, shap_values_array, X_train_final_df_for_shap, show=False)
+    plt.savefig(f"{output_dir_shap}/RF_shap_regional_dependence_{X_train_final_df_for_shap.columns[i]}.png")
+    plt.close()
 
-shap.dependence_plot(1, shap_values, all_input_cal_df, show=False)
-plt.savefig(f"{output_dir_shap}/RF_shap_eva_file_dependence_1.png")
-
-shap.dependence_plot(2, shap_values, all_input_cal_df, show=False)
-plt.savefig(f"{output_dir_shap}/RF_shap_eva_file_dependence_2.png")
-
-
-# Debug print statements to check shapes
-print("Input shape:", all_input_cal.shape)
-print("SHAP values shape:", shap_values.shape)
-print("Explainer expected value:", explainer.expected_value)
-
-# Ensure the base value is passed as the first parameter
-# Ensure the base value is passed as the first parameter and feature names are included
-for i in range(3):
+for i in range(min(3, X_train_final_df_for_shap.shape[0])):
     shap.save_html(
-        f"{output_dir_shap}/force_plot_{i}.html",
+        f"{output_dir_shap}/force_plot_regional_sample_{i}.html",
         shap.force_plot(
-            explainer.expected_value, 
-            shap_values[i], 
-            all_input_cal_df.iloc[i], 
-            feature_names=all_input_cal_df.columns
+            base_values,
+            shap_values_array[i],
+            X_train_final_df_for_shap.iloc[i],
+            feature_names=all_feature_names
         )
     )
+print("SHAP analysis complete.")
 
-predict_cal[predict_cal < 0] = 0
-predict_eva[predict_eva < 0] = 0
+print("Saving per-basin predictions and results...")
+results_cal = []
+results_eva = []
 
+predict_cal_dfs = {}
+predict_eva_dfs = {}
+syn_predict_dfs_combined = {col: {} for col in syn_precip_cols}
 
-file_row_cal = [f'file_{file_num}_cal'] + list(predict_cal.flatten())
-file_row_eva = [f'file_{file_num}_eva'] + list(predict_eva.flatten())
+for file_num in file_list:
+    cal_info = basin_cal_info[file_num]
+    basin_predict_cal = predict_cal_aggregated[cal_info['start_idx'] : cal_info['start_idx'] + cal_info['length']]
+    basin_target_cal = all_target_cal_stacked[cal_info['start_idx'] : cal_info['start_idx'] + cal_info['length']]
+    
+    eva_info = basin_eva_info[file_num]
+    basin_predict_eva = predict_eva_aggregated[eva_info['start_idx'] : eva_info['start_idx'] + eva_info['length']]
+    basin_target_eva = all_target_eva_stacked[eva_info['start_idx'] : eva_info['start_idx'] + eva_info['length']]
 
-predict_cal_dates = pd.date_range(start=pd.to_datetime(start_date_cal) + pd.DateOffset(days=1), periods=len(predict_cal))
-predict_eva_dates = pd.date_range(start=pd.to_datetime(start_date_eva) + pd.DateOffset(days=1), periods=len(predict_eva))
+    file_results_cal = {'file_num': file_num}
+    file_results_eva = {'file_num': file_num}
+    for benchmark in benchmark_list:
+        file_results_cal.update({
+            f'RF_{benchmark}_cal': BMK(basin_target_cal, basin_predict_cal, benchmark)
+        })
+        file_results_eva.update({
+            f'RF_{benchmark}_eva': BMK(basin_target_eva, basin_predict_eva, benchmark)
+        })
+    results_cal.append(file_results_cal)
+    results_eva.append(file_results_eva)
 
-date_row_cal = list(['Date'] + [str(date.date()) for date in predict_cal_dates])
-date_row_eva = list(['Date'] + [str(date.date()) for date in predict_eva_dates])
+    predict_cal_dfs[file_num] = pd.DataFrame({'Date': cal_info['dates'], 'Prediction': basin_predict_cal})
+    predict_eva_dfs[file_num] = pd.DataFrame({'Date': eva_info['dates'], 'Prediction': basin_predict_eva})
 
-predict_cal_df = pd.DataFrame([date_row_cal])
-predict_eva_df = pd.DataFrame([date_row_eva])
+    df_current_basin = load_data(file_num)
+    df_cal_current = df_current_basin[start_date_cal:end_date_cal].copy()
+    
+    for syn_precip_col in syn_precip_cols:
+        # MODIFICATION: Define evaluation end date based on synthetic scenario
+        if syn_precip_col.startswith('syn_peak'):
+            end_date_eva_syn = '2001-02-10'
+        else:
+            end_date_eva_syn = end_date_eva # Use original end date
 
-predict_cal_df.to_csv(output_dir + f"/predict/RF_predict_cal.csv", mode='w', index=False, header=False)
-predict_eva_df.to_csv(output_dir + f"/predict/RF_predict_eva.csv", mode='w', index=False, header=False)
+        # Use the conditionally set end date to slice the evaluation data
+        df_eva_current = df_current_basin[start_date_eva:end_date_eva_syn].copy()
 
-with open(output_dir + f"/predict/RF_predict_cal.csv", 'a') as file:
-    pd.DataFrame([file_row_cal]).to_csv(file, header=False, index=False)
-with open(output_dir + f"/predict/RF_predict_eva.csv", 'a') as file:
-    pd.DataFrame([file_row_eva]).to_csv(file, header=False, index=False)
+        if syn_precip_col == 'syn_no_precip' or syn_precip_col == 'syn_p_pet':
+            syn_temp_col = 'Temp'
+            syn_pet_col = 'PET'
+        else:
+            syn_temp_col = 'syn_Temp'
+            syn_pet_col = 'syn_PET'
 
-file_results_cal = {'file_num': file_num}
-file_results_eva = {'file_num': file_num}
+        syn_input_cal_dyn = np.hstack([
+            df_cal_current[syn_precip_col].values.reshape(-1, 1),
+            df_cal_current[syn_temp_col].values.reshape(-1, 1),
+            df_cal_current[syn_pet_col].values.reshape(-1, 1)
+        ])
+        syn_input_eva_dyn = np.hstack([
+            df_eva_current[syn_precip_col].values.reshape(-1, 1),
+            df_eva_current[syn_temp_col].values.reshape(-1, 1),
+            df_eva_current[syn_pet_col].values.reshape(-1, 1)
+        ])
 
-# Loop over each benchmark and add results to the current file's dictionary
-for benchmark in benchmark_list:
-    file_results_cal.update({
-        f'RF_{benchmark}_cal': BMK(all_target_cal, predict_cal, benchmark)
-    })
-    file_results_eva.update({
-        f'RF_{benchmark}_eva': BMK(all_target_eva, predict_eva, benchmark)
-    })  
+        valid_indices_cal_shifted = ~np.isnan(syn_input_cal_dyn).any(axis=1)
+        valid_indices_eva_shifted = ~np.isnan(syn_input_eva_dyn).any(axis=1)
 
-results_cal.append(file_results_cal)
-results_eva.append(file_results_eva)
+        syn_input_cal_clean = syn_input_cal_dyn[valid_indices_cal_shifted]
+        syn_input_eva_clean = syn_input_eva_dyn[valid_indices_eva_shifted]
 
+        syn_input_cal_normalized = (syn_input_cal_clean - mean_dynamic_features) / std_dynamic_features
+        syn_input_eva_normalized = (syn_input_eva_clean - mean_dynamic_features) / std_dynamic_features
 
-end_time = datetime.now()
-end_time_st = end_time.strftime("%a %b %d %I:%M:%S %p JST %Y")
-log_file.write(f"end: {end_time_st}\n")
-log_file.write(f"elapsed: {end_time - start_time}\n")
+        syn_input_cal_final = load_attribute_values_for_basin(syn_input_cal_normalized, file_num)
+        syn_input_eva_final = load_attribute_values_for_basin(syn_input_eva_normalized, file_num)
 
-log_file.write(f"DONE\n")
-log_file.close()
+        syn_predict_cal = rf.predict(syn_input_cal_final)
+        syn_predict_eva = rf.predict(syn_input_eva_final)
 
+        syn_predict_cal[syn_predict_cal < 0] = 0
+        syn_predict_eva[syn_predict_eva < 0] = 0
+
+        syn_cal_dates_cleaned = pd.date_range(
+            start=pd.to_datetime(start_date_cal) + pd.DateOffset(days=2),
+            periods=len(syn_input_cal_dyn)
+        )[valid_indices_cal_shifted]
+        syn_eva_dates_cleaned = pd.date_range(
+            start=pd.to_datetime(start_date_eva) + pd.DateOffset(days=2),
+            periods=len(syn_input_eva_dyn)
+        )[valid_indices_eva_shifted]
+
+        combined_syn_predictions = np.concatenate((syn_predict_cal, syn_predict_eva))
+        combined_syn_dates = pd.to_datetime(list(syn_cal_dates_cleaned) + list(syn_eva_dates_cleaned))
+
+        temp_syn_df = pd.DataFrame({
+            'Date': combined_syn_dates,
+            f'file_{file_num}_prediction': combined_syn_predictions
+        })
+        temp_syn_df.set_index('Date', inplace=True)
+        syn_predict_dfs_combined[syn_precip_col][file_num] = temp_syn_df
+
+for file_num, df_preds in predict_cal_dfs.items():
+    df_preds.to_csv(f"{output_dir}/predict/RF_predict_cal_basin_{file_num}.csv", index=False, header=True)
+
+for file_num, df_preds in predict_eva_dfs.items():
+    df_preds.to_csv(f"{output_dir}/predict/RF_predict_eva_basin_{file_num}.csv", index=False, header=True)
+
+os.makedirs(output_dir + "/predict/synthetic", exist_ok=True)
+for syn_precip_col, basin_preds_dict in syn_predict_dfs_combined.items():
+    full_syn_date_range = pd.date_range(start=pd.to_datetime(start_date_cal) + pd.DateOffset(days=2),
+                                        end=pd.to_datetime(end_date_eva) + pd.DateOffset(days=1))
+    combined_syn_df = pd.DataFrame(index=full_syn_date_range)
+    combined_syn_df.index.name = 'Date'
+
+    for file_num in file_list:
+        if file_num in basin_preds_dict:
+            col_name = f'file_{file_num}'
+            # BUG FIX: Correctly rename the prediction column for merging
+            combined_syn_df = combined_syn_df.merge(
+                basin_preds_dict[file_num].rename(columns={f'file_{file_num}_prediction': col_name}),
+                left_index=True,
+                right_index=True,
+                how='left'
+            )
+        else:
+            combined_syn_df[f'file_{file_num}'] = np.nan
+            
+    # MODIFICATION: Truncate the final DataFrame for syn_peak scenarios before saving
+    if syn_precip_col.startswith('syn_peak'):
+        end_date_syn_final = '2001-02-10'
+        combined_syn_df = combined_syn_df.loc[:end_date_syn_final]
+
+    combined_syn_df.to_csv(f"{output_dir}/predict/synthetic/RF_syn_predict_{syn_precip_col}.csv", index=True, header=True)
 
 df_results_cal = pd.DataFrame(results_cal)
 df_results_cal.to_csv(output_dir + f'/results/RF_results_cal.csv', index=False, header=True)
@@ -369,5 +447,10 @@ df_results_cal.to_csv(output_dir + f'/results/RF_results_cal.csv', index=False, 
 df_results_eva = pd.DataFrame(results_eva)
 df_results_eva.to_csv(output_dir + f'/results/RF_results_eva.csv', index=False, header=True)
 
+end_time_total = datetime.now()
+end_time_total_st = end_time_total.strftime("%a %b %d %I:%M:%S %p JST %Y")
+log_file.write(f"Regional training end: {end_time_total_st}\n")
+log_file.write(f"Total elapsed: {end_time_total - start_time_total}\n")
+log_file.close()
 
 print("DONE")

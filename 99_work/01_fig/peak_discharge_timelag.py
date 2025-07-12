@@ -15,7 +15,7 @@ comparison_df = pd.read_csv(input_data, header=0, index_col=None)
 # Prepare data for lag plot
 # We need to gather the lag columns into a 'long' format
 lag_cols = {
-    'Original Sim': 'flow_lag_og',
+    'Original': 'flow_lag_peak1_rate0',
     'Peak1_rate10': 'flow_lag_peak1_rate10',
     'Peak3_rate10': 'flow_lag_peak3_rate10',
     'Peak5_rate10': 'flow_lag_peak5_rate10',

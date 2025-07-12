@@ -10,7 +10,8 @@ from datetime import datetime
 
 benchmark_list = ["KGE","NSE","E1", "VE", "d","RMSE","MAE"]
 
-loc, ver = "JP", 2
+#loc, ver = "JP", 2
+loc, ver = "GB", 2
 
 ver_name = "ver1_1" if ver == 1 else "ver2_0"   
 
@@ -20,7 +21,12 @@ if loc == "JP" and ver == 2:
     file_tot_num = 87
     columns_drop = ['grdc_no','river','station','WaterArea','ForestArea','ForestAreaRatio','WaterAreaRatio','lat_org','long_org', 'land_GolfCourse','land_GolfCourse_Ratio']
     attribute_values = pd.read_csv(f'{attribute_dir}/basin_data_limited_met&soil&geology&land_{ver_name}.csv', encoding= 'UTF-8', index_col=0, header=0)
-varssim_dir = f"/data0/funato/2_MERV/{loc}/varssim_nocal/{ver_name}"
+    varssim_dir = f"/data0/funato/2_MERV/{loc}/varssim_nocal/{ver_name}"
+elif loc == "GB" and ver == 2:
+    file_tot_num = 424
+    columns_drop = ['grdc_no','river','station','WaterArea','ForestArea','ForestAreaRatio','WaterAreaRatio','lat_org','long_org', 'land_GolfCourse','land_GolfCourse_Ratio']
+    attribute_values = pd.read_csv(f'{attribute_dir}/basin_data_limited_met&soil&geology&land_{ver_name}.csv', encoding= 'UTF-8', index_col=0, header=0)
+    varssim_dir = f"/data0/funato/hsp/2_MERV/varssim_HBV"
 
 file_list = list(range(1, file_tot_num+1))
 #file_list = list(range(20,30))

@@ -15,7 +15,6 @@ import tqdm
 import os
 
 # Globals
-CAMELS_ROOT = Path('/data0/funato/Camels/basin_dataset_public_v1p2')
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu") # This line checks if GPU is available
 
 @njit
