@@ -48,11 +48,11 @@ file_list = list(range(1, file_tot_num+1))
 #file_list = list(range(20,22)) # Uncomment for quick test
 
 # --- Updated LSTM parameters ---
-epochs = 100 # Number of training epochs
+epochs = 50 # Number of training epochs
 hidden_size = 20 # Number of LSTM cells (lstm_units)
 learning_rate = 1e-3 # Learning rate used to update the weights
-window_size = 365 # Length of the meteorological record provided to the network (timesteps)
-batch_size = 512 # Number of samples in each batch
+window_size = 30 # Length of the meteorological record provided to the network (timesteps)
+batch_size = 32 #512 # Number of samples in each batch
 dropout_rate = 0.1 # Dropout rate of the final fully connected Layer [0.0, 1.0]
 timesteps = window_size # For clarity in the rest of the script
 
