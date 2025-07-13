@@ -1,5 +1,8 @@
 import pandas as pd
 import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.use('Agg') # Use 'Agg' backend for non-interactive plotting
+
 import numpy as np
 import os
 import xgboost as xgb
@@ -260,38 +263,60 @@ predict_cal_aggregated[predict_cal_aggregated < 0] = 0
 predict_eva_aggregated[predict_eva_aggregated < 0] = 0
 
 print("Performing SHAP analysis...")
-X_train_final_df_for_shap = pd.DataFrame(X_train_final, columns=all_feature_names)
+# For XGBoost, it's more efficient to explain a subset if the data is very large
+explain_size = 5000
+if X_train_final.shape[0] > explain_size:
+    explain_indices = np.random.choice(X_train_final.shape[0], explain_size, replace=False)
+    X_explain = X_train_final[explain_indices]
+    X_explain_df = pd.DataFrame(X_explain, columns=all_feature_names)
+else:
+    X_explain_df = pd.DataFrame(X_train_final, columns=all_feature_names)
 
 explainer = shap.Explainer(xgb_model)
-shap_values = explainer(X_train_final_df_for_shap)
+shap_values = explainer(X_explain_df)
 
-shap.summary_plot(shap_values, X_train_final_df_for_shap, plot_type="bar", show=False)
+# --- Save SHAP results for later analysis ---
+print("Saving SHAP objects for later analysis...")
+shap_results_dir = os.path.join(output_dir, "shap_objects")
+os.makedirs(shap_results_dir, exist_ok=True)
+
+# Save the SHAP values (as numpy array)
+np.save(os.path.join(shap_results_dir, "shap_values.npy"), shap_values.values)
+
+# Save the expected value (base value)
+np.save(os.path.join(shap_results_dir, "expected_value.npy"), shap_values.base_values)
+
+# Save the corresponding feature data
+X_explain_df.to_csv(os.path.join(shap_results_dir, "X_sample.csv"))
+
+print("SHAP objects saved.")
+
+
+shap.summary_plot(shap_values, X_explain_df, plot_type="bar", show=False)
 plt.savefig(f"{output_dir_shap}/XGB_shap_regional_summary_bar.png")
 plt.close()
 
-shap.summary_plot(shap_values, X_train_final_df_for_shap, show=False)
+shap.summary_plot(shap_values, X_explain_df, show=False)
 plt.savefig(f"{output_dir_shap}/XGB_shap_regional_summary.png")
 plt.close()
 
 shap_values_array = shap_values.values
 
-for i in range(min(3, X_train_final_df_for_shap.shape[1])):
-    shap.dependence_plot(i, shap_values_array, X_train_final_df_for_shap, show=False)
-    plt.savefig(f"{output_dir_shap}/XGB_shap_regional_dependence_{X_train_final_df_for_shap.columns[i]}.png")
+for i in range(min(3, X_explain_df.shape[1])):
+    shap.dependence_plot(i, shap_values_array, X_explain_df, show=False)
+    plt.savefig(f"{output_dir_shap}/XGB_shap_regional_dependence_{X_explain_df.columns[i]}.png")
     plt.close()
 
-# ... inside your script after shap.dependence_plot ...
 
 print("SHAP analysis complete.")
 print("Saving SHAP force plots...")
 # Ensure the base value is passed as the first parameter and generate the JS visualizer
-for i in range(min(3, X_train_final_df_for_shap.shape[0])):
+for i in range(min(3, X_explain_df.shape[0])):
     # Create the plot object first
     force_plot = shap.force_plot(
         explainer.expected_value,
         shap_values_array[i],
-        X_train_final_df_for_shap.iloc[i]
-        # The 'matplotlib=True' argument is removed here
+        X_explain_df.iloc[i]
     )
     # Now save the plot object to an HTML file
     shap.save_html(
@@ -300,7 +325,6 @@ for i in range(min(3, X_train_final_df_for_shap.shape[0])):
     )
 print("SHAP force plots saved.")
 
-# ... rest of your script ...
 
 print("Saving per-basin predictions, results, and evaluating synthetic data...")
 results_cal = []

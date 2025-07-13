@@ -210,8 +210,90 @@ TCN_model = Model(inputs=model_in, outputs=model_out)
 TCN_model.compile(optimizer='adam', loss='mse')
 
 TCN_model.fit(input_cal_seq, target_cal_seq, epochs=epochs, batch_size=batch_size, validation_split=0.2, callbacks=[early_stopping])
+print("--- Performing SHAP Analysis using KernelExplainer (this may be slow) ---")
+# Use a subset of the training data as background for the explainer
+# KernelExplainer is slow, so we use a very small background set.
+background_size = 50
+if input_cal_seq.shape[0] > background_size:
+    background_indices = np.random.choice(input_cal_seq.shape[0], background_size, replace=False)
+    background = input_cal_seq[background_indices]
+else:
+    background = input_cal_seq
 
-# SHAP analysis would go here if needed
+# Use a small subset of the evaluation data to explain
+explain_size = 10
+if input_eva_seq.shape[0] > explain_size:
+    explain_indices = np.random.choice(input_eva_seq.shape[0], explain_size, replace=False)
+    X_sample = input_eva_seq[explain_indices]
+else:
+    X_sample = input_eva_seq
+
+if X_sample.shape[0] > 0:
+    # We need a function that can take a 2D array and predict, as KernelExplainer works with 2D data.
+    def predict_fn(x):
+        # x has shape (n_samples, n_features)
+        # We need to expand it to (n_samples, timesteps, n_features)
+        x_3d = np.tile(x[:, np.newaxis, :], (1, timesteps, 1))
+        return TCN_model.predict(x_3d, batch_size=batch_size)
+
+    # We summarize the background data by taking the mean over the time axis
+    background_summary = np.mean(background, axis=1)
+    
+    print("Initializing SHAP KernelExplainer (this may be slow)...")
+    explainer = shap.KernelExplainer(predict_fn, background_summary)
+    
+    # We explain the time-series-averaged samples
+    X_sample_summary = np.mean(X_sample, axis=1)
+    
+    print("Calculating SHAP values with KernelExplainer...")
+    shap_values = explainer.shap_values(X_sample_summary)
+    
+    if shap_values.ndim == 3 and shap_values.shape[2] == 1:
+        shap_values = shap_values.squeeze(axis=2)
+    
+    X_sample_df = pd.DataFrame(X_sample_summary, columns=feature_names)
+    
+    # Create the Explanation object for summary plots
+    shap_explanation = shap.Explanation(
+        values=shap_values,
+        base_values=explainer.expected_value,
+        data=X_sample_summary,
+        feature_names=feature_names
+    )
+
+    # --- Save SHAP results for later analysis ---
+    print("Saving SHAP objects for later analysis...")
+    shap_results_dir = os.path.join(output_dir, "shap_objects")
+    os.makedirs(shap_results_dir, exist_ok=True)
+    
+    np.save(os.path.join(shap_results_dir, "shap_values.npy"), shap_explanation.values)
+    np.save(os.path.join(shap_results_dir, "expected_value.npy"), shap_explanation.base_values)
+    pd.DataFrame(shap_explanation.data, columns=shap_explanation.feature_names).to_csv(os.path.join(shap_results_dir, "X_sample.csv"))
+    
+    print("SHAP objects saved.")
+
+    # --- Generate summary plots using the Explanation object ---
+    print("Generating SHAP summary plots...")
+    shap.summary_plot(shap_explanation, show=False)
+    plt.tight_layout()
+    plt.savefig(f"{output_dir_shap}/TCN_shap_summary_beeswarm.png")
+    plt.close()
+
+    shap.summary_plot(shap_explanation, plot_type="bar", show=False)
+    plt.tight_layout()
+    plt.savefig(f"{output_dir_shap}/TCN_shap_summary_bar.png")
+    plt.close()
+    
+    # --- FIX: Generate force plots by passing components explicitly ---
+    print("Generating SHAP force plots...")
+    for i in range(min(5, X_sample_summary.shape[0])):
+        # Pass the base value, the i-th row of shap_values, and the i-th row of features
+        force_plot = shap.force_plot(
+            explainer.expected_value, 
+            shap_values[i,:], 
+            X_sample_df.iloc[i,:]
+        )
+        shap.save_html(f"{output_dir_shap}/TCN_force_plot_sample_{i}.html", force_plot)
 
 print("--- Evaluating Model and Generating Outputs ---")
 results_cal, results_eva = [], []

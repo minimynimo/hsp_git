@@ -1,5 +1,8 @@
 import pandas as pd
 import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.use('Agg') # Use 'Agg' backend for non-interactive plotting
+
 import numpy as np
 import os
 
@@ -101,6 +104,7 @@ def load_attribute_values_for_basin(basin_dynamic_data, file_num):
     return combined_data
 
 def BMK(obs_data, sim_data, benchmark):
+    if len(obs_data) == 0 or len(sim_data) == 0: return np.nan
     if benchmark == "NSE":
         obs_ave = np.mean(obs_data)
         return 1 - (np.sum(np.square(obs_data - sim_data)) / np.sum(np.square(obs_data - obs_ave)))
@@ -123,12 +127,6 @@ def BMK(obs_data, sim_data, benchmark):
     elif benchmark == "E1":
         obs_ave = np.mean(obs_data)
         return 1 - (np.sum(np.abs(obs_data - sim_data)) / np.sum(np.abs(obs_data - obs_ave)))
-    elif benchmark == "Erel":
-        obs_ave = np.mean(obs_data)
-        temp_obs_data = np.where(obs_data == 0, 1e-6, obs_data)
-        numer = np.sum(np.square((temp_obs_data - sim_data) / temp_obs_data))
-        denom = np.sum(np.square((obs_data - obs_ave) / obs_ave))
-        return 1 - numer / denom
     elif benchmark == "VE":
         return 1 - np.sum(np.abs(obs_data - sim_data)) / np.sum(obs_data)
     elif benchmark == "d":
@@ -148,8 +146,6 @@ all_target_eva_raw = []
 
 basin_cal_info = {}
 basin_eva_info = {}
-basin_syn_cal_info = {}
-basin_syn_eva_info = {}
 
 start_time_total = datetime.now()
 start_time_total_st = start_time_total.strftime("%a %b %d %I:%M:%S %p JST %Y")
@@ -175,20 +171,16 @@ for file_idx, file_num in enumerate(file_list):
     input_cal_dynamic_aligned = input_cal_dynamic_shifted_raw[1:]
     target_cal_aligned = df_cal['Obs flow'].values[1:]
 
-    valid_cal_rows = ~np.isnan(input_cal_dynamic_aligned).any(axis=1)
+    valid_cal_rows = ~np.isnan(input_cal_dynamic_aligned).any(axis=1) & ~np.isnan(target_cal_aligned)
     
     input_cal_cleaned_dynamic = input_cal_dynamic_aligned[valid_cal_rows]
     target_cal_cleaned = target_cal_aligned[valid_cal_rows]
 
-    current_cal_start_idx = len(all_input_cal_raw)
-    all_input_cal_raw.append(input_cal_cleaned_dynamic)
-    all_target_cal_raw.append(target_cal_cleaned)
-
-    dates_for_cal = pd.date_range(
-        start=pd.to_datetime(start_date_cal) + pd.DateOffset(days=2),
-        periods=len(input_cal_cleaned_dynamic)
-    )[valid_cal_rows]
-    basin_cal_info[file_num] = {'start_idx': current_cal_start_idx, 'length': len(input_cal_cleaned_dynamic), 'dates': dates_for_cal}
+    current_cal_len = len(input_cal_cleaned_dynamic)
+    if current_cal_len > 0:
+        basin_cal_info[file_num] = {'start_idx': len(np.vstack(all_input_cal_raw)) if all_input_cal_raw else 0, 'length': current_cal_len, 'dates': df_cal.index[1:][valid_cal_rows]}
+        all_input_cal_raw.append(input_cal_cleaned_dynamic)
+        all_target_cal_raw.append(target_cal_cleaned)
 
     input_eva_dynamic_shifted_raw = np.hstack([
         df_eva['Precip'].shift(1).values.reshape(-1, 1),
@@ -199,20 +191,16 @@ for file_idx, file_num in enumerate(file_list):
     input_eva_dynamic_aligned = input_eva_dynamic_shifted_raw[1:]
     target_eva_aligned = df_eva['Obs flow'].values[1:]
 
-    valid_eva_rows = ~np.isnan(input_eva_dynamic_aligned).any(axis=1)
+    valid_eva_rows = ~np.isnan(input_eva_dynamic_aligned).any(axis=1) & ~np.isnan(target_eva_aligned)
 
     input_eva_cleaned_dynamic = input_eva_dynamic_aligned[valid_eva_rows]
     target_eva_cleaned = target_eva_aligned[valid_eva_rows]
-
-    current_eva_start_idx = len(all_input_eva_raw)
-    all_input_eva_raw.append(input_eva_cleaned_dynamic)
-    all_target_eva_raw.append(target_eva_cleaned)
-
-    dates_for_eva = pd.date_range(
-        start=pd.to_datetime(start_date_eva) + pd.DateOffset(days=2),
-        periods=len(input_eva_cleaned_dynamic)
-    )[valid_eva_rows]
-    basin_eva_info[file_num] = {'start_idx': current_eva_start_idx, 'length': len(input_eva_cleaned_dynamic), 'dates': dates_for_eva}
+    
+    current_eva_len = len(input_eva_cleaned_dynamic)
+    if current_eva_len > 0:
+        basin_eva_info[file_num] = {'start_idx': len(np.vstack(all_input_eva_raw)) if all_input_eva_raw else 0, 'length': current_eva_len, 'dates': df_eva.index[1:][valid_eva_rows]}
+        all_input_eva_raw.append(input_eva_cleaned_dynamic)
+        all_target_eva_raw.append(target_eva_cleaned)
 
 all_input_cal_stacked = np.vstack(all_input_cal_raw)
 all_target_cal_stacked = np.hstack(all_target_cal_raw)
@@ -232,19 +220,20 @@ X_eval_final_list = []
 
 print("Combining dynamic and static features for all basins...")
 current_cal_idx = 0
+for file_num in file_list:
+    if file_num in basin_cal_info:
+        cal_len = basin_cal_info[file_num]['length']
+        basin_cal_dynamic = all_input_cal_normalized_dynamic[current_cal_idx : current_cal_idx + cal_len]
+        X_train_final_list.append(load_attribute_values_for_basin(basin_cal_dynamic, file_num))
+        current_cal_idx += cal_len
+
 current_eva_idx = 0
 for file_num in file_list:
-    cal_len = basin_cal_info[file_num]['length']
-    eva_len = basin_eva_info[file_num]['length']
-
-    basin_cal_dynamic = all_input_cal_normalized_dynamic[current_cal_idx : current_cal_idx + cal_len]
-    basin_eva_dynamic = all_input_eva_normalized_dynamic[current_eva_idx : current_eva_idx + eva_len]
-
-    X_train_final_list.append(load_attribute_values_for_basin(basin_cal_dynamic, file_num))
-    X_eval_final_list.append(load_attribute_values_for_basin(basin_eva_dynamic, file_num))
-
-    current_cal_idx += cal_len
-    current_eva_idx += eva_len
+    if file_num in basin_eva_info:
+        eva_len = basin_eva_info[file_num]['length']
+        basin_eva_dynamic = all_input_eva_normalized_dynamic[current_eva_idx : current_eva_idx + eva_len]
+        X_eval_final_list.append(load_attribute_values_for_basin(basin_eva_dynamic, file_num))
+        current_eva_idx += eva_len
 
 X_train_final = np.vstack(X_train_final_list)
 X_eval_final = np.vstack(X_eval_final_list)
@@ -267,42 +256,58 @@ predict_cal_aggregated[predict_cal_aggregated < 0] = 0
 predict_eva_aggregated[predict_eva_aggregated < 0] = 0
 
 print("Performing SHAP analysis...")
-X_train_final_df_for_shap = pd.DataFrame(X_train_final, columns=all_feature_names)
+# For performance, let's explain a subset of the training data
+explain_size = 5000
+if X_train_final.shape[0] > explain_size:
+    explain_indices = np.random.choice(X_train_final.shape[0], explain_size, replace=False)
+    X_explain = X_train_final[explain_indices]
+    X_explain_df = pd.DataFrame(X_explain, columns=all_feature_names)
+else:
+    X_explain_df = pd.DataFrame(X_train_final, columns=all_feature_names)
 
-explainer = shap.Explainer(rf, X_train_final_df_for_shap)
-shap_values = explainer(X_train_final_df_for_shap, check_additivity=False)
+# Use TreeExplainer for Random Forest, which is much faster
+explainer = shap.TreeExplainer(rf)
+shap_values = explainer(X_explain_df)
 
-print("Shape of X_train_final_df_for_shap:", X_train_final_df_for_shap.shape)
-print("Columns of X_train_final_df_for_shap:", X_train_final_df_for_shap.columns)
-print("Model expects features:", rf.n_features_in_)
+# --- Save SHAP results for later analysis ---
+print("Saving SHAP objects for later analysis...")
+shap_results_dir = os.path.join(output_dir, "shap_objects")
+os.makedirs(shap_results_dir, exist_ok=True)
 
-shap.summary_plot(shap_values, X_train_final_df_for_shap, plot_type="bar", show=False)
+# Save the SHAP values (as numpy array)
+np.save(os.path.join(shap_results_dir, "shap_values.npy"), shap_values.values)
+
+# Save the expected value (base value)
+np.save(os.path.join(shap_results_dir, "expected_value.npy"), shap_values.base_values)
+
+# Save the corresponding feature data
+X_explain_df.to_csv(os.path.join(shap_results_dir, "X_features.csv"), index=False)
+
+print("SHAP objects saved.")
+
+shap.summary_plot(shap_values, X_explain_df, plot_type="bar", show=False)
 plt.savefig(f"{output_dir_shap}/RF_shap_regional_summary_bar.png")
 plt.close()
 
-shap.summary_plot(shap_values, X_train_final_df_for_shap, show=False)
+shap.summary_plot(shap_values, X_explain_df, show=False)
 plt.savefig(f"{output_dir_shap}/RF_shap_regional_summary.png")
 plt.close()
 
-if isinstance(shap_values, shap.Explanation):
-    shap_values_array = shap_values.values
-    base_values = explainer.expected_value
-else:
-    shap_values_array = shap_values
-    base_values = explainer.expected_value
+# For dependence plots, we still use the numpy array of shap values
+shap_values_array = shap_values.values
 
-for i in range(min(3, X_train_final_df_for_shap.shape[1])):
-    shap.dependence_plot(i, shap_values_array, X_train_final_df_for_shap, show=False)
-    plt.savefig(f"{output_dir_shap}/RF_shap_regional_dependence_{X_train_final_df_for_shap.columns[i]}.png")
+for i in range(min(3, X_explain_df.shape[1])):
+    shap.dependence_plot(i, shap_values_array, X_explain_df, show=False)
+    plt.savefig(f"{output_dir_shap}/RF_shap_regional_dependence_{X_explain_df.columns[i]}.png")
     plt.close()
 
-for i in range(min(3, X_train_final_df_for_shap.shape[0])):
+for i in range(min(3, X_explain_df.shape[0])):
     shap.save_html(
         f"{output_dir_shap}/force_plot_regional_sample_{i}.html",
         shap.force_plot(
-            base_values,
-            shap_values_array[i],
-            X_train_final_df_for_shap.iloc[i],
+            shap_values.base_values[i],
+            shap_values.values[i],
+            X_explain_df.iloc[i],
             feature_names=all_feature_names
         )
     )
@@ -316,97 +321,83 @@ predict_cal_dfs = {}
 predict_eva_dfs = {}
 syn_predict_dfs_combined = {col: {} for col in syn_precip_cols}
 
+current_cal_idx = 0
+current_eva_idx = 0
 for file_num in file_list:
-    cal_info = basin_cal_info[file_num]
-    basin_predict_cal = predict_cal_aggregated[cal_info['start_idx'] : cal_info['start_idx'] + cal_info['length']]
-    basin_target_cal = all_target_cal_stacked[cal_info['start_idx'] : cal_info['start_idx'] + cal_info['length']]
-    
-    eva_info = basin_eva_info[file_num]
-    basin_predict_eva = predict_eva_aggregated[eva_info['start_idx'] : eva_info['start_idx'] + eva_info['length']]
-    basin_target_eva = all_target_eva_stacked[eva_info['start_idx'] : eva_info['start_idx'] + eva_info['length']]
+    if file_num in basin_cal_info:
+        cal_info = basin_cal_info[file_num]
+        basin_predict_cal = predict_cal_aggregated[current_cal_idx : current_cal_idx + cal_info['length']]
+        basin_target_cal = all_target_cal_stacked[current_cal_idx : current_cal_idx + cal_info['length']]
+        current_cal_idx += cal_info['length']
+        
+        file_results_cal = {'file_num': file_num}
+        for benchmark in benchmark_list:
+            file_results_cal[f'RF_{benchmark}_cal'] = BMK(basin_target_cal, basin_predict_cal, benchmark)
+        results_cal.append(file_results_cal)
+        predict_cal_dfs[file_num] = pd.DataFrame({'Date': cal_info['dates'], 'Prediction': basin_predict_cal})
 
-    file_results_cal = {'file_num': file_num}
-    file_results_eva = {'file_num': file_num}
-    for benchmark in benchmark_list:
-        file_results_cal.update({
-            f'RF_{benchmark}_cal': BMK(basin_target_cal, basin_predict_cal, benchmark)
-        })
-        file_results_eva.update({
-            f'RF_{benchmark}_eva': BMK(basin_target_eva, basin_predict_eva, benchmark)
-        })
-    results_cal.append(file_results_cal)
-    results_eva.append(file_results_eva)
+    if file_num in basin_eva_info:
+        eva_info = basin_eva_info[file_num]
+        basin_predict_eva = predict_eva_aggregated[current_eva_idx : current_eva_idx + eva_info['length']]
+        basin_target_eva = all_target_eva_stacked[current_eva_idx : current_eva_idx + eva_info['length']]
+        current_eva_idx += eva_info['length']
 
-    predict_cal_dfs[file_num] = pd.DataFrame({'Date': cal_info['dates'], 'Prediction': basin_predict_cal})
-    predict_eva_dfs[file_num] = pd.DataFrame({'Date': eva_info['dates'], 'Prediction': basin_predict_eva})
+        file_results_eva = {'file_num': file_num}
+        for benchmark in benchmark_list:
+            file_results_eva[f'RF_{benchmark}_eva'] = BMK(basin_target_eva, basin_predict_eva, benchmark)
+        results_eva.append(file_results_eva)
+        predict_eva_dfs[file_num] = pd.DataFrame({'Date': eva_info['dates'], 'Prediction': basin_predict_eva})
 
+    # --- Synthetic Data Evaluation ---
     df_current_basin = load_data(file_num)
     df_cal_current = df_current_basin[start_date_cal:end_date_cal].copy()
     
     for syn_precip_col in syn_precip_cols:
-        # MODIFICATION: Define evaluation end date based on synthetic scenario
         if syn_precip_col.startswith('syn_peak'):
             end_date_eva_syn = '2001-02-10'
         else:
-            end_date_eva_syn = end_date_eva # Use original end date
+            end_date_eva_syn = end_date_eva
 
-        # Use the conditionally set end date to slice the evaluation data
         df_eva_current = df_current_basin[start_date_eva:end_date_eva_syn].copy()
 
-        if syn_precip_col == 'syn_no_precip' or syn_precip_col == 'syn_p_pet':
-            syn_temp_col = 'Temp'
-            syn_pet_col = 'PET'
+        syn_temp_col = 'syn_Temp' if 'peak' in syn_precip_col else 'Temp'
+        syn_pet_col = 'syn_PET' if 'peak' in syn_precip_col else 'PET'
+
+        syn_input_cal_dyn = np.hstack([df_cal_current[syn_precip_col].shift(1).values.reshape(-1, 1), df_cal_current[syn_temp_col].shift(1).values.reshape(-1, 1), df_cal_current[syn_pet_col].shift(1).values.reshape(-1, 1)])[1:]
+        syn_input_eva_dyn = np.hstack([df_eva_current[syn_precip_col].shift(1).values.reshape(-1, 1), df_eva_current[syn_temp_col].shift(1).values.reshape(-1, 1), df_eva_current[syn_pet_col].shift(1).values.reshape(-1, 1)])[1:]
+        
+        valid_cal = ~np.isnan(syn_input_cal_dyn).any(axis=1)
+        valid_eva = ~np.isnan(syn_input_eva_dyn).any(axis=1)
+
+        syn_input_cal_clean = syn_input_cal_dyn[valid_cal]
+        syn_input_eva_clean = syn_input_eva_dyn[valid_eva]
+
+        if len(syn_input_cal_clean) > 0:
+            syn_input_cal_normalized = (syn_input_cal_clean - mean_dynamic_features) / std_dynamic_features
+            syn_input_cal_final = load_attribute_values_for_basin(syn_input_cal_normalized, file_num)
+            syn_predict_cal = rf.predict(syn_input_cal_final)
+            syn_predict_cal[syn_predict_cal < 0] = 0
+            syn_cal_dates_cleaned = df_cal_current.index[1:][valid_cal]
         else:
-            syn_temp_col = 'syn_Temp'
-            syn_pet_col = 'syn_PET'
+            syn_predict_cal = np.array([])
+            syn_cal_dates_cleaned = pd.to_datetime([])
 
-        syn_input_cal_dyn = np.hstack([
-            df_cal_current[syn_precip_col].values.reshape(-1, 1),
-            df_cal_current[syn_temp_col].values.reshape(-1, 1),
-            df_cal_current[syn_pet_col].values.reshape(-1, 1)
-        ])
-        syn_input_eva_dyn = np.hstack([
-            df_eva_current[syn_precip_col].values.reshape(-1, 1),
-            df_eva_current[syn_temp_col].values.reshape(-1, 1),
-            df_eva_current[syn_pet_col].values.reshape(-1, 1)
-        ])
-
-        valid_indices_cal_shifted = ~np.isnan(syn_input_cal_dyn).any(axis=1)
-        valid_indices_eva_shifted = ~np.isnan(syn_input_eva_dyn).any(axis=1)
-
-        syn_input_cal_clean = syn_input_cal_dyn[valid_indices_cal_shifted]
-        syn_input_eva_clean = syn_input_eva_dyn[valid_indices_eva_shifted]
-
-        syn_input_cal_normalized = (syn_input_cal_clean - mean_dynamic_features) / std_dynamic_features
-        syn_input_eva_normalized = (syn_input_eva_clean - mean_dynamic_features) / std_dynamic_features
-
-        syn_input_cal_final = load_attribute_values_for_basin(syn_input_cal_normalized, file_num)
-        syn_input_eva_final = load_attribute_values_for_basin(syn_input_eva_normalized, file_num)
-
-        syn_predict_cal = rf.predict(syn_input_cal_final)
-        syn_predict_eva = rf.predict(syn_input_eva_final)
-
-        syn_predict_cal[syn_predict_cal < 0] = 0
-        syn_predict_eva[syn_predict_eva < 0] = 0
-
-        syn_cal_dates_cleaned = pd.date_range(
-            start=pd.to_datetime(start_date_cal) + pd.DateOffset(days=2),
-            periods=len(syn_input_cal_dyn)
-        )[valid_indices_cal_shifted]
-        syn_eva_dates_cleaned = pd.date_range(
-            start=pd.to_datetime(start_date_eva) + pd.DateOffset(days=2),
-            periods=len(syn_input_eva_dyn)
-        )[valid_indices_eva_shifted]
+        if len(syn_input_eva_clean) > 0:
+            syn_input_eva_normalized = (syn_input_eva_clean - mean_dynamic_features) / std_dynamic_features
+            syn_input_eva_final = load_attribute_values_for_basin(syn_input_eva_normalized, file_num)
+            syn_predict_eva = rf.predict(syn_input_eva_final)
+            syn_predict_eva[syn_predict_eva < 0] = 0
+            syn_eva_dates_cleaned = df_eva_current.index[1:][valid_eva]
+        else:
+            syn_predict_eva = np.array([])
+            syn_eva_dates_cleaned = pd.to_datetime([])
 
         combined_syn_predictions = np.concatenate((syn_predict_cal, syn_predict_eva))
         combined_syn_dates = pd.to_datetime(list(syn_cal_dates_cleaned) + list(syn_eva_dates_cleaned))
 
-        temp_syn_df = pd.DataFrame({
-            'Date': combined_syn_dates,
-            f'file_{file_num}_prediction': combined_syn_predictions
-        })
-        temp_syn_df.set_index('Date', inplace=True)
-        syn_predict_dfs_combined[syn_precip_col][file_num] = temp_syn_df
+        if len(combined_syn_dates) > 0:
+            temp_syn_df = pd.DataFrame({'Date': combined_syn_dates, f'prediction': combined_syn_predictions}).set_index('Date')
+            syn_predict_dfs_combined.setdefault(syn_precip_col, {})[file_num] = temp_syn_df
 
 for file_num, df_preds in predict_cal_dfs.items():
     df_preds.to_csv(f"{output_dir}/predict/RF_predict_cal_basin_{file_num}.csv", index=False, header=True)
@@ -416,30 +407,25 @@ for file_num, df_preds in predict_eva_dfs.items():
 
 os.makedirs(output_dir + "/predict/synthetic", exist_ok=True)
 for syn_precip_col, basin_preds_dict in syn_predict_dfs_combined.items():
-    full_syn_date_range = pd.date_range(start=pd.to_datetime(start_date_cal) + pd.DateOffset(days=2),
-                                        end=pd.to_datetime(end_date_eva) + pd.DateOffset(days=1))
-    combined_syn_df = pd.DataFrame(index=full_syn_date_range)
-    combined_syn_df.index.name = 'Date'
-
+    if not basin_preds_dict: continue
+    
+    combined_syn_df = pd.DataFrame()
     for file_num in file_list:
         if file_num in basin_preds_dict:
-            col_name = f'file_{file_num}'
-            # BUG FIX: Correctly rename the prediction column for merging
-            combined_syn_df = combined_syn_df.merge(
-                basin_preds_dict[file_num].rename(columns={f'file_{file_num}_prediction': col_name}),
-                left_index=True,
-                right_index=True,
-                how='left'
-            )
-        else:
-            combined_syn_df[f'file_{file_num}'] = np.nan
-            
-    # MODIFICATION: Truncate the final DataFrame for syn_peak scenarios before saving
-    if syn_precip_col.startswith('syn_peak'):
-        end_date_syn_final = '2001-02-10'
-        combined_syn_df = combined_syn_df.loc[:end_date_syn_final]
+            df_preds = basin_preds_dict[file_num]
+            df_preds = df_preds.rename(columns={'prediction': f'file_{file_num}'})
+            if combined_syn_df.empty:
+                combined_syn_df = df_preds
+            else:
+                combined_syn_df = combined_syn_df.join(df_preds, how='outer')
 
-    combined_syn_df.to_csv(f"{output_dir}/predict/synthetic/RF_syn_predict_{syn_precip_col}.csv", index=True, header=True)
+    if not combined_syn_df.empty:
+        if syn_precip_col.startswith('syn_peak'):
+            end_date_syn_final = '2001-02-10'
+            combined_syn_df = combined_syn_df.loc[:end_date_syn_final]
+        
+        combined_syn_df.sort_index(inplace=True)
+        combined_syn_df.to_csv(f"{output_dir}/predict/synthetic/RF_syn_predict_{syn_precip_col}.csv", index=True, header=True)
 
 df_results_cal = pd.DataFrame(results_cal)
 df_results_cal.to_csv(output_dir + f'/results/RF_results_cal.csv', index=False, header=True)
