@@ -52,7 +52,7 @@ epochs = 100 # Number of training epochs
 hidden_size = 20 # Number of LSTM cells (lstm_units)
 learning_rate = 1e-3 # Learning rate used to update the weights
 window_size = 365 # Length of the meteorological record provided to the network (timesteps)
-batch_size = 128 #512 # Number of samples in each batch
+batch_size = 512 # Number of samples in each batch
 dropout_rate = 0.1 # Dropout rate of the final fully connected Layer [0.0, 1.0]
 timesteps = window_size # For clarity in the rest of the script
 
