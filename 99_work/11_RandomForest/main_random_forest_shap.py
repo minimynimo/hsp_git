@@ -50,13 +50,13 @@ n_estimators = 100
 max_samples = 0.5
 min_samples_split = 2
 
-output_dir = f"/data0/funato/hsp/0_out/11_RandomForest/{loc}/shap"
+output_dir = f"/data0/funato/hsp/0_out/RF/{loc}/shap"
 os.makedirs(output_dir, exist_ok=True)
 os.makedirs(output_dir + "/predict", exist_ok=True)
 os.makedirs(output_dir + "/results", exist_ok=True)
 os.makedirs(output_dir + "/predict/synthetic", exist_ok=True) # New directory for synthetic predictions
 
-output_dir_shap = f"0_out/1_fig/shap/11_RandomForest/{loc}"
+output_dir_shap = f"0_out/1_fig/shap/RF/{loc}"
 os.makedirs(output_dir_shap, exist_ok=True)
 
 

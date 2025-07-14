@@ -53,13 +53,13 @@ n_estimators = 500
 learning_rate = 0.1
 max_depth = 4
 
-output_dir = f"/data0/funato/hsp/0_out/12_XGBoost/{loc}/shap/regional"
+output_dir = f"/data0/funato/hsp/0_out/XGB/{loc}/shap/regional"
 os.makedirs(output_dir, exist_ok=True)
-os.makedirs(output_dir + "/predict", exist_ok=True)
+os.makedirs(output_dir + "/predict/og", exist_ok=True)
 os.makedirs(output_dir + "/results", exist_ok=True)
 os.makedirs(output_dir + "/predict/synthetic", exist_ok=True)
 
-output_dir_shap = f"0_out/1_fig/shap/12_XGBoost/{loc}/regional"
+output_dir_shap = f"0_out/1_fig/shap/XGB/{loc}/regional"
 os.makedirs(output_dir_shap, exist_ok=True)
 
 # Clean attribute values and normalize
@@ -347,8 +347,8 @@ for file_num in file_list:
     basin_target_eva = all_target_eva_stacked[current_eva_idx : current_eva_idx + eva_info['length']]
 
     # Save daily predictions
-    pd.DataFrame({'Date': cal_info['dates'], 'Prediction': basin_predict_cal}).to_csv(f"{output_dir}/predict/XGB_predict_cal_basin_{file_num}.csv", index=False)
-    pd.DataFrame({'Date': eva_info['dates'], 'Prediction': basin_predict_eva}).to_csv(f"{output_dir}/predict/XGB_predict_eva_basin_{file_num}.csv", index=False)
+    pd.DataFrame({'Date': cal_info['dates'], 'Prediction': basin_predict_cal}).to_csv(f"{output_dir}/predict/og/XGB_predict_cal_basin_{file_num}.csv", index=False)
+    pd.DataFrame({'Date': eva_info['dates'], 'Prediction': basin_predict_eva}).to_csv(f"{output_dir}/predict/og/XGB_predict_eva_basin_{file_num}.csv", index=False)
 
     # Calculate and store per-basin benchmark results
     file_results_cal = {'file_num': file_num}
@@ -422,7 +422,7 @@ for syn_precip_col, basin_preds_dict in syn_predict_dfs_combined.items():
         combined_syn_df = combined_syn_df.loc[:end_date_syn_final]
     
     combined_syn_df.sort_index(inplace=True)
-    combined_syn_df.to_csv(f"{output_dir}/predict/synthetic/XGB_syn_predict_{syn_precip_col}.csv")
+    combined_syn_df.to_csv(f"{output_dir}/predict/synthetic/XGB_predict_{syn_precip_col.replace("syn_","")}.csv")
 
 df_results_cal = pd.DataFrame(results_cal).set_index('file_num')
 df_results_cal.to_csv(output_dir + f'/results/XGB_results_cal.csv')

@@ -9,7 +9,7 @@ import seaborn as sns # Import seaborn for plotting
 model_name = "HBV"
 if model_name == "HBV":
     input_dir = "/data0/funato/hsp/2_MERV/varssim_HBV"
-    output_dir = "/data0/funato/hsp/0_out/10_HBV/peak_discharge/"
+    output_dir = "/data0/funato/hsp/0_out/HBV/peak_discharge/"
 
 os.makedirs(output_dir, exist_ok=True)
 
@@ -30,7 +30,7 @@ sim_discharge_cols = ['peak1_rate0',
 
 all_comparison_results = [] # List to store yearly results for all files
 
-for file_num in range(1, 2):#file_tot_num + 1):
+for file_num in range(1, file_tot_num + 1):
     # Print progress for every 50 files or the first one
     if file_num % 50 == 0 or file_num == 1:
         print(f"Processing file number: {file_num}")
@@ -59,14 +59,14 @@ for file_num in range(1, 2):#file_tot_num + 1):
     years_in_eval_period = sorted(eval_period_df['Date'].dt.year.unique())
 
     # --- Pre-calculate annual peaks for observed flow and ORIGINAL precipitation (Precip) ---
-    # OBSERVED FLOW peaks are from 'Obs flow' column
+    # OBSERVED FLOW peaks are from 'Obs_flow_at_peak' column
     obs_flow_annual_peaks_df = eval_period_df.loc[
-        eval_period_df.groupby(eval_period_df['Date'].dt.year)['Obs flow'].idxmax()
+        eval_period_df.groupby(eval_period_df['Date'].dt.year)['Obs_flow_at_peak'].idxmax()
     ].copy() # Use .copy() to prevent SettingWithCopyWarning
 
-    # ORIGINAL PRECIPITATION peaks are from 'Precip' column
+    # ORIGINAL PRECIPITATION peaks are from 'syn_peak1_rate0' column
     original_precip_annual_peaks_df = eval_period_df.loc[
-        eval_period_df.groupby(eval_period_df['Date'].dt.year)['Precip'].idxmax()
+        eval_period_df.groupby(eval_period_df['Date'].dt.year)['syn_peak1_rate0'].idxmax()
     ].copy() # Use .copy()
 
     # --- Loop through each year identified in the evaluation period ---
@@ -74,7 +74,7 @@ for file_num in range(1, 2):#file_tot_num + 1):
         # --- Extract Observed Precipitation and Flow Data for the current year ---
         original_precip_peak_year_data = original_precip_annual_peaks_df[original_precip_annual_peaks_df['Date'].dt.year == year]
         if not original_precip_peak_year_data.empty:
-            peak_precip_obs = original_precip_peak_year_data['Precip'].values[0] # Corrected column name: 'Precip'
+            peak_precip_obs = original_precip_peak_year_data['syn_peak1_rate0'].values[0] # Corrected column name: 'syn_peak1_rate0'
             original_precip_peak_date = original_precip_peak_year_data['Date'].values[0]
         else:
             peak_precip_obs = np.nan
@@ -82,7 +82,7 @@ for file_num in range(1, 2):#file_tot_num + 1):
 
         obs_flow_peak_year_data = obs_flow_annual_peaks_df[obs_flow_annual_peaks_df['Date'].dt.year == year]
         if not obs_flow_peak_year_data.empty:
-            obs_flow_peak = obs_flow_peak_year_data['Obs flow'].values[0] # Corrected column name: 'Obs flow'
+            obs_flow_peak = obs_flow_peak_year_data['Obs_flow_at_peak'].values[0] # Corrected column name: 'Obs_flow_at_peak'
             obs_flow_peak_date = obs_flow_peak_year_data['Date'].values[0]
         else:
             obs_flow_peak = np.nan

@@ -31,7 +31,6 @@ syn_precip_cols = ['syn_no_precip', 'syn_p_pet', 'syn_peak1_rate0',
                    'syn_peak1_rate10', 'syn_peak1_rate30', 'syn_peak1_rate50',
                    'syn_peak3_rate10', 'syn_peak3_rate30', 'syn_peak3_rate50',
                    'syn_peak5_rate10', 'syn_peak5_rate30', 'syn_peak5_rate50']
-syn_precip_cols = ['syn_no_precip', 'syn_p_pet', 'syn_peak1_rate0']
 
 if loc == "JP" and ver == 2:
     file_tot_num = 87
@@ -45,13 +44,12 @@ elif loc == "GB" and ver == 2:
     varssim_dir = f"/data0/funato/hsp/2_MERV/varssim_HBV"
 
 file_list = list(range(1, file_tot_num+1))
-#file_list = list(range(20,22)) # Uncomment for quick test
 
 # --- Updated LSTM parameters ---
 epochs = 50 # Number of training epochs
 hidden_size = 20 # Number of LSTM cells (lstm_units)
 learning_rate = 1e-3 # Learning rate used to update the weights
-window_size = 30 # Length of the meteorological record provided to the network (timesteps)
+window_size = 120 # Length of the meteorological record provided to the network (timesteps)
 batch_size = 32 #512 # Number of samples in each batch
 dropout_rate = 0.1 # Dropout rate of the final fully connected Layer [0.0, 1.0]
 timesteps = window_size # For clarity in the rest of the script
@@ -361,21 +359,22 @@ for file_num in file_list:
         df_cal_syn = df_current_basin[start_date_cal:end_date_cal].copy()
         df_eva_syn = df_current_basin[start_date_eva:end_date_eva_syn].copy()
         
-        syn_temp_col = 'syn_Temp' if 'peak' in syn_precip_col else 'Temp'
-        syn_pet_col = 'syn_PET' if 'peak' in syn_precip_col else 'PET'
+        syn_temp_col = 'Temp_at_peak' if 'peak' in syn_precip_col else 'Temp'
+        syn_pet_col = 'PET_at_peak' if 'peak' in syn_precip_col else 'PET'
+        syn_obs_flow_col = 'Obs flow_at_peak' if 'peak' in syn_precip_col else 'Obs flow'
         syn_dyn_cols = [syn_precip_col, syn_temp_col, syn_pet_col]
         
         input_cal_dyn_syn = df_cal_syn[syn_dyn_cols].values
-        mask_cal_syn = ~np.isnan(input_cal_dyn_syn).any(axis=1) & ~np.isnan(df_cal_syn['Obs flow'].values)
+        mask_cal_syn = ~np.isnan(input_cal_dyn_syn).any(axis=1) & ~np.isnan(df_cal_syn[syn_obs_flow_col].values)
         static_array_cal_syn = np.tile(static_features_for_basin.values, (np.sum(mask_cal_syn), 1))
         input_cal_full_syn = np.hstack([input_cal_dyn_syn[mask_cal_syn], static_array_cal_syn])
-        target_cal_syn = df_cal_syn['Obs flow'].values[mask_cal_syn]
+        target_cal_syn = df_cal_syn[syn_obs_flow_col].values[mask_cal_syn]
         
         input_eva_dyn_syn = df_eva_syn[syn_dyn_cols].values
-        mask_eva_syn = ~np.isnan(input_eva_dyn_syn).any(axis=1) & ~np.isnan(df_eva_syn['Obs flow'].values)
+        mask_eva_syn = ~np.isnan(input_eva_dyn_syn).any(axis=1) & ~np.isnan(df_eva_syn[syn_obs_flow_col].values)
         static_array_eva_syn = np.tile(static_features_for_basin.values, (np.sum(mask_eva_syn), 1))
         input_eva_full_syn = np.hstack([input_eva_dyn_syn[mask_eva_syn], static_array_eva_syn])
-        target_eva_syn = df_eva_syn['Obs flow'].values[mask_eva_syn]
+        target_eva_syn = df_eva_syn[syn_obs_flow_col].values[mask_eva_syn]
 
         input_full_syn = np.vstack([input_cal_full_syn, input_eva_full_syn])
         target_full_syn = np.hstack([target_cal_syn, target_eva_syn])

@@ -44,7 +44,6 @@ elif loc == "GB" and ver == 2:
     varssim_dir = f"/data0/funato/hsp/2_MERV/varssim_HBV"
 
 file_list = list(range(1, file_tot_num+1))
-#file_list = list(range(20,22)) # Uncomment for quick test
 
 # TCN parameters
 timesteps = 365
@@ -59,14 +58,14 @@ end_date_cal = '2000-12-31'
 start_date_eva = '2001-01-01'
 end_date_eva = '2006-12-31'
 
-output_dir = f"/data0/funato/hsp/0_out/13_TCN/{loc}/shap/regional"
+output_dir = f"/data0/funato/hsp/0_out/TCN/{loc}/shap/regional"
 os.makedirs(output_dir, exist_ok=True)
-os.makedirs(output_dir + "/predict", exist_ok=True)
+os.makedirs(output_dir + "/predict/og", exist_ok=True)
 os.makedirs(output_dir + "/results", exist_ok=True)
 os.makedirs(output_dir + "/hydrographs", exist_ok=True)
 os.makedirs(output_dir + "/predict/synthetic", exist_ok=True)
 
-output_dir_shap = f"0_out/1_fig/shap/13_TCN/{loc}/regional"
+output_dir_shap = f"0_out/1_fig/shap/TCN/{loc}/regional"
 os.makedirs(output_dir_shap, exist_ok=True)
 
 
@@ -326,13 +325,13 @@ for file_num in file_list:
         'Date': dates_predict_cal,
         'Observed': target_cal_seq_basin,
         'Predicted': predict_cal_basin
-    }).to_csv(f"{output_dir}/predict/TCN_predict_cal_basin_{file_num}.csv", index=False)
+    }).to_csv(f"{output_dir}/predict/og/TCN_predict_cal_basin_{file_num}.csv", index=False)
 
     pd.DataFrame({
         'Date': dates_predict_eva,
         'Observed': target_eva_seq_basin,
         'Predicted': predict_eva_basin
-    }).to_csv(f"{output_dir}/predict/TCN_predict_eva_basin_{file_num}.csv", index=False)
+    }).to_csv(f"{output_dir}/predict/og/TCN_predict_eva_basin_{file_num}.csv", index=False)
     
     # Calculate and store benchmark results
     file_results_cal = {'file_num': file_num}
@@ -418,7 +417,7 @@ for syn_precip_col, basin_preds_dict in syn_predict_dfs_combined.items():
         combined_syn_df = combined_syn_df.loc[:end_date_syn_final]
     
     combined_syn_df.sort_index(inplace=True)
-    combined_syn_df.to_csv(f"{output_dir}/predict/synthetic/TCN_syn_predict_{syn_precip_col}.csv")
+    combined_syn_df.to_csv(f"{output_dir}/predict/synthetic/TCN_predict_{syn_precip_col.replace("syn_","")}.csv")
 
 log_file.write("DONE\n")
 log_file.close()

@@ -39,7 +39,7 @@ end_date_eva = '2006-12-31'
 n_estimators = 500
 learning_rate = 0.1
 
-output_dir = f"/data0/funato/hsp/0_out/12_XGBoost/{loc}"
+output_dir = f"/data0/funato/hsp/0_out/XGB/{loc}"
 os.makedirs(output_dir, exist_ok=True)
 os.makedirs(output_dir + "/predict", exist_ok=True)
 os.makedirs(output_dir + "/results", exist_ok=True)

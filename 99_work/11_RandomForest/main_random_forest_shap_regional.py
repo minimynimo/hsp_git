@@ -39,7 +39,6 @@ elif loc == "GB" and ver == 2:
     varssim_dir = f"/data0/funato/hsp/2_MERV/varssim_HBV"
 
 file_list = list(range(1, file_tot_num + 1))
-# file_list = list(range(20,21)) # Uncomment for quick test with one file
 
 start_date_cal = '1993-01-01'
 end_date_cal = '2000-12-31'
@@ -52,13 +51,13 @@ n_estimators = 100
 max_samples = 0.5
 min_samples_split = 2
 
-output_dir = f"/data0/funato/hsp/0_out/11_RandomForest/{loc}/shap/regional"
+output_dir = f"/data0/funato/hsp/0_out/RF/{loc}/shap/regional"
 os.makedirs(output_dir, exist_ok=True)
-os.makedirs(output_dir + "/predict", exist_ok=True)
+os.makedirs(output_dir + "/predict/og", exist_ok=True)
 os.makedirs(output_dir + "/results", exist_ok=True)
 os.makedirs(output_dir + "/predict/synthetic", exist_ok=True)
 
-output_dir_shap = f"0_out/1_fig/shap/11_RandomForest/regional"
+output_dir_shap = f"0_out/1_fig/shap/RF/regional"
 os.makedirs(output_dir_shap, exist_ok=True)
 
 # Clean attribute values and normalize (global normalization for static attributes)
@@ -360,8 +359,8 @@ for file_num in file_list:
 
         df_eva_current = df_current_basin[start_date_eva:end_date_eva_syn].copy()
 
-        syn_temp_col = 'syn_Temp' if 'peak' in syn_precip_col else 'Temp'
-        syn_pet_col = 'syn_PET' if 'peak' in syn_precip_col else 'PET'
+        syn_temp_col = 'Temp_at_peak' if 'peak' in syn_precip_col else 'Temp'
+        syn_pet_col = 'PET_at_peak' if 'peak' in syn_precip_col else 'PET'
 
         syn_input_cal_dyn = np.hstack([df_cal_current[syn_precip_col].shift(1).values.reshape(-1, 1), df_cal_current[syn_temp_col].shift(1).values.reshape(-1, 1), df_cal_current[syn_pet_col].shift(1).values.reshape(-1, 1)])[1:]
         syn_input_eva_dyn = np.hstack([df_eva_current[syn_precip_col].shift(1).values.reshape(-1, 1), df_eva_current[syn_temp_col].shift(1).values.reshape(-1, 1), df_eva_current[syn_pet_col].shift(1).values.reshape(-1, 1)])[1:]
@@ -400,10 +399,10 @@ for file_num in file_list:
             syn_predict_dfs_combined.setdefault(syn_precip_col, {})[file_num] = temp_syn_df
 
 for file_num, df_preds in predict_cal_dfs.items():
-    df_preds.to_csv(f"{output_dir}/predict/RF_predict_cal_basin_{file_num}.csv", index=False, header=True)
+    df_preds.to_csv(f"{output_dir}/predict/og/RF_predict_cal_basin_{file_num}.csv", index=False, header=True)
 
 for file_num, df_preds in predict_eva_dfs.items():
-    df_preds.to_csv(f"{output_dir}/predict/RF_predict_eva_basin_{file_num}.csv", index=False, header=True)
+    df_preds.to_csv(f"{output_dir}/predict/og/RF_predict_eva_basin_{file_num}.csv", index=False, header=True)
 
 os.makedirs(output_dir + "/predict/synthetic", exist_ok=True)
 for syn_precip_col, basin_preds_dict in syn_predict_dfs_combined.items():
@@ -425,7 +424,7 @@ for syn_precip_col, basin_preds_dict in syn_predict_dfs_combined.items():
             combined_syn_df = combined_syn_df.loc[:end_date_syn_final]
         
         combined_syn_df.sort_index(inplace=True)
-        combined_syn_df.to_csv(f"{output_dir}/predict/synthetic/RF_syn_predict_{syn_precip_col}.csv", index=True, header=True)
+        combined_syn_df.to_csv(f"{output_dir}/predict/synthetic/RF_predict_{syn_precip_col.replace("syn_", "")}.csv", index=True, header=True)
 
 df_results_cal = pd.DataFrame(results_cal)
 df_results_cal.to_csv(output_dir + f'/results/RF_results_cal.csv', index=False, header=True)

@@ -29,7 +29,7 @@ end_date_cal = '2000-12-31'
 start_date_eva = '2001-01-01'
 end_date_eva = '2006-12-31'
 
-output_dir = f"/data0/funato/hsp/0_out/12_XGBoost/{loc}/hyperparam"
+output_dir = f"/data0/funato/hsp/0_out/XGB/{loc}/hyperparam"
 os.makedirs(output_dir, exist_ok=True)
 os.makedirs(output_dir + "/predict", exist_ok=True)
 os.makedirs(output_dir + "/results", exist_ok=True)

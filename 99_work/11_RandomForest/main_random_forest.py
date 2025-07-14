@@ -43,7 +43,7 @@ n_estimators = 100
 max_samples = 0.5
 min_samples_split = 2
 
-output_dir = f"/data0/funato/hsp/0_out/11_RandomForest/{loc}"
+output_dir = f"/data0/funato/hsp/0_out/RF/{loc}"
 os.makedirs(output_dir, exist_ok=True)
 os.makedirs(output_dir + "/predict", exist_ok=True)
 os.makedirs(output_dir + "/results", exist_ok=True)
