@@ -68,14 +68,14 @@ start_date_eva = '2001-01-01'
 end_date_eva = '2006-12-31'
 
 # --- Updated output directories for LSTM ---
-output_dir = f"/data0/funato/hsp/0_out/14_LSTM/{loc}/shap/regional"
+output_dir = f"/data0/funato/hsp/0_out/LSTM/{loc}/shap/regional"
 os.makedirs(output_dir, exist_ok=True)
-os.makedirs(output_dir + "/predict", exist_ok=True)
+os.makedirs(output_dir + "/predict/og", exist_ok=True)
 os.makedirs(output_dir + "/results", exist_ok=True)
 os.makedirs(output_dir + "/hydrographs", exist_ok=True)
 os.makedirs(output_dir + "/predict/synthetic", exist_ok=True)
 
-output_dir_shap = f"0_out/1_fig/shap/14_LSTM/{loc}/regional"
+output_dir_shap = f"0_out/1_fig/shap/LSTM/{loc}/regional"
 os.makedirs(output_dir_shap, exist_ok=True)
 
 
@@ -338,11 +338,11 @@ for file_num in file_list:
     
     pd.DataFrame({
         'Date': dates_predict_cal, 'Observed': target_cal_seq_basin, 'Predicted': predict_cal_basin
-    }).to_csv(f"{output_dir}/predict/LSTM_predict_cal_basin_{file_num}.csv", index=False)
+    }).to_csv(f"{output_dir}/predict/og/LSTM_predict_cal_basin_{file_num}.csv", index=False)
 
     pd.DataFrame({
         'Date': dates_predict_eva, 'Observed': target_eva_seq_basin, 'Predicted': predict_eva_basin
-    }).to_csv(f"{output_dir}/predict/LSTM_predict_eva_basin_{file_num}.csv", index=False)
+    }).to_csv(f"{output_dir}/predict/og/LSTM_predict_eva_basin_{file_num}.csv", index=False)
     
     file_results_cal = {'file_num': file_num}
     file_results_eva = {'file_num': file_num}
