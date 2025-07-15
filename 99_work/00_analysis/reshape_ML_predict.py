@@ -4,6 +4,7 @@ import numpy as np
 import os   
 
 model_list = ["XGB"] #["RF", "XGB", "TCN", "LSTM"]
+model_list = ["RF"]
 
 file_tot_num = 424
 
@@ -40,14 +41,22 @@ for model_name in model_list:
         for sim_col in pred_discharge_cols:
             print(f"Processing synthetic column: {sim_col}")
             if sim_col == 'og':
-                input_file = f"/data0/funato/hsp/0_out/{model_name}/GB/shap/regional/predict/og/{model_name}_predict_cal_basin_{file_num}.csv"
+                input_file_cal = f"/data0/funato/hsp/0_out/{model_name}/GB/shap/regional/predict/og/{model_name}_predict_cal_basin_{file_num}.csv"
+                input_file_eva = f"/data0/funato/hsp/0_out/{model_name}/GB/shap/regional/predict/og/{model_name}_predict_eva_basin_{file_num}.csv"
+                input_df_cal = pd.read_csv(input_file_cal, parse_dates=['Date'])
+                input_df_cal.set_index('Date', inplace=True)
+                input_df_cal.sort_index(inplace=True)
+                input_df_eva = pd.read_csv(input_file_eva, parse_dates=['Date'])
+                input_df_eva.set_index('Date', inplace=True)
+                input_df_eva.sort_index(inplace=True)   
+                input_df = pd.concat([input_df_cal, input_df_eva], axis=1)
                 col_name = "Prediction"
             else:
                 input_file = f"{input_dir}/{model_name}_predict_{sim_col}.csv"
                 col_name = f"file_{file_num}"
-            input_df = pd.read_csv(input_file, parse_dates=['Date'])
-            input_df.set_index('Date', inplace=True)
-            input_df.sort_index(inplace=True)
+                input_df = pd.read_csv(input_file, parse_dates=['Date'])
+                input_df.set_index('Date', inplace=True)
+                input_df.sort_index(inplace=True)
 
             # Ensure the index matches the base_df
             input_df = input_df.reindex(base_df.index)

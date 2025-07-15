@@ -373,38 +373,25 @@ for file_num in file_list:
         else:
             end_date_eva_syn = end_date_eva
 
-        df_eva_current = df_current_basin[start_date_eva:end_date_eva_syn].copy()
+        df_current = df_current_basin[start_date_cal:end_date_eva_syn].copy()
         
-        syn_temp_col = 'syn_Temp' if syn_precip_col not in ['syn_no_precip', 'syn_p_pet'] else 'Temp'
-        syn_pet_col = 'syn_PET' if syn_precip_col not in ['syn_no_precip', 'syn_p_pet'] else 'PET'
+        syn_temp_col = 'Temp_at_peak' if syn_precip_col not in ['syn_no_precip', 'syn_p_pet'] else 'Temp'
+        syn_pet_col = 'PET_at_peak' if syn_precip_col not in ['syn_no_precip', 'syn_p_pet'] else 'PET'
 
-        syn_input_cal_dyn = np.hstack([df_cal_current[syn_precip_col].shift(1).values.reshape(-1, 1), df_cal_current[syn_temp_col].shift(1).values.reshape(-1, 1), df_cal_current[syn_pet_col].shift(1).values.reshape(-1, 1)])[1:]
-        syn_input_eva_dyn = np.hstack([df_eva_current[syn_precip_col].shift(1).values.reshape(-1, 1), df_eva_current[syn_temp_col].shift(1).values.reshape(-1, 1), df_eva_current[syn_pet_col].shift(1).values.reshape(-1, 1)])[1:]
+        syn_input_dyn = np.hstack([df_current[syn_precip_col].shift(1).values.reshape(-1, 1), df_current[syn_temp_col].shift(1).values.reshape(-1, 1), df_current[syn_pet_col].shift(1).values.reshape(-1, 1)])[1:]
         
-        valid_cal = ~np.isnan(syn_input_cal_dyn).any(axis=1)
-        valid_eva = ~np.isnan(syn_input_eva_dyn).any(axis=1)
+        valid = ~np.isnan(syn_input_dyn).any(axis=1)
+        syn_input_clean = syn_input_dyn[valid]
+        syn_dates = df_current.index[1:][valid]
 
-        syn_input_cal_clean = syn_input_cal_dyn[valid_cal]
-        syn_input_eva_clean = syn_input_eva_dyn[valid_eva]
-        
-        syn_cal_dates = df_cal_current.index[1:][valid_cal]
-        syn_eva_dates = df_eva_current.index[1:][valid_eva]
+        syn_input_norm = (syn_input_clean - mean_dynamic_features) / std_dynamic_features
 
-        syn_input_cal_norm = (syn_input_cal_clean - mean_dynamic_features) / std_dynamic_features
-        syn_input_eva_norm = (syn_input_eva_clean - mean_dynamic_features) / std_dynamic_features
+        syn_input_final = load_attribute_values_for_basin(syn_input_norm, file_num)
 
-        syn_input_cal_final = load_attribute_values_for_basin(syn_input_cal_norm, file_num)
-        syn_input_eva_final = load_attribute_values_for_basin(syn_input_eva_norm, file_num)
+        syn_predict = xgb_model.predict(syn_input_final)
+        syn_predict[syn_predict < 0] = 0
 
-        syn_predict_cal = xgb_model.predict(syn_input_cal_final)
-        syn_predict_eva = xgb_model.predict(syn_input_eva_final)
-        syn_predict_cal[syn_predict_cal < 0] = 0
-        syn_predict_eva[syn_predict_eva < 0] = 0
-
-        combined_preds = np.concatenate((syn_predict_cal, syn_predict_eva))
-        combined_dates = pd.to_datetime(list(syn_cal_dates) + list(syn_eva_dates))
-
-        temp_syn_df = pd.DataFrame({'Date': combined_dates, f'prediction': combined_preds}).set_index('Date')
+        temp_syn_df = pd.DataFrame({'Date': syn_dates, 'prediction': syn_predict})
         syn_predict_dfs_combined[syn_precip_col][file_num] = temp_syn_df
 
 # --- Final Save Operations ---
@@ -412,17 +399,17 @@ for syn_precip_col, basin_preds_dict in syn_predict_dfs_combined.items():
     combined_syn_df = pd.DataFrame()
     for file_num, df_preds in basin_preds_dict.items():
         df_preds = df_preds.rename(columns={'prediction': f'file_{file_num}'})
+        df_preds = df_preds.set_index('Date')
         if combined_syn_df.empty:
             combined_syn_df = df_preds
         else:
             combined_syn_df = combined_syn_df.join(df_preds, how='outer')
-
     if syn_precip_col.startswith('syn_peak'):
         end_date_syn_final = '2001-02-10'
         combined_syn_df = combined_syn_df.loc[:end_date_syn_final]
     
     combined_syn_df.sort_index(inplace=True)
-    combined_syn_df.to_csv(f"{output_dir}/predict/synthetic/XGB_predict_{syn_precip_col.replace("syn_","")}.csv")
+    combined_syn_df.to_csv(f"{output_dir}/predict/synthetic/XGB_predict_{syn_precip_col.replace('syn_','')}.csv")
 
 df_results_cal = pd.DataFrame(results_cal).set_index('file_num')
 df_results_cal.to_csv(output_dir + f'/results/XGB_results_cal.csv')

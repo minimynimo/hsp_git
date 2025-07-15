@@ -46,12 +46,12 @@ elif loc == "GB" and ver == 2:
 file_list = list(range(1, file_tot_num+1))
 
 # TCN parameters
-timesteps = 365
+timesteps = 25
 epochs = 50
 batch_size = 64
 nb_filters = 128
 kernel_size = 4
-nb_stacks = 1
+nb_stacks = 3
 
 start_date_cal = '1993-01-01'
 end_date_cal = '2000-12-31'
@@ -354,39 +354,28 @@ for file_num in file_list:
         else:
             end_date_eva_syn = end_date_eva
 
-        df_cal_syn = df_current_basin[start_date_cal:end_date_cal].copy()
-        df_eva_syn = df_current_basin[start_date_eva:end_date_eva_syn].copy()
+        df_syn = df_current_basin[start_date_cal:end_date_eva_syn].copy()
         
-        syn_temp_col = 'syn_Temp' if 'peak' in syn_precip_col else 'Temp'
-        syn_pet_col = 'syn_PET' if 'peak' in syn_precip_col else 'PET'
+        syn_temp_col = 'Temp_at_peak' if 'peak' in syn_precip_col else 'Temp'
+        syn_pet_col = 'PET_at_peak' if 'peak' in syn_precip_col else 'PET'
         syn_dyn_cols = [syn_precip_col, syn_temp_col, syn_pet_col]
         
-        input_cal_dyn_syn = df_cal_syn[syn_dyn_cols].values
-        mask_cal_syn = ~np.isnan(input_cal_dyn_syn).any(axis=1) & ~np.isnan(df_cal_syn['Obs flow'].values)
-        static_array_cal_syn = np.tile(static_features_for_basin.values, (np.sum(mask_cal_syn), 1))
-        input_cal_full_syn = np.hstack([input_cal_dyn_syn[mask_cal_syn], static_array_cal_syn])
-        target_cal_syn = df_cal_syn['Obs flow'].values[mask_cal_syn]
+        input_dyn_syn = df_syn[syn_dyn_cols].values
+        mask_syn = ~np.isnan(input_dyn_syn).any(axis=1) & ~np.isnan(df_syn['Obs_flow_at_peak'].values)
+        static_array_syn = np.tile(static_features_for_basin.values, (np.sum(mask_syn), 1))
+        input_syn = np.hstack([input_dyn_syn[mask_syn], static_array_syn])
+        target_syn = df_syn['Obs_flow_at_peak'].values[mask_syn]
         
-        input_eva_dyn_syn = df_eva_syn[syn_dyn_cols].values
-        mask_eva_syn = ~np.isnan(input_eva_dyn_syn).any(axis=1) & ~np.isnan(df_eva_syn['Obs flow'].values)
-        static_array_eva_syn = np.tile(static_features_for_basin.values, (np.sum(mask_eva_syn), 1))
-        input_eva_full_syn = np.hstack([input_eva_dyn_syn[mask_eva_syn], static_array_eva_syn])
-        target_eva_syn = df_eva_syn['Obs flow'].values[mask_eva_syn]
-
-        input_full_syn = np.vstack([input_cal_full_syn, input_eva_full_syn])
-        target_full_syn = np.hstack([target_cal_syn, target_eva_syn])
-        input_full_syn[:, :3] = (input_full_syn[:, :3] - mean_dyn) / std_dyn
+        input_syn[:, :3] = (input_syn[:, :3] - mean_dyn) / std_dyn
         
-        input_seq_syn, _ = create_sequences(input_full_syn, target_full_syn, timesteps)
+        input_seq_syn, _ = create_sequences(input_syn, target_syn, timesteps)
         
         if input_seq_syn.shape[0] > 0:
             predict_syn = TCN_model.predict(input_seq_syn, batch_size=batch_size).flatten()
             predict_syn[predict_syn < 0] = 0
             
-            dates_cal_syn_orig = df_cal_syn.index[mask_cal_syn]
-            dates_eva_syn_orig = df_eva_syn.index[mask_eva_syn]
-            dates_full_syn = np.hstack([dates_cal_syn_orig, dates_eva_syn_orig])
-            dates_predict_syn = dates_full_syn[timesteps:]
+            dates_syn = df_syn.index[mask_syn]
+            dates_predict_syn = dates_syn[timesteps:]
             
             temp_syn_df = pd.DataFrame({'Date': dates_predict_syn, 'prediction': predict_syn}).set_index('Date')
             syn_predict_dfs_combined[syn_precip_col][file_num] = temp_syn_df
@@ -417,7 +406,7 @@ for syn_precip_col, basin_preds_dict in syn_predict_dfs_combined.items():
         combined_syn_df = combined_syn_df.loc[:end_date_syn_final]
     
     combined_syn_df.sort_index(inplace=True)
-    combined_syn_df.to_csv(f"{output_dir}/predict/synthetic/TCN_predict_{syn_precip_col.replace("syn_","")}.csv")
+    combined_syn_df.to_csv(f"{output_dir}/predict/synthetic/TCN_predict_{syn_precip_col.replace('syn_','')}.csv")
 
 log_file.write("DONE\n")
 log_file.close()
