@@ -1,11 +1,22 @@
 import os
-# Force CPU usage to avoid GPU memory issues with large dataset
-os.environ["CUDA_VISIBLE_DEVICES"] = ""
-os.environ["TF_XLA_FLAGS"] = "--tf_xla_enable_xla_devices=false"
+# Configure GPU usage - will use GPU if available, fall back to CPU if not
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # 0 = all messages, 3 = only errors
 
 import tensorflow as tf
-print("Forced CPU-only mode for large dataset processing.")
+
+# Check for GPU availability and configure memory growth to prevent memory issues
+gpus = tf.config.experimental.list_physical_devices('GPU')
+if gpus:
+    try:
+        # Enable memory growth for all GPUs to prevent memory allocation issues
+        for gpu in gpus:
+            tf.config.experimental.set_memory_growth(gpu, True)
+        print(f"GPU(s) detected and configured: {len(gpus)} GPU(s) available")
+    except RuntimeError as e:
+        print(f"GPU configuration error: {e}")
+        print("Falling back to CPU")
+else:
+    print("No GPU detected. Using CPU.")
 
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -52,11 +63,11 @@ elif loc == "GB" and ver == 2:
 file_list = list(range(1, file_tot_num+1))
 
 # --- Updated LSTM parameters ---
-epochs = 50 # Number of training epochs
+epochs = 50 if gpus else 1  # Use more epochs if GPU is available
 hidden_size = 20 # Number of LSTM cells (lstm_units)
 learning_rate = 1e-3 # Learning rate used to update the weights
-window_size = 90 # Length of the meteorological record provided to the network (timesteps)
-batch_size = 16 #512 # Number of samples in each batch
+window_size = 60 # Length of the meteorological record provided to the network (timesteps)
+batch_size = 512 if gpus else 16  # Use larger batch size if GPU is available
 dropout_rate = 0.1 # Dropout rate of the final fully connected Layer [0.0, 1.0]
 timesteps = window_size # For clarity in the rest of the script
 
@@ -210,8 +221,8 @@ input_eva_seq, target_eva_seq = create_sequences(all_input_eva, all_target_eva, 
 print(f"Shape of training sequences: {input_cal_seq.shape}")
 print(f"Shape of training targets: {target_cal_seq.shape}")
 
-# Reduce dataset size to avoid memory issues
-max_training_samples = 100000  # Limit to 100k samples to prevent memory overflow
+# Adjust dataset size based on available hardware
+max_training_samples = 500000 if gpus else 100000  # Use larger dataset if GPU is available
 if input_cal_seq.shape[0] > max_training_samples:
     print(f"Dataset too large ({input_cal_seq.shape[0]} samples). Reducing to {max_training_samples} samples.")
     
@@ -224,7 +235,7 @@ if input_cal_seq.shape[0] > max_training_samples:
     print(f"Reduced training targets shape: {target_cal_seq.shape}")
 
 # Also reduce evaluation set if too large
-max_eval_samples = 50000
+max_eval_samples = 200000 if gpus else 50000
 if input_eva_seq.shape[0] > max_eval_samples:
     print(f"Evaluation dataset too large ({input_eva_seq.shape[0]} samples). Reducing to {max_eval_samples} samples.")
     indices_eva = np.random.choice(input_eva_seq.shape[0], max_eval_samples, replace=False)
@@ -242,8 +253,9 @@ LSTM_model = Model(inputs=model_in, outputs=model_out)
 optimizer = Adam(learning_rate=learning_rate)
 LSTM_model.compile(optimizer=optimizer, loss='mse')
 
-# Train on CPU with reduced dataset
-print("Training LSTM model on CPU...")
+# Train the model (GPU will be used if available)
+hardware_type = "GPU" if gpus else "CPU"
+print(f"Training LSTM model on {hardware_type}...")
 LSTM_model.fit(input_cal_seq, target_cal_seq, epochs=epochs, batch_size=batch_size, validation_split=0.2, callbacks=[early_stopping])
 
 print("Training completed.")

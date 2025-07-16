@@ -32,14 +32,13 @@ syn_precip_cols = ['syn_no_precip', 'syn_p_pet', 'syn_peak1_rate0',
                    'syn_peak3_rate10', 'syn_peak3_rate30', 'syn_peak3_rate50',
                    'syn_peak5_rate10', 'syn_peak5_rate30', 'syn_peak5_rate50']
 
-
 if loc == "JP" and ver == 2:
     file_tot_num = 87
     columns_drop = ['grdc_no','river','station','WaterASrea','ForestArea','ForestAreaRatio','WaterAreaRatio','lat_org','long_org', 'land_GolfCourse','land_GolfCourse_Ratio']
     attribute_values = pd.read_csv(f'{attribute_dir}/basin_data_limited_met&soil&geology&land_{ver_name}.csv', encoding= 'UTF-8', index_col=0, header=0)
     varssim_dir = f"/data0/funato/2_MERV/{loc}/varssim_nocal/{ver_name}"
 elif loc == "GB" and ver == 2:
-    file_tot_num = 4#24 # Using 20 for consistency with other models
+    file_tot_num = 424 # Using 20 for consistency with other models
     columns_drop = ['gauge_id']
     attribute_values = pd.read_csv(f'{attribute_dir}/camelsgb_attribute_combined.csv', encoding= 'UTF-8', index_col=0, header=0)
     varssim_dir = f"/data0/funato/hsp/2_MERV/varssim_HBV"
@@ -365,20 +364,25 @@ for file_num in file_list:
             end_date_eva_syn = '2001-02-10'
         else:
             end_date_eva_syn = end_date_eva
+        log_file.write(f"Using end date for synthetic evaluation: {end_date_eva_syn}\n")
+        log_file.flush()
 
         df_syn = df_current_basin[start_date_cal:end_date_eva_syn].copy()
         
         syn_temp_col = 'Temp_at_peak' if 'peak' in syn_precip_col else 'Temp'
         syn_pet_col = 'PET_at_peak' if 'peak' in syn_precip_col else 'PET'
+        syn_flow_col = 'Obs_flow_at_peak' if 'peak' in syn_precip_col else 'Obs flow'
         syn_dyn_cols = [syn_precip_col, syn_temp_col, syn_pet_col]
 
         log_file.write(f"Using dynamic columns: {syn_dyn_cols}, with size {len(syn_dyn_cols)}\n")
         
         input_dyn_syn = df_syn[syn_dyn_cols].values
-        mask_syn = ~np.isnan(input_dyn_syn).any(axis=1) & ~np.isnan(df_syn['Obs_flow_at_peak'].values)
+        log_file.write(f"Input dynamic shape: {input_dyn_syn.shape}\n")
+        log_file.flush()
+        mask_syn = ~np.isnan(input_dyn_syn).any(axis=1) & ~np.isnan(df_syn[syn_flow_col].values)
         static_array_syn = np.tile(static_features_for_basin.values, (np.sum(mask_syn), 1))
         input_syn = np.hstack([input_dyn_syn[mask_syn], static_array_syn])
-        target_syn = df_syn['Obs_flow_at_peak'].values[mask_syn]
+        target_syn = df_syn[syn_flow_col].values[mask_syn]
         
         input_syn[:, :3] = (input_syn[:, :3] - mean_dyn) / std_dyn
         
@@ -397,7 +401,7 @@ for file_num in file_list:
             syn_predict_dfs_combined[syn_precip_col][file_num] = temp_syn_df
 
         # save the dimension sze of temp_syn_df
-        log_file.write(f"Shape of synthetic predictions for {syn_precip_col}: {temp_syn_df.shape}\n")")
+        log_file.write(f"Shape of synthetic predictions for {syn_precip_col}: {temp_syn_df.shape}\n")
 
     end_time_basin = datetime.now()
     log_file.write(f"FILE_{file_num}, end: {end_time_basin.strftime('%a %b %d %I:%M:%S %p JST %Y')}, elapsed: {end_time_basin - start_time_basin}\n")
