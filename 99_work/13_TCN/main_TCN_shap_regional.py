@@ -32,13 +32,14 @@ syn_precip_cols = ['syn_no_precip', 'syn_p_pet', 'syn_peak1_rate0',
                    'syn_peak3_rate10', 'syn_peak3_rate30', 'syn_peak3_rate50',
                    'syn_peak5_rate10', 'syn_peak5_rate30', 'syn_peak5_rate50']
 
+
 if loc == "JP" and ver == 2:
     file_tot_num = 87
-    columns_drop = ['grdc_no','river','station','WaterArea','ForestArea','ForestAreaRatio','WaterAreaRatio','lat_org','long_org', 'land_GolfCourse','land_GolfCourse_Ratio']
+    columns_drop = ['grdc_no','river','station','WaterASrea','ForestArea','ForestAreaRatio','WaterAreaRatio','lat_org','long_org', 'land_GolfCourse','land_GolfCourse_Ratio']
     attribute_values = pd.read_csv(f'{attribute_dir}/basin_data_limited_met&soil&geology&land_{ver_name}.csv', encoding= 'UTF-8', index_col=0, header=0)
     varssim_dir = f"/data0/funato/2_MERV/{loc}/varssim_nocal/{ver_name}"
 elif loc == "GB" and ver == 2:
-    file_tot_num = 424 # Using 20 for consistency with other models
+    file_tot_num = 4#24 # Using 20 for consistency with other models
     columns_drop = ['gauge_id']
     attribute_values = pd.read_csv(f'{attribute_dir}/camelsgb_attribute_combined.csv', encoding= 'UTF-8', index_col=0, header=0)
     varssim_dir = f"/data0/funato/hsp/2_MERV/varssim_HBV"
@@ -48,7 +49,7 @@ file_list = list(range(1, file_tot_num+1))
 # TCN parameters
 timesteps = 25
 epochs = 50
-batch_size = 64
+batch_size = 32 #64
 nb_filters = 128
 kernel_size = 4
 nb_stacks = 3
@@ -151,7 +152,11 @@ log_file.write(f"start: {start_time.strftime('%a %b %d %I:%M:%S %p JST %Y')}\n")
 log_file.flush()
 
 print("--- Collecting Data for all Basins ---")
+log_file.write("Collecting data for all basins...\n")
 for file_num in file_list:
+    log_file.write(f"Processing basin {file_num}/{file_tot_num}\n")
+    log_file.flush()
+    
     df = load_data(file_num)
     df_cal = df[start_date_cal:end_date_cal].copy()
     df_eva = df[start_date_eva:end_date_eva].copy()
@@ -188,6 +193,8 @@ all_input_eva = np.vstack(all_input_eva_list)
 all_target_eva = np.hstack(all_target_eva_list)
 
 print("--- Normalizing Data and Creating Sequences ---")
+log_file.write("Normalizing data and creating sequences...\n")
+log_file.flush()
 mean_dyn = np.mean(all_input_cal[:, :3], axis=0)
 std_dyn = np.std(all_input_cal[:, :3], axis=0)
 std_dyn = np.where(std_dyn == 0, 1e-6, std_dyn)
@@ -293,8 +300,11 @@ if X_sample.shape[0] > 0:
             X_sample_df.iloc[i,:]
         )
         shap.save_html(f"{output_dir_shap}/TCN_force_plot_sample_{i}.html", force_plot)
-
+log_file.write("SHAP analysis completed.\n")
+log_file.flush()
 print("--- Evaluating Model and Generating Outputs ---")
+log_file.write("Evaluating model and generating outputs...\n")
+log_file.flush()    
 results_cal, results_eva = [], []
 syn_predict_dfs_combined = {col: {} for col in syn_precip_cols}
 
@@ -349,6 +359,8 @@ for file_num in file_list:
     static_features_for_basin = attribute_values_normalized.loc[file_num].drop('File_num', errors='ignore')
 
     for syn_precip_col in syn_precip_cols:
+        log_file.write(f"Processing synthetic column: {syn_precip_col}\n")
+        log_file.flush()
         if syn_precip_col.startswith('syn_peak'):
             end_date_eva_syn = '2001-02-10'
         else:
@@ -359,6 +371,8 @@ for file_num in file_list:
         syn_temp_col = 'Temp_at_peak' if 'peak' in syn_precip_col else 'Temp'
         syn_pet_col = 'PET_at_peak' if 'peak' in syn_precip_col else 'PET'
         syn_dyn_cols = [syn_precip_col, syn_temp_col, syn_pet_col]
+
+        log_file.write(f"Using dynamic columns: {syn_dyn_cols}, with size {len(syn_dyn_cols)}\n")
         
         input_dyn_syn = df_syn[syn_dyn_cols].values
         mask_syn = ~np.isnan(input_dyn_syn).any(axis=1) & ~np.isnan(df_syn['Obs_flow_at_peak'].values)
@@ -369,6 +383,8 @@ for file_num in file_list:
         input_syn[:, :3] = (input_syn[:, :3] - mean_dyn) / std_dyn
         
         input_seq_syn, _ = create_sequences(input_syn, target_syn, timesteps)
+        log_file.write(f"Input sequence shape for synthetic {syn_precip_col}: {input_seq_syn.shape}\n")
+        log_file.flush()
         
         if input_seq_syn.shape[0] > 0:
             predict_syn = TCN_model.predict(input_seq_syn, batch_size=batch_size).flatten()
@@ -379,6 +395,9 @@ for file_num in file_list:
             
             temp_syn_df = pd.DataFrame({'Date': dates_predict_syn, 'prediction': predict_syn}).set_index('Date')
             syn_predict_dfs_combined[syn_precip_col][file_num] = temp_syn_df
+
+        # save the dimension sze of temp_syn_df
+        log_file.write(f"Shape of synthetic predictions for {syn_precip_col}: {temp_syn_df.shape}\n")")
 
     end_time_basin = datetime.now()
     log_file.write(f"FILE_{file_num}, end: {end_time_basin.strftime('%a %b %d %I:%M:%S %p JST %Y')}, elapsed: {end_time_basin - start_time_basin}\n")
@@ -391,11 +410,14 @@ df_results_eva = pd.DataFrame(results_eva)
 df_results_eva.to_csv(output_dir + f'/results/TCN_results_eva.csv', index=False, header=True)
 
 for syn_precip_col, basin_preds_dict in syn_predict_dfs_combined.items():
+    log_file.write(f"Processing synthetic column: {syn_precip_col}\n")
+
     if not basin_preds_dict: continue
     
     combined_syn_df = pd.DataFrame()
     for file_num, df_preds in basin_preds_dict.items():
         df_preds = df_preds.rename(columns={'prediction': f'file_{file_num}'})
+        log_file.write(f"  Adding predictions for file {file_num}, shape: {df_preds.shape}\n")
         if combined_syn_df.empty:
             combined_syn_df = df_preds
         else:
@@ -403,6 +425,9 @@ for syn_precip_col, basin_preds_dict in syn_predict_dfs_combined.items():
 
     if syn_precip_col.startswith('syn_peak'):
         end_date_syn_final = '2001-02-10'
+        combined_syn_df = combined_syn_df.loc[:end_date_syn_final]
+    else:
+        end_date_syn_final = end_date_eva
         combined_syn_df = combined_syn_df.loc[:end_date_syn_final]
     
     combined_syn_df.sort_index(inplace=True)

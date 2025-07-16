@@ -1,13 +1,11 @@
 import os
-# os.environ["CUDA_VISIBLE_DEVICES"] = ""  # Remove this line to allow GPU usage
+# Force CPU usage to avoid GPU memory issues with large dataset
+os.environ["CUDA_VISIBLE_DEVICES"] = ""
 os.environ["TF_XLA_FLAGS"] = "--tf_xla_enable_xla_devices=false"
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # 0 = all messages, 3 = only errors
 
 import tensorflow as tf
-if tf.config.list_physical_devices('GPU'):
-    print("GPU is available. Using GPU for computations.")
-else:
-    print("GPU is not available. Using CPU for computations.")
+print("Forced CPU-only mode for large dataset processing.")
 
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -57,8 +55,8 @@ file_list = list(range(1, file_tot_num+1))
 epochs = 50 # Number of training epochs
 hidden_size = 20 # Number of LSTM cells (lstm_units)
 learning_rate = 1e-3 # Learning rate used to update the weights
-window_size = 120 # Length of the meteorological record provided to the network (timesteps)
-batch_size = 32 #512 # Number of samples in each batch
+window_size = 90 # Length of the meteorological record provided to the network (timesteps)
+batch_size = 16 #512 # Number of samples in each batch
 dropout_rate = 0.1 # Dropout rate of the final fully connected Layer [0.0, 1.0]
 timesteps = window_size # For clarity in the rest of the script
 
@@ -212,10 +210,31 @@ input_eva_seq, target_eva_seq = create_sequences(all_input_eva, all_target_eva, 
 print(f"Shape of training sequences: {input_cal_seq.shape}")
 print(f"Shape of training targets: {target_cal_seq.shape}")
 
+# Reduce dataset size to avoid memory issues
+max_training_samples = 100000  # Limit to 100k samples to prevent memory overflow
+if input_cal_seq.shape[0] > max_training_samples:
+    print(f"Dataset too large ({input_cal_seq.shape[0]} samples). Reducing to {max_training_samples} samples.")
+    
+    # Randomly sample a subset
+    indices = np.random.choice(input_cal_seq.shape[0], max_training_samples, replace=False)
+    input_cal_seq = input_cal_seq[indices]
+    target_cal_seq = target_cal_seq[indices]
+    
+    print(f"Reduced training sequences shape: {input_cal_seq.shape}")
+    print(f"Reduced training targets shape: {target_cal_seq.shape}")
+
+# Also reduce evaluation set if too large
+max_eval_samples = 50000
+if input_eva_seq.shape[0] > max_eval_samples:
+    print(f"Evaluation dataset too large ({input_eva_seq.shape[0]} samples). Reducing to {max_eval_samples} samples.")
+    indices_eva = np.random.choice(input_eva_seq.shape[0], max_eval_samples, replace=False)
+    input_eva_seq = input_eva_seq[indices_eva]
+    target_eva_seq = target_eva_seq[indices_eva]
+
 print("--- Building and Training LSTM Model ---")
 model_in = Input(shape=(timesteps, all_input_cal.shape[1]))
-# Using recurrent_dropout to force standard kernel, which is more compatible with SHAP
-model_out = LSTM(hidden_size, return_sequences=False, recurrent_dropout=0.00001)(model_in)
+# Removed recurrent_dropout to avoid potential issues
+model_out = LSTM(hidden_size, return_sequences=False)(model_in)
 model_out = Dropout(dropout_rate)(model_out)
 model_out = Dense(1, activation='linear')(model_out)
 LSTM_model = Model(inputs=model_in, outputs=model_out)
@@ -223,7 +242,11 @@ LSTM_model = Model(inputs=model_in, outputs=model_out)
 optimizer = Adam(learning_rate=learning_rate)
 LSTM_model.compile(optimizer=optimizer, loss='mse')
 
+# Train on CPU with reduced dataset
+print("Training LSTM model on CPU...")
 LSTM_model.fit(input_cal_seq, target_cal_seq, epochs=epochs, batch_size=batch_size, validation_split=0.2, callbacks=[early_stopping])
+
+print("Training completed.")
 
 print("--- Performing SHAP Analysis using KernelExplainer ---")
 # Use a subset of the training data as background for the explainer
@@ -315,6 +338,9 @@ print("--- Evaluating Model and Generating Outputs ---")
 results_cal, results_eva = [], []
 syn_predict_dfs_combined = {col: {} for col in syn_precip_cols}
 
+# Use smaller batch size for prediction to save memory
+prediction_batch_size = min(batch_size, 16)
+
 for file_num in file_list:
     basin_data = individual_basin_data[file_num]
     start_time_basin = datetime.now()
@@ -324,13 +350,15 @@ for file_num in file_list:
     input_cal_full_basin = basin_data['input_cal_full'].copy()
     input_cal_full_basin[:, :3] = (input_cal_full_basin[:, :3] - mean_dyn) / std_dyn
     input_cal_seq_basin, target_cal_seq_basin = create_sequences(input_cal_full_basin, basin_data['target_cal'], timesteps)
-    predict_cal_basin = LSTM_model.predict(input_cal_seq_basin, batch_size=batch_size).flatten() if input_cal_seq_basin.shape[0] > 0 else np.array([])
+    
+    predict_cal_basin = LSTM_model.predict(input_cal_seq_basin, batch_size=prediction_batch_size).flatten() if input_cal_seq_basin.shape[0] > 0 else np.array([])
     predict_cal_basin[predict_cal_basin < 0] = 0
 
     input_eva_full_basin = basin_data['input_eva_full'].copy()
     input_eva_full_basin[:, :3] = (input_eva_full_basin[:, :3] - mean_dyn) / std_dyn
     input_eva_seq_basin, target_eva_seq_basin = create_sequences(input_eva_full_basin, basin_data['target_eva'], timesteps)
-    predict_eva_basin = LSTM_model.predict(input_eva_seq_basin, batch_size=batch_size).flatten() if input_eva_seq_basin.shape[0] > 0 else np.array([])
+    
+    predict_eva_basin = LSTM_model.predict(input_eva_seq_basin, batch_size=prediction_batch_size).flatten() if input_eva_seq_basin.shape[0] > 0 else np.array([])
     predict_eva_basin[predict_eva_basin < 0] = 0
 
     dates_predict_cal = basin_data['dates_cal'][timesteps:]
@@ -368,7 +396,7 @@ for file_num in file_list:
         
         syn_temp_col = 'Temp_at_peak' if 'peak' in syn_precip_col else 'Temp'
         syn_pet_col = 'PET_at_peak' if 'peak' in syn_precip_col else 'PET'
-        syn_obs_flow_col = 'Obs flow_at_peak' if 'peak' in syn_precip_col else 'Obs flow'
+        syn_obs_flow_col = 'Obs_flow_at_peak' if 'peak' in syn_precip_col else 'Obs flow'
         syn_dyn_cols = [syn_precip_col, syn_temp_col, syn_pet_col]
         
         input_dyn_syn = df_syn[syn_dyn_cols].values
@@ -381,7 +409,7 @@ for file_num in file_list:
         
         input_seq_syn, _ = create_sequences(input_syn, target_syn, timesteps)
         
-        predict_syn = LSTM_model.predict(input_seq_syn, batch_size=batch_size).flatten()
+        predict_syn = LSTM_model.predict(input_seq_syn, batch_size=prediction_batch_size).flatten()
         predict_syn[predict_syn < 0] = 0
         
         dates_syn = df_syn.index[mask_syn]
@@ -389,6 +417,13 @@ for file_num in file_list:
         
         temp_syn_df = pd.DataFrame({'Date': dates_predict_syn, 'prediction': predict_syn}).set_index('Date')
         syn_predict_dfs_combined[syn_precip_col][file_num] = temp_syn_df
+
+    # Clear memory after each basin to prevent accumulation
+    try:
+        import gc
+        gc.collect()
+    except Exception as e:
+        pass
 
     end_time_basin = datetime.now()
     log_file.write(f"FILE_{file_num}, end: {end_time_basin.strftime('%a %b %d %I:%M:%S %p JST %Y')}, elapsed: {end_time_basin - start_time_basin}\n")
