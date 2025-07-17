@@ -3,8 +3,10 @@ import pandas as pd
 import numpy as np  
 import os   
 
-model_list = ["XGB", "RF"] #["RF", "XGB", "TCN", "LSTM"]
-#model_list = ["TCN"]
+model_list = ["XGB"] #["RF", "XGB", "TCN", "LSTM"]
+model_list = ["RF"]
+model_list = ["TCN"]
+model_list = ["LSTM"]
 
 file_tot_num = 424
 
@@ -51,7 +53,7 @@ for model_name in model_list:
         # Define evaluation period mask 
         # You may need to adjust this logic based on your specific data structure
         # Common approach is to split data chronologically (e.g., first 70% for calibration, last 30% for evaluation)
-        eval_start_date = "2001-01-01"  # Adjust this to your specific evaluation start date
+        eval_start_date = pd.Timestamp("2001-01-01")  # Convert to Timestamp for proper comparison
         eval_mask = base_df.index >= eval_start_date
         
         # Find the peak precipitation value and its location in the evaluation period
@@ -132,12 +134,26 @@ for model_name in model_list:
                 input_df_cal.sort_index(inplace=True)
                 input_df_eva = pd.read_csv(input_file_eva, parse_dates=['Date'])
                 input_df_eva.set_index('Date', inplace=True)
-                input_df_eva.sort_index(inplace=True)   
-                input_df = pd.concat([input_df_cal, input_df_eva], axis=1)
-                if model_name == "TCN":
+                input_df_eva.sort_index(inplace=True) 
+                print(f"Input files for original data: {input_file_cal}, {input_file_eva} with sizes {input_df_cal.shape} and {input_df_eva.shape}")
+                
+                # Combine cal and eva predictions into a single series using concat with axis=0 (row-wise)
+                if model_name == "TCN" or model_name == "LSTM":
                     col_name = "Predicted"
                 else:
                     col_name = "Prediction"
+                
+                # Concatenate the prediction columns vertically (row-wise) to create one continuous time series
+                input_df = pd.concat([input_df_cal[col_name], input_df_eva[col_name]], axis=0)
+                input_df = input_df.sort_index()  # Ensure proper chronological order
+                
+                print(f"Combined input DataFrame shape: {input_df.shape}")
+                print(f"Combined input df head:\n{input_df.head()}")
+                print(f"Combined input df tail:\n{input_df.tail()}")
+                
+                # Convert to DataFrame with the same column name for consistency with the rest of the code
+                input_df = pd.DataFrame({col_name: input_df})
+                
             else:
                 input_file = f"{input_dir}/{model_name}_predict_{sim_col}.csv"
                 col_name = f"file_{file_num}"
@@ -150,6 +166,7 @@ for model_name in model_list:
 
             # Copy the values to the base_df
             base_df[sim_col] = input_df[col_name].values
+            print(f"Processed {sim_col} for file {file_num}, shape: {base_df[sim_col].shape} from {input_df[col_name].shape}")
 
         # Save the reshaped DataFrame to a new CSV file
         output_file = f"{output_dir}/varssim{file_num:03d}.csv"

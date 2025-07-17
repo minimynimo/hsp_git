@@ -7,7 +7,8 @@ import seaborn as sns # Import seaborn for plotting
 
 # Configuration for model and directories
 model_name = "HBV"
-model_name = "TCN"  # Change to "XGB" or "TCN" as needed
+model_name = "LSTM"  # Change to "XGB" or "TCN" as needed
+print(f"Processing model: {model_name}")
 
 input_dir = f"/data0/funato/hsp/0_out/{model_name}/GB/shap/regional/varssim_{model_name}"
 output_dir = f"/data0/funato/hsp/0_out/{model_name}/peak_discharge/"

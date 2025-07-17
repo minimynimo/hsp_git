@@ -63,11 +63,11 @@ elif loc == "GB" and ver == 2:
 file_list = list(range(1, file_tot_num+1))
 
 # --- Updated LSTM parameters ---
-epochs = 50 if gpus else 1  # Use more epochs if GPU is available
+epochs = 50 
 hidden_size = 20 # Number of LSTM cells (lstm_units)
 learning_rate = 1e-3 # Learning rate used to update the weights
 window_size = 60 # Length of the meteorological record provided to the network (timesteps)
-batch_size = 512 if gpus else 16  # Use larger batch size if GPU is available
+batch_size = 16 #512 # Use larger batch size if GPU is available
 dropout_rate = 0.1 # Dropout rate of the final fully connected Layer [0.0, 1.0]
 timesteps = window_size # For clarity in the rest of the script
 
@@ -222,7 +222,7 @@ print(f"Shape of training sequences: {input_cal_seq.shape}")
 print(f"Shape of training targets: {target_cal_seq.shape}")
 
 # Adjust dataset size based on available hardware
-max_training_samples = 500000 if gpus else 100000  # Use larger dataset if GPU is available
+max_training_samples = 500000 
 if input_cal_seq.shape[0] > max_training_samples:
     print(f"Dataset too large ({input_cal_seq.shape[0]} samples). Reducing to {max_training_samples} samples.")
     
@@ -235,7 +235,7 @@ if input_cal_seq.shape[0] > max_training_samples:
     print(f"Reduced training targets shape: {target_cal_seq.shape}")
 
 # Also reduce evaluation set if too large
-max_eval_samples = 200000 if gpus else 50000
+max_eval_samples = 200000 #if gpus else 50000
 if input_eva_seq.shape[0] > max_eval_samples:
     print(f"Evaluation dataset too large ({input_eva_seq.shape[0]} samples). Reducing to {max_eval_samples} samples.")
     indices_eva = np.random.choice(input_eva_seq.shape[0], max_eval_samples, replace=False)
@@ -463,7 +463,7 @@ for syn_precip_col, basin_preds_dict in syn_predict_dfs_combined.items():
         combined_syn_df = combined_syn_df.loc[:end_date_syn_final]
     
     combined_syn_df.sort_index(inplace=True)
-    combined_syn_df.to_csv(f"{output_dir}/predict/synthetic/LSTM_syn_predict_{syn_precip_col.replace('syn_','')}.csv")
+    combined_syn_df.to_csv(f"{output_dir}/predict/synthetic/LSTM_predict_{syn_precip_col.replace('syn_','')}.csv")
 
 log_file.write("DONE\n")
 log_file.close()
