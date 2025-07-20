@@ -7,10 +7,13 @@ import seaborn as sns # Import seaborn for plotting
 
 # Configuration for model and directories
 model_name = "HBV"
-model_name = "LSTM"  # Change to "XGB" or "TCN" as needed
+model_name = "BC"  # Change to "XGB" or "TCN" as needed
 print(f"Processing model: {model_name}")
 
-input_dir = f"/data0/funato/hsp/0_out/{model_name}/GB/shap/regional/varssim_{model_name}"
+if model_name == "BC":
+    input_dir = f"/data0/funato/hsp/0_out/BC/varssim_BC"
+else:
+    input_dir = f"/data0/funato/hsp/0_out/{model_name}/GB/shap/regional/varssim_{model_name}"
 output_dir = f"/data0/funato/hsp/0_out/{model_name}/peak_discharge/"
 
 os.makedirs(output_dir, exist_ok=True)

@@ -25,7 +25,7 @@ def run_BC_pre_PCA(model, file_list, loc, output_dir, bma_cal_og, bma_eva_og, st
         log_file.flush()
 
         ### INPUT DATA ###
-        df_og = load_data(file_num, loc, start_date_cal, end_date_eva,varssim_dir)
+        df_og = load_data(file_num, loc, start_date_cal, end_date_eva,varssim_dir, data_name = "varssim_nocal_camels")
 
         df_cal_og = df_og[start_date_cal:end_date_cal].copy()  # Use copy to avoid SettingWithCopyWarning
         df_eva_og = df_og[start_date_eva:end_date_eva].copy()
@@ -181,9 +181,9 @@ def PCA_lasso(pc_values, attribute_values, n_components, alpha, fs, output_dir, 
 
     return lasso_models, predicted_pcs
 
-def run_BC_post_PCA(model, file_list, loc, output_dir, PC_n, weights_inverted, model_list, start_date_eva, end_date_eva, benchmark_list, nexttime, file_tag, log_file, varssim_dir):
+def run_BC_post_PCA(model, file_list, loc, output_dir, PC_n, weights_inverted, model_list, start_date_eva, end_date_eva, benchmark_list, nexttime, file_tag, log_file, varssim_dir,data_name, predict_col = ""):
     result_eva_rev = []
-    reservoir_rev_rows = []
+    reservoir_rows = []
     
     for file_num in file_list: # 136
         print(f'    file{file_num}')
@@ -199,7 +199,7 @@ def run_BC_post_PCA(model, file_list, loc, output_dir, PC_n, weights_inverted, m
         RC_weights_rev = weights_inverted.loc[f'file_{file_num}'].values[len(model_list):]  ### CHANGE TO Wout instead of reservoir last row
 
         ### INPUT DATA ###
-        df_rev = load_data(file_num, loc, start_date_eva, end_date_eva, varssim_dir)
+        df_rev = load_data(file_num, loc, start_date_eva, end_date_eva, varssim_dir, data_name=data_name)
         df_eva_rev = df_rev[start_date_eva:end_date_eva].copy()
 
         # loading the sim flow data for the BMA and 44 MARRMoT models
@@ -232,7 +232,7 @@ def run_BC_post_PCA(model, file_list, loc, output_dir, PC_n, weights_inverted, m
         ### PREDICTIONS OF ERRORS ###
         error_eva_rev, reservoir_last = model.predict_PCA(RC_weights_rev, input_eva_rev, ptb_func=None, ptb_scale=1.0, nexttime=nexttime, extended_interval=10)
 
-        reservoir_rev_rows.append(np.concatenate(([f'file_{file_num}'], reservoir_last.flatten())))
+        reservoir_rows.append(np.concatenate(([f'file_{file_num}'], reservoir_last.flatten())))
 
         # もとの入力値のtimestep = t のとき、error_cal&evaのtimestep = t+1 になるようにしている
         # predict = error_cal + BMAsim
@@ -248,9 +248,9 @@ def run_BC_post_PCA(model, file_list, loc, output_dir, PC_n, weights_inverted, m
             predict_eva_dates = pd.date_range(start=pd.to_datetime(start_date_eva) + pd.DateOffset(days=1), periods=len(predict_eva_rev[0]))
             date_row_eva = list(['Date'] + [str(date.date()) for date in predict_eva_dates])
             predict_eva_df = pd.DataFrame([date_row_eva])
-            predict_eva_df.to_csv(output_dir + f"/predict/BC-PCA-lasso_predict{file_tag}_rev_PC{PC_n}_eva.csv", mode='w', index=False, header=False)
+            predict_eva_df.to_csv(output_dir + f"/predict/BCrg_predict{file_tag}_PC{PC_n}_{predict_col}eva.csv", mode='w', index=False, header=False)
 
-        with open(output_dir + f"/predict/BC-PCA-lasso_predict{file_tag}_rev_PC{PC_n}_eva.csv", 'a') as file:
+        with open(output_dir + f"/predict/BCrg_predict{file_tag}_PC{PC_n}_{predict_col}eva.csv", 'a') as file:
             pd.DataFrame([file_row_eva]).to_csv(file, header=False, index=False)
 
         file_results_eva_rev = {'file_num': file_num}
@@ -258,7 +258,7 @@ def run_BC_post_PCA(model, file_list, loc, output_dir, PC_n, weights_inverted, m
         # Loop over each benchmark and add results to the current file's dictionary
         for benchmark in benchmark_list:
             file_results_eva_rev.update({
-                f'BC-PCA-lasso{file_tag}_{benchmark}_eva': BMK(target_eva_rev, predict_eva_rev, benchmark)
+                f'BCrg{file_tag}_{benchmark}_eva': BMK(target_eva_rev, predict_eva_rev, benchmark)
             })  
 
         # Append the completed dictionary to the results list
@@ -272,7 +272,7 @@ def run_BC_post_PCA(model, file_list, loc, output_dir, PC_n, weights_inverted, m
 
         del predict_eva_rev
 
-    return result_eva_rev, reservoir_rev_rows
+    return result_eva_rev, reservoir_rows
 
 def variable_names_list(model_list, reservoir_size):
     variable_names = [f'BMA_{model}' for model in model_list] + [f'RC_{i}' for i in range(1, reservoir_size+1)]
@@ -284,9 +284,9 @@ def file_name(input_num, total_len):
     zero_len = total_len - car_len
     return '0' * zero_len + str(input_num)
 
-def load_data(file_num, loc, start_date, end_date, varssim_dir):
-    df = pd.read_csv(f"{varssim_dir}/varssim{file_name(file_num, 3)}.csv")
-    
+def load_data(file_num, loc, start_date, end_date, varssim_dir, data_name, ver_name="ver2_0"):
+    df = pd.read_csv(f"{varssim_dir}/{data_name}/{ver_name}/varssim{file_name(file_num, 3)}.csv")
+
     if loc == "JP":
         df['Date'] = pd.to_datetime(df[['Year', 'Month', 'Day']])
     else:
@@ -300,6 +300,7 @@ def load_data(file_num, loc, start_date, end_date, varssim_dir):
     df = df.reindex(full_date_range)
     
     return df
+
 
 def BMK(obs_data, sim_data, benchmark):    
     if benchmark == "NSE":

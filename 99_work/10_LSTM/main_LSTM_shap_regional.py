@@ -33,6 +33,7 @@ from keras.optimizers import Adam
 from datetime import datetime
 
 import shap
+import sys
 
 benchmark_list = ["KGE","NSE","E1", "VE", "d","RMSE","MAE"]
 
@@ -77,14 +78,14 @@ start_date_eva = '2001-01-01'
 end_date_eva = '2006-12-31'
 
 # --- Updated output directories for LSTM ---
-output_dir = f"/data0/funato/hsp/0_out/LSTM/{loc}/shap/regional"
+output_dir = f"/data0/funato/hsp/0_out/LSTM_temp/{loc}/shap/regional"
 os.makedirs(output_dir, exist_ok=True)
 os.makedirs(output_dir + "/predict/og", exist_ok=True)
 os.makedirs(output_dir + "/results", exist_ok=True)
 os.makedirs(output_dir + "/hydrographs", exist_ok=True)
 os.makedirs(output_dir + "/predict/synthetic", exist_ok=True)
 
-output_dir_shap = f"0_out/1_fig/shap/LSTM/{loc}/regional"
+output_dir_shap = f"0_out/1_fig/shap/LSTM_temp/{loc}/regional"
 os.makedirs(output_dir_shap, exist_ok=True)
 
 
@@ -271,7 +272,7 @@ else:
     background = input_cal_seq
 
 # Use a small subset of the evaluation data to explain
-explain_size = 10
+explain_size = 1000
 if input_eva_seq.shape[0] > explain_size:
     explain_indices = np.random.choice(input_eva_seq.shape[0], explain_size, replace=False)
     X_sample = input_eva_seq[explain_indices]
@@ -345,6 +346,8 @@ if X_sample.shape[0] > 0:
     for i in range(min(5, X_sample_summary.shape[0])):
         force_plot = shap.force_plot(explainer.expected_value, shap_values[i,:], X_sample_df.iloc[i,:])
         shap.save_html(f"{output_dir_shap}/LSTM_force_plot_sample_{i}.html", force_plot)
+
+sys.exit(0) 
 
 print("--- Evaluating Model and Generating Outputs ---")
 results_cal, results_eva = [], []

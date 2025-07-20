@@ -8,8 +8,8 @@ import seaborn as sns
 output_dir = "/data0/funato/hsp/0_out/1_fig/peak_discharge/example/"
 os.makedirs(output_dir, exist_ok=True)
 
-model_list = ["HBV", "RF", "XGB", "TCN", "LSTM"]
-file_tot_num = 424 
+model_list = ["HBV", "BC", "RF", "XGB", "TCN", "LSTM"]
+file_tot_num = 424
 
 # Dictionary to store all model data
 all_model_data = {}
@@ -64,6 +64,7 @@ for rate in rate_list:
     # Define colors for each model
     colors = {
         'HBV': '#1f77b4',
+        'BC': "#FC33E5",
         'RF': '#ff7f0e', 
         'XGB': '#2ca02c',
         'TCN': '#d62728',
@@ -279,6 +280,7 @@ fig_summary.suptitle('Peak Discharge vs Peak Length - Rate Comparison\nMedian Va
 
 colors = {
     'HBV': '#1f77b4',
+    'BC': "#FC33E5",
     'RF': '#ff7f0e', 
     'XGB': '#2ca02c',
     'TCN': '#d62728',
@@ -325,4 +327,4 @@ output_summary = os.path.join(output_dir, "peak_discharge_vs_peak_length_rate_co
 plt.savefig(output_summary, dpi=300, bbox_inches='tight')
 print(f"Rate comparison summary plot saved to: {output_summary}")
 
-plt.show()
+print("Done")

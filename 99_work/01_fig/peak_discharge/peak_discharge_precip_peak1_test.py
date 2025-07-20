@@ -8,7 +8,7 @@ import seaborn as sns
 output_dir = "/data0/funato/hsp/0_out/1_fig/peak_discharge/example/"
 os.makedirs(output_dir, exist_ok=True)
 
-model_list = ["HBV", "RF", "XGB", "TCN", "LSTM"]
+model_list = ["HBV", "BC", "RF", "XGB", "TCN", "LSTM"]
 file_tot_num = 424 
 
 # Dictionary to store all model data
@@ -54,6 +54,7 @@ fig.suptitle('Peak Discharge vs Precipitation Rate\nMedian with 10th-90th Percen
 # Define colors for each model
 colors = {
     'HBV': '#1f77b4',
+    'BC': "#FC33E5",
     'RF': '#ff7f0e', 
     'XGB': '#2ca02c',
     'TCN': '#d62728',
@@ -257,4 +258,4 @@ print(f"Combined comparison: {output_file2}")
 print(f"Clean median-only comparison: {output_file3}")
 print(f"Total basins analyzed: {file_tot_num}")
 
-plt.show()
+print("Done")

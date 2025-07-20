@@ -16,6 +16,7 @@ from tcn import TCN
 from datetime import datetime
 
 import shap
+import sys
 
 benchmark_list = ["KGE","NSE","E1", "VE", "d","RMSE","MAE"]
 
@@ -58,14 +59,14 @@ end_date_cal = '2000-12-31'
 start_date_eva = '2001-01-01'
 end_date_eva = '2006-12-31'
 
-output_dir = f"/data0/funato/hsp/0_out/TCN/{loc}/shap/regional"
+output_dir = f"/data0/funato/hsp/0_out/TCN_temp/{loc}/shap/regional"
 os.makedirs(output_dir, exist_ok=True)
 os.makedirs(output_dir + "/predict/og", exist_ok=True)
 os.makedirs(output_dir + "/results", exist_ok=True)
 os.makedirs(output_dir + "/hydrographs", exist_ok=True)
 os.makedirs(output_dir + "/predict/synthetic", exist_ok=True)
 
-output_dir_shap = f"0_out/1_fig/shap/TCN/{loc}/regional"
+output_dir_shap = f"0_out/1_fig/shap/TCN_temp/{loc}/regional"
 os.makedirs(output_dir_shap, exist_ok=True)
 
 
@@ -226,7 +227,7 @@ else:
     background = input_cal_seq
 
 # Use a small subset of the evaluation data to explain
-explain_size = 10
+explain_size = 1000
 if input_eva_seq.shape[0] > explain_size:
     explain_indices = np.random.choice(input_eva_seq.shape[0], explain_size, replace=False)
     X_sample = input_eva_seq[explain_indices]
@@ -306,6 +307,8 @@ log_file.write("Evaluating model and generating outputs...\n")
 log_file.flush()    
 results_cal, results_eva = [], []
 syn_predict_dfs_combined = {col: {} for col in syn_precip_cols}
+
+sys.exit(0)  # Exit early for debugging purposes
 
 for file_num in file_list:
     basin_data = individual_basin_data[file_num]

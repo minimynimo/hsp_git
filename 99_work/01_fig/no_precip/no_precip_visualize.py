@@ -7,7 +7,7 @@ from scipy import stats
 from scipy.stats import gaussian_kde
 
 # Configuration
-model_list = ["HBV", "RF", "XGB", "TCN"]  # Can be expanded if needed
+model_list = ["HBV", "BC","RF", "XGB", "TCN", "LSTM"]  # Can be expanded if needed
 input_dir = "/data0/funato/hsp/0_out/analysis/no_precip_discharge"
 output_fig_dir = "/data0/funato/hsp/0_out/1_fig/no_precip_discharge"
 
@@ -113,7 +113,7 @@ plt.subplots_adjust(hspace=0.4, wspace=0.3)  # Add more space between subplots
 
 # Prepare data for PDF/CDF
 valid_models = [model for model in model_list if len(all_discharge_data[model]) > 0]
-colors_cycle = ['blue', 'green', 'red', 'orange', 'purple']
+colors_cycle = ['blue', 'pink', 'green', 'red', 'orange', 'purple']
 
 # PDF plot - Linear scale
 for i, model in enumerate(valid_models):
