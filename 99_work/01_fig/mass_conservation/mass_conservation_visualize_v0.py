@@ -11,7 +11,7 @@ plt.style.use('default')
 sns.set_palette("husl")
 
 # Configuration
-model_list = ["Observed", "HBV", "RF", "XGB", "TCN", "LSTM"]
+model_list = ["Observed", "HBV", "BC", "RF", "XGB", "TCN", "LSTM"]
 input_dir = "/data0/funato/hsp/0_out/analysis/mass_conservation"
 output_fig_dir = "/data0/funato/hsp/0_out/1_fig/mass_conservation"
 
@@ -35,7 +35,7 @@ print(f"Loaded mass conservation data for {len(mass_df)} records")
 valid_models = [model for model in model_list if model in mass_df['Model'].unique()]
 print(f"Models with data: {valid_models}")
 
-colors = ['black', 'blue', 'green', 'red', 'orange', 'purple']
+colors = ['black','pink', 'blue', 'green', 'red', 'orange', 'purple']
 
 print("Creating mass conservation visualizations...")
 

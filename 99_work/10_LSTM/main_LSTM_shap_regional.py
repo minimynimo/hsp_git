@@ -272,7 +272,7 @@ else:
     background = input_cal_seq
 
 # Use a small subset of the evaluation data to explain
-explain_size = 1000
+explain_size = 100
 if input_eva_seq.shape[0] > explain_size:
     explain_indices = np.random.choice(input_eva_seq.shape[0], explain_size, replace=False)
     X_sample = input_eva_seq[explain_indices]

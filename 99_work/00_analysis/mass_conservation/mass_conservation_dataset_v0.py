@@ -10,7 +10,7 @@ plt.style.use('default')
 sns.set_palette("husl")
 
 # Configuration
-model_list = ["HBV", "RF", "XGB", "TCN", "LSTM"]
+model_list = ["HBV", "BC", "RF", "XGB", "TCN", "LSTM"]
 file_tot_num = 424
 
 start_date_cal = "1993-01-01"
@@ -132,10 +132,12 @@ for model in model_list:
         base_flow_index = basin_char_df.loc[file, 'baseflow_index']
         
         # Determine input file path based on model
-        if model != "HBV":
-            input_file = f"{input_dir_base}/{model}/GB/shap/regional/varssim_{model}/varssim{file:03d}.csv"
+        if model == "HBV":
+            input_file = f"{input_dir_base}/{model}/varssim_{model}/varssim{file:03d}.csv"
+        elif model == "BC":
+            input_file = f"{input_dir_base}/{model}/varssim_{model}/varssim{file:03d}.csv"
         else:
-            input_file = f"{input_dir_base}/HBV/varssim_HBV/varssim{file:03d}.csv"
+            input_file = f"{input_dir_base}/{model}/GB/shap/regional/varssim_{model}/varssim{file:03d}.csv"
         
         if not os.path.exists(input_file):
             continue
