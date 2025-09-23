@@ -43,7 +43,7 @@ n_estimators = 100
 max_samples = 0.5
 min_samples_split = 2
 
-output_dir = f"/data0/funato/hsp/0_out/RF/{loc}"
+output_dir = f"/data0/funato/hsp/0_out/RF/{loc}/individual/"
 os.makedirs(output_dir, exist_ok=True)
 os.makedirs(output_dir + "/predict", exist_ok=True)
 os.makedirs(output_dir + "/results", exist_ok=True)
@@ -233,16 +233,24 @@ for file_num in file_list:
     results_cal.append(file_results_cal)
     results_eva.append(file_results_eva)
 
+    # Save results to CSV after each file
+    df_results_cal = pd.DataFrame(results_cal)
+    df_results_cal.to_csv(output_dir + f'/results/RF_results_cal.csv', index=False, header=True)
+
+    df_results_eva = pd.DataFrame(results_eva)
+    df_results_eva.to_csv(output_dir + f'/results/RF_results_eva.csv', index=False, header=True)
 
     end_time = datetime.now()
     end_time_st = end_time.strftime("%a %b %d %I:%M:%S %p JST %Y")
     log_file.write(f"end: {end_time_st}\n")
     log_file.write(f"elapsed: {end_time - start_time}\n")
+    log_file.write(f"Results saved for file {file_num}\n")
+    print(f"Results saved for file {file_num}")
 
 log_file.write(f"DONE\n")
 log_file.close()
 
-
+# Final save (redundant but ensures final state is saved)
 df_results_cal = pd.DataFrame(results_cal)
 df_results_cal.to_csv(output_dir + f'/results/RF_results_cal.csv', index=False, header=True)
 

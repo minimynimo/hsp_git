@@ -4,6 +4,8 @@ import os
 import matplotlib.pyplot as plt
 import seaborn as sns
 
+fs = 20
+
 # Configuration
 output_dir = "/data0/funato/hsp/0_out/1_fig/peak_discharge/example/"
 os.makedirs(output_dir, exist_ok=True)

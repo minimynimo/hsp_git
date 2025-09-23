@@ -7,7 +7,8 @@ from scipy import stats
 
 # Set plotting style
 plt.style.use('default')
-sns.set_palette("husl")
+
+fs = 20
 
 model_list = ["HBV", "RF", "XGB", "TCN", "LSTM"]
 file_tot_num = 424
@@ -18,6 +19,15 @@ output_dir = "/data0/funato/hsp/0_out/analysis/no_precip_discharge"
 output_fig_dir = "/data0/funato/hsp/0_out/1_fig/no_precip_discharge"
 os.makedirs(output_dir, exist_ok=True)
 os.makedirs(output_fig_dir, exist_ok=True)
+
+color_list = {
+    "HBV": "#7B7B7B",    # Kept as requested (Medium Grey)
+    "BC": "#628AE8",     # Kept as requested (Steel Blue)
+    "RF":   "#FF7F00",   # Red
+    "XGB":  "#9C4803",   # Bright Orange
+    "TCN":  "#E41A1C",   # Reddish Purple / Magenta
+    "LSTM": "#9808B2"    # Pink
+}
 
 def create_detailed_analysis():
     """Create detailed analysis of no-precipitation discharge predictions"""
@@ -132,101 +142,8 @@ def create_comprehensive_plots(all_discharge_data, model_file_means, results_df,
     ax1 = plt.subplot(2, 3, 1)
     box_data = [all_discharge_data[model] for model in model_list if len(all_discharge_data[model]) > 0]
     box_labels = [model for model in model_list if len(all_discharge_data[model]) > 0]
-    
-    if box_data:
-        bp = ax1.boxplot(box_data, labels=box_labels, patch_artist=True)
-        colors = ['lightblue', 'lightgreen', 'lightcoral', 'lightyellow', 'lightpink']
-        for patch, color in zip(bp['boxes'], colors[:len(bp['boxes'])]):
-            patch.set_facecolor(color)
-        
-        ax1.set_title('No-Precipitation Discharge Distribution\n(All Values)', fontsize=12, fontweight='bold')
-        ax1.set_ylabel('Discharge')
-        ax1.grid(True, alpha=0.3)
-        ax1.set_yscale('log')  # Log scale for better visualization
-    
-    # 2. Violin plot
-    ax2 = plt.subplot(2, 3, 2)
-    if box_data:
-        parts = ax2.violinplot(box_data, positions=range(1, len(box_data) + 1))
-        ax2.set_xticks(range(1, len(box_labels) + 1))
-        ax2.set_xticklabels(box_labels)
-        ax2.set_title('Discharge Distribution\n(Violin Plot)', fontsize=12, fontweight='bold')
-        ax2.set_ylabel('Discharge')
-        ax2.grid(True, alpha=0.3)
-        ax2.set_yscale('log')
-    
-    # 3. Mean discharge by file (basin-wise comparison)
-    ax3 = plt.subplot(2, 3, 3)
-    mean_data = [model_file_means[model] for model in model_list if len(model_file_means[model]) > 0]
-    mean_labels = [model for model in model_list if len(model_file_means[model]) > 0]
-    
-    if mean_data:
-        bp = ax3.boxplot(mean_data, labels=mean_labels, patch_artist=True)
-        for patch, color in zip(bp['boxes'], colors[:len(bp['boxes'])]):
-            patch.set_facecolor(color)
-        
-        ax3.set_title('Mean Discharge per Basin\n(File-wise Means)', fontsize=12, fontweight='bold')
-        ax3.set_ylabel('Mean Discharge')
-        ax3.grid(True, alpha=0.3)
-        ax3.set_yscale('log')
-    
-    # 4. Histogram comparison
-    ax4 = plt.subplot(2, 3, 4)
-    for i, model in enumerate(model_list):
-        if len(all_discharge_data[model]) > 0:
-            # Use log-transformed data for better visualization
-            log_data = np.log10(np.array(all_discharge_data[model]) + 1e-10)  # Add small value to avoid log(0)
-            ax4.hist(log_data, bins=50, alpha=0.6, label=model, density=True)
-    
-    ax4.set_title('Distribution Comparison\n(Log-transformed)', fontsize=12, fontweight='bold')
-    ax4.set_xlabel('Log10(Discharge)')
-    ax4.set_ylabel('Density')
-    ax4.legend()
-    ax4.grid(True, alpha=0.3)
-    
-    # 5. Model performance ranking
-    ax5 = plt.subplot(2, 3, 5)
-    if not results_df.empty:
-        model_means = results_df.groupby('Model')['Mean_Discharge'].mean().sort_values()
-        bars = ax5.bar(range(len(model_means)), model_means.values, 
-                      color=['lightblue', 'lightgreen', 'lightcoral', 'lightyellow'][:len(model_means)])
-        ax5.set_xticks(range(len(model_means)))
-        ax5.set_xticklabels(model_means.index, rotation=45)
-        ax5.set_title('Average Mean Discharge by Model\n(Lower = Better for Zero Precip)', fontsize=12, fontweight='bold')
-        ax5.set_ylabel('Average Mean Discharge')
-        ax5.grid(True, alpha=0.3)
-        
-        # Add value labels on bars
-        for i, v in enumerate(model_means.values):
-            ax5.text(i, v + max(model_means.values) * 0.01, f'{v:.4f}', 
-                    ha='center', va='bottom', fontweight='bold')
-    
-    # 6. Scatter plot: Mean vs Std
-    ax6 = plt.subplot(2, 3, 6)
-    if not results_df.empty:
-        for model in model_list:
-            model_data = results_df[results_df['Model'] == model]
-            if not model_data.empty:
-                ax6.scatter(model_data['Mean_Discharge'], model_data['Std_Discharge'], 
-                           label=model, alpha=0.6, s=30)
-        
-        ax6.set_xlabel('Mean Discharge')
-        ax6.set_ylabel('Standard Deviation')
-        ax6.set_title('Mean vs Variability\n(Each point = one basin)', fontsize=12, fontweight='bold')
-        ax6.legend()
-        ax6.grid(True, alpha=0.3)
-        ax6.set_xscale('log')
-        ax6.set_yscale('log')
-    
-    plt.tight_layout()
-    
-    # Save the comprehensive plot
-    output_fig = f"{output_dir}/no_precip_comprehensive_analysis.png"
-    plt.savefig(output_fig, dpi=300, bbox_inches='tight')
-    print(f"Comprehensive analysis plot saved to: {output_fig}")
-    
-    #plt.show()
 
+    
 def perform_statistical_tests(model_file_means, output_dir):
     """Perform statistical tests to compare models"""
     

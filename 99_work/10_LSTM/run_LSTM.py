@@ -210,7 +210,7 @@ class Model(nn.Module):
         self.dropout_rate = dropout_rate
         
         # create required layer
-        self.lstm = nn.LSTM(input_size=5, hidden_size=self.hidden_size, 
+        self.lstm = nn.LSTM(input_size=3, hidden_size=self.hidden_size, 
                             num_layers=1, bias=True, batch_first=True)
         self.dropout = nn.Dropout(p=self.dropout_rate)
         self.fc = nn.Linear(in_features=self.hidden_size, out_features=1)
@@ -336,7 +336,12 @@ def calc_nse(obs: np.array, sim: np.array) -> float:
     return nse_val
 
 
-def BMK(obs_data, sim_data, benchmark):    
+def BMK(obs_data, sim_data, benchmark): 
+    # create mask to filter out invalid values for obs_data and sim_data
+    valid_mask = np.isfinite(obs_data) & np.isfinite(sim_data)
+    obs_data = obs_data[valid_mask]
+    sim_data = sim_data[valid_mask]
+
     if benchmark == "NSE":
         obs_ave = np.mean(obs_data)
         return 1 - (np.sum(np.square(obs_data - sim_data)) / np.sum(np.square(obs_data - obs_ave)))

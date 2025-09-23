@@ -60,7 +60,7 @@ elif loc == "GB" and ver == 2:
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu") # This line checks if GPU is available
 print(f"Using device: {DEVICE}")
 
-output_dir = f"/data0/funato/0_out/99_out/{loc}/LSTM/"
+output_dir = f"/data0/funato/hsp/0_out/LSTM/{loc}/individual/"
 os.makedirs(output_dir, exist_ok=True)
 os.makedirs(output_dir + '/predict', exist_ok=True)
 os.makedirs(output_dir + '/results', exist_ok=True)
@@ -123,12 +123,10 @@ for file_num in range(1, file_tot_num + 1):
     for epoch in range(num_epochs):
         epoch_start_time = datetime.now()
         train_epoch(model, optimizer, tr_loader, loss_func, epoch+1)
-        ##obs, preds = eval_model(model, val_loader) ##ORIGINAL
         obs, preds = eval_model(model, tr_loader)
-        ##preds = ds_val.local_rescale(preds.numpy(), variable='output') ##ORIGINAL
-        preds = ds_train.local_rescale(preds.numpy(), variable='output')
+        preds = ds_train.local_rescale(preds.cpu().numpy(), variable='output')
 
-        nse = calc_nse(obs.numpy(), preds)
+        nse = calc_nse(obs.cpu().numpy(), preds)
         tqdm.tqdm.write(f"Validation NSE: {nse:.2f}")
 
         epoch_end_time = datetime.now()
@@ -147,10 +145,10 @@ for file_num in range(1, file_tot_num + 1):
 
 
     # Rescale predictions
-    predict_cal = ds_train.local_rescale(predict_cal.numpy(), variable='output')
-    predict_eva = ds_train.local_rescale(predict_eva.numpy(), variable='output')
-    target_cal = cal_obs.numpy()
-    target_eva = eva_obs.numpy()
+    predict_cal = ds_train.local_rescale(predict_cal.cpu().numpy(), variable='output')
+    predict_eva = ds_train.local_rescale(predict_eva.cpu().numpy(), variable='output')
+    target_cal = cal_obs.cpu().numpy()
+    target_eva = eva_obs.cpu().numpy()
 
     nse = calc_nse(target_eva, predict_eva)
 
@@ -204,17 +202,26 @@ for file_num in range(1, file_tot_num + 1):
     results_cal.append(file_results_cal)
     results_eva.append(file_results_eva)
 
+    # Save results to CSV after each file
+    df_results_cal = pd.DataFrame(results_cal)
+    df_results_cal.to_csv(output_dir + f'/results/LSTM_results{file_tag}_cal.csv', index=False, header=True)
+
+    df_results_eva = pd.DataFrame(results_eva)
+    df_results_eva.to_csv(output_dir + f'/results/LSTM_results{file_tag}_eva.csv', index=False, header=True)
+
     end_time = datetime.now()
     end_time_st = end_time.strftime("%a %b %d %I:%M:%S %p JST %Y")
     log_file.write(f"end: {end_time_st}\n")
     log_file.write(f"pred elapsed: {end_time - pred_start_time}\n")
     log_file.write(f"epoch elapsed: {end_time - start_time}\n")
+    log_file.write(f"Results saved for file {file_num}\n")
+    print(f"Results saved for file {file_num}")
 
 ##
 log_file.write(f"DONE\n")
 log_file.close()
 
-
+# Final save (redundant but ensures final state is saved)
 df_results_cal = pd.DataFrame(results_cal)
 df_results_cal.to_csv(output_dir + f'/results/LSTM_results{file_tag}_cal.csv', index=False, header=True)
 

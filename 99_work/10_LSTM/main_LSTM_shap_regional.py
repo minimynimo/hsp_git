@@ -347,8 +347,6 @@ if X_sample.shape[0] > 0:
         force_plot = shap.force_plot(explainer.expected_value, shap_values[i,:], X_sample_df.iloc[i,:])
         shap.save_html(f"{output_dir_shap}/LSTM_force_plot_sample_{i}.html", force_plot)
 
-sys.exit(0) 
-
 print("--- Evaluating Model and Generating Outputs ---")
 results_cal, results_eva = [], []
 syn_predict_dfs_combined = {col: {} for col in syn_precip_cols}

@@ -10,6 +10,7 @@ plt.style.use('default')
 sns.set_palette("husl")
 
 model_list = ['RF', 'XGB', 'TCN', 'LSTM']
+fs = 18
 
 # Enhanced feature categories for analysis based on actual data
 dynamic_features = ['Precip', 'Temp', 'PET']
@@ -232,7 +233,9 @@ for model in model_list:
             ax2.set_title(f'Feature Count Distribution by Category', fontsize=14, fontweight='bold')
             
             plt.tight_layout()
-            plt.savefig(f"{output_dir.split('/')[:-1]}/category_distribution.png", dpi=300, bbox_inches='tight')
+            # Fix the path construction - get parent directory properly
+            parent_dir = os.path.dirname(output_dir)
+            plt.savefig(f"{parent_dir}/category_distribution.png", dpi=300, bbox_inches='tight')
             plt.close()
     
         
@@ -268,7 +271,8 @@ for model in model_list:
         # 6. Enhanced Waterfall plots for sample predictions
         if len(shap_values) > 0:
             # Select representative samples
-            sample_indices = [0, len(shap_values)//4, len(shap_values)//2, 3*len(shap_values)//4, -1]
+            #sample_indices = [0, len(shap_values)//4, len(shap_values)//2, 3*len(shap_values)//4, -1]
+            sample_indices = [100,200]
             
             fig, axes = plt.subplots(2, 3, figsize=(20, 14))
             axes = axes.flatten()
@@ -282,9 +286,9 @@ for model in model_list:
                     sample_data = X_sample.iloc[idx].values
                     feature_names = X_sample.columns.tolist()
                     
-                    # Get top 15 features by absolute SHAP value for this sample
+                    # Get top 10 features by absolute SHAP value for this sample
                     abs_shap = np.abs(sample_shap)
-                    top_indices = np.argsort(abs_shap)[-15:][::-1]
+                    top_indices = np.argsort(abs_shap)[-10:][::-1]
                     
                     top_shap = sample_shap[top_indices]
                     top_features = [feature_names[j] for j in top_indices]
@@ -315,25 +319,25 @@ for model in model_list:
                     
                     # Customize the plot
                     ax.set_xticks(x_pos)
-                    ax.set_xticklabels(top_features, rotation=45, ha='right', fontsize=8)
-                    ax.set_ylabel('SHAP Value', fontsize=10)
-                    ax.set_title(f'Sample {idx} - Top 15 Features', fontsize=12, fontweight='bold')
+                    ax.set_xticklabels(top_features, rotation=45, ha='right', fontsize=fs)
+                    ax.tick_params(axis='y', labelsize=fs)
+                    ax.set_ylabel('SHAP Value', fontsize=fs)
+                    ax.set_title(f'Sample {int(idx/100)} - Top 10 Features', fontsize=fs, fontweight='bold')
                     ax.grid(True, alpha=0.3)
-                    ax.legend(fontsize=8)
-                    
+                    ax.legend(fontsize=fs*0.6, loc="upper right")
+
                     # Add value labels on bars (only for significant values)
                     for j, (feat, shap_val) in enumerate(zip(top_features, top_shap)):
                         if abs(shap_val) > 0.01:  # Only label significant values
                             y_pos = cumulative[j] + shap_val/2 if shap_val >= 0 else cumulative[j+1] + abs(shap_val)/2
                             ax.text(j, y_pos, f'{shap_val:.2f}', ha='center', va='center', 
-                                   fontsize=7, fontweight='bold', color='white')
+                                   fontsize=fs * 0.6, fontweight='bold', color='black')
             
             # Remove unused subplots
             for i in range(len(sample_indices), len(axes)):
                 fig.delaxes(axes[i])
             
-            plt.suptitle(f'{model} - Individual Prediction Breakdowns (Top 15 Features)', 
-                        fontsize=16, fontweight='bold')
+            #plt.suptitle(f'{model} - Individual Prediction Breakdowns (Top 10 Features)', fontsize=16, fontweight='bold')
             plt.tight_layout()
             plt.savefig(f"{output_dir}/{model}_waterfall_plots.png", dpi=300, bbox_inches='tight')
             plt.close()
