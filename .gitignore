@@ -1,1 +1,6 @@
 /data0/funato/hsp/hsp_git/99_work/10_LSTM/main_LSTM_shap_regional.py
+
+**/*.log
+**/*.p
+**/__pycache__/
+**/bash_logs/
