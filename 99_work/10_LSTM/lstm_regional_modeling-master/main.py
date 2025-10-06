@@ -36,8 +36,8 @@ from papercode.nseloss import NSELoss
 from papercode.utils import create_h5_files, get_basin_list
 
 # Define synthetic precipitation columns
-syn_precip_cols = ['syn_no_precip', 'syn_p_pet', 'syn_peak1_rate0',
-                   'syn_peak1_rate10', 'syn_peak1_rate30', 'syn_peak1_rate50',
+syn_precip_cols = ['syn_no_precip', 'syn_p_pet', 
+                   'syn_peak1_rate0', 'syn_peak1_rate10', 'syn_peak1_rate30', 'syn_peak1_rate50',
                    'syn_peak3_rate0', 'syn_peak3_rate10', 'syn_peak3_rate30', 'syn_peak3_rate50',
                    'syn_peak5_rate0', 'syn_peak5_rate10', 'syn_peak5_rate30', 'syn_peak5_rate50']
 
@@ -106,10 +106,10 @@ ver_name = "ver1_1" if GLOBAL_SETTINGS['ver'] == 1 else "ver2_0"
 # check if GPU is available
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-output_dir = f'/data0/funato/hsp/0_out/EALSTM_nostatic/data'
+output_dir = f'/data0/funato/hsp/0_out/LSTM/GB/data'
 varssim_dir = f"/data0/funato/hsp/2_MERV/varssim_HBV"
 
-rundir = f'/data0/funato/hsp/0_out/EALSTM_nostatic'
+rundir = f'/data0/funato/hsp/0_out/LSTM/GB'
 os.makedirs(rundir, exist_ok=True)
 
 if GLOBAL_SETTINGS['loc'] == "JP":
@@ -153,7 +153,7 @@ def get_args() -> Dict:
                         help="If True, trains LSTM without static features")
     parser.add_argument('--concat_static',
                         type=bool,
-                        default=False,
+                        default=True,
                         help="If True, train LSTM with static feats concatenated at each time step. If True, uses standard LSTM otherwise uses EA-LSTM")
     parser.add_argument('--use_mse',
                         type=bool,
@@ -271,7 +271,7 @@ class Model(nn.Module):
                  hidden_size: int,
                  initial_forget_bias: int = 5,
                  dropout: float = 0.0,
-                 concat_static: bool = False,
+                 concat_static: bool = True,
                  no_static: bool = False):
         """Initialize model.
 
@@ -414,6 +414,93 @@ def train(cfg):
 
         model_path = cfg["run_dir"] / f"model_epoch{epoch}.pt"
         torch.save(model.state_dict(), str(model_path))
+    
+    # Save final model
+    final_model_path = cfg["run_dir"] / "lstm_model_final.pt"
+    torch.save(model.state_dict(), str(final_model_path))
+    print(f"Final LSTM model saved to {final_model_path}")
+    
+    # Generate synthetic data predictions
+    print("\n--- Generating Synthetic Data Predictions ---")
+    try:
+        syn_predict_dfs_combined = {col: {} for col in syn_precip_cols}
+        
+        for basin in basins:
+            print(f"Processing synthetic data for basin {basin}...")
+            df_current_basin = load_data_for_basin(int(basin))
+            
+            for syn_precip_col in syn_precip_cols:
+                if syn_precip_col.startswith('syn_peak'):
+                    end_date_eva_syn = '2001-02-10'
+                else:
+                    end_date_eva_syn = cfg['val_end'].strftime('%Y-%m-%d')
+                
+                start_date = cfg['train_start'].strftime('%Y-%m-%d')
+                df_current = df_current_basin[start_date:end_date_eva_syn].copy()
+                
+                # Select appropriate temperature and PET columns
+                syn_temp_col = 'Temp_at_peak' if syn_precip_col not in ['syn_no_precip', 'syn_p_pet'] else 'Temp'
+                syn_pet_col = 'PET_at_peak' if syn_precip_col not in ['syn_no_precip', 'syn_p_pet'] else 'PET'
+                
+                # Skip if synthetic columns don't exist
+                if syn_precip_col not in df_current.columns:
+                    print(f"Warning: {syn_precip_col} not found in data for basin {basin}")
+                    continue
+                    
+                # Create input data array
+                syn_input_dyn = np.column_stack([
+                    df_current[syn_precip_col].values,
+                    df_current[syn_temp_col].values,
+                    df_current[syn_pet_col].values
+                ])
+                
+                # Remove NaN values
+                valid = ~np.isnan(syn_input_dyn).any(axis=1)
+                syn_input_clean = syn_input_dyn[valid]
+                syn_dates = df_current.index[valid]
+                
+                if len(syn_input_clean) < cfg['seq_length']:
+                    continue
+                
+                # Create sequences for LSTM
+                X_syn_list = []
+                dates_syn_list = []
+                
+                for i in range(len(syn_input_clean) - cfg['seq_length'] + 1):
+                    X_syn_list.append(syn_input_clean[i:i+cfg['seq_length']])
+                    dates_syn_list.append(syn_dates[i+cfg['seq_length']-1])
+                
+                if len(X_syn_list) == 0:
+                    continue
+                    
+                X_syn = torch.tensor(np.array(X_syn_list), dtype=torch.float32)
+                
+                # Make predictions
+                model.eval()
+                with torch.no_grad():
+                    if cfg['concat_static']:
+                        # Add static features if needed
+                        # For simplicity, we'll use dynamic features only
+                        syn_predict = model(X_syn).cpu().numpy().flatten()
+                    else:
+                        syn_predict = model(X_syn).cpu().numpy().flatten()
+                    
+                syn_predict[syn_predict < 0] = 0
+                
+                # Store results
+                temp_syn_df = pd.DataFrame({
+                    'Date': dates_syn_list,
+                    'prediction': syn_predict
+                })
+                syn_predict_dfs_combined[syn_precip_col][basin] = temp_syn_df
+        
+        # Save synthetic predictions
+        save_synthetic_predictions_lstm(syn_predict_dfs_combined, str(cfg["run_dir"]), "LSTM")
+        print("Synthetic data predictions completed and saved.")
+        
+    except Exception as e:
+        print(f"Error generating synthetic predictions: {e}")
+        print("Continuing without synthetic predictions...")
 
 
 def train_epoch(model: nn.Module, optimizer: torch.optim.Optimizer, loss_func: nn.Module,
