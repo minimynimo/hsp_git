@@ -22,9 +22,9 @@ from run_LSTM import eval_model
 from run_LSTM import calc_nse
 from run_LSTM import BMK
 
-num_epochs = 200 # Number of training epochs
+num_epochs = 100 # Number of training epochs
 hidden_size = 20 # Number of LSTM cells
-learning_rate = 1e-3 # Learning rate used to update the weights
+learning_rate = 0.005 # Learning rate used to update the weights
 window_size = 365 # Length of the meteorological record provided to the network
 batch_size = 512 # Number of samples in each batch
 dropout_rate = 0.1 # Dropout rate of the final fully connected Layer [0.0, 1.0]
@@ -193,10 +193,10 @@ for file_num in range(1, file_tot_num + 1):
     # Loop over each benchmark and add results to the current file's dictionary
     for benchmark in benchmark_list:
         file_results_cal.update({
-            f'LSTM{file_tag}_{benchmark}_cal': BMK(target_cal, predict_cal, benchmark)
+            f'{benchmark}': BMK(target_cal, predict_cal, benchmark)
         })
         file_results_eva.update({
-            f'LSTM{file_tag}_{benchmark}_eva': BMK(target_eva, predict_eva, benchmark)
+            f'{benchmark}': BMK(target_eva, predict_eva, benchmark)
         })  
 
     results_cal.append(file_results_cal)
