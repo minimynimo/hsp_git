@@ -494,11 +494,20 @@ for file_num in file_list:
     results_cal.append(file_results_cal)
     results_eva.append(file_results_eva)
 
+    # Save results to CSV after each file
+    df_results_cal = pd.DataFrame(results_cal)
+    df_results_cal.to_csv(output_dir + f'/results/TCN_results_cal.csv', index=False, header=True)
+
+    df_results_eva = pd.DataFrame(results_eva)
+    df_results_eva.to_csv(output_dir + f'/results/TCN_results_eva.csv', index=False, header=True)
+
     print(f"file_num: {file_num}, NSE_cal: {BMK(target_cal_seq_basin, predict_cal_basin, 'NSE'):.4f}, NSE_eva: {BMK(target_eva_seq_basin, predict_eva_basin, 'NSE'):.4f}")
 
     end_time_basin_eval = datetime.now()
     log_file.write(f"end: {end_time_basin_eval}\n")
     log_file.write(f"elapsed: {end_time_basin_eval - start_time_basin_eval}\n")
+    log_file.write(f"Results saved for file {file_num}\n")
+    print(f"Results saved for file {file_num}")
     log_file.flush()
 
 
@@ -509,7 +518,7 @@ log_file.write(f"Overall elapsed: {end_time_overall - start_time_overall}\n")
 log_file.write(f"DONE\n")
 log_file.close()
 
-
+# Final save (redundant but ensures final state is saved)
 df_results_cal = pd.DataFrame(results_cal)
 df_results_cal.to_csv(output_dir + f'/results/TCN_results_cal.csv', index=False, header=True)
 

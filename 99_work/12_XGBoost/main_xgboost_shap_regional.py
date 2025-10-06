@@ -21,10 +21,10 @@ ver_name = "ver1_1" if ver == 1 else "ver2_0"
 attribute_dir = f'/data0/funato/hsp/3_gis_data/{loc}/0_data/river_basin/dataset_{loc}'
 
 # Define synthetic precipitation columns
-syn_precip_cols = ['syn_no_precip', 'syn_p_pet', 'syn_peak1_rate0',
-                   'syn_peak1_rate10', 'syn_peak1_rate30', 'syn_peak1_rate50',
-                   'syn_peak3_rate10', 'syn_peak3_rate30', 'syn_peak3_rate50',
-                   'syn_peak5_rate10', 'syn_peak5_rate30', 'syn_peak5_rate50']
+syn_precip_cols = ['syn_no_precip', 'syn_p_pet', 
+                   'syn_peak1_rate0','syn_peak1_rate10', 'syn_peak1_rate30', 'syn_peak1_rate50',
+                   'syn_peak3_rate0','syn_peak3_rate10', 'syn_peak3_rate30', 'syn_peak3_rate50',
+                   'syn_peak5_rate0','syn_peak5_rate10', 'syn_peak5_rate30', 'syn_peak5_rate50']
 
 dynamic_features = ["Precip", "Temp", "PET"]
 

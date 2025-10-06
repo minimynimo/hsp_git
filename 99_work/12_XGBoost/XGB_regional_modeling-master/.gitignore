@@ -1,9 +1,10 @@
 **/*.pyc
 **/*.pt
 **/*.db
+**/*.p
 
 */.ipynb_checkpoints/*.ipynb
 .vscode
 runs/
 
-/data0/funato/hsp/99_work/12_XGBoost/XGB_regional_modeling-master/notebooks/*
+/data0/funato/hsp/99_work/12_XGBoost/XGB_regional_modeling-master/notebooks/*.p

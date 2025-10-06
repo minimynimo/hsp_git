@@ -1,61 +1,49 @@
-# based on https://github.com/xbeat/Machine-Learning/blob/main/XGBoost%20Regression%20with%20Python.md?utm_source=chatgpt.com
+# based on https://github.com/urgedata/pythondata/blob/master/rf_timeseries/Random%20Forest%20for%20Time%20Series%20Forecasting.ipynb?utm_source=chatgpt.com
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 import os
-import xgboost as xgb
-from sklearn.preprocessing import StandardScaler
+
+from sklearn.ensemble import RandomForestRegressor
 
 from datetime import datetime
 
 benchmark_list = ["KGE","NSE","E1", "VE", "d","RMSE","MAE"]
+
 
 #loc, ver = "JP", 2
 loc, ver = "GB", 2
 
 ver_name = "ver1_1" if ver == 1 else "ver2_0"   
 
-attribute_dir = f'/data0/funato/3_gis_data/{loc}/0_data/river_basin/dataset_{loc}'
 
 if loc == "JP" and ver == 2:
     file_tot_num = 87
     columns_drop = ['grdc_no','river','station','WaterArea','ForestArea','ForestAreaRatio','WaterAreaRatio','lat_org','long_org', 'land_GolfCourse','land_GolfCourse_Ratio']
-    attribute_values = pd.read_csv(f'{attribute_dir}/basin_data_limited_met&soil&geology&land_{ver_name}.csv', encoding= 'UTF-8', index_col=0, header=0)
     varssim_dir = f"/data0/funato/2_MERV/{loc}/varssim_nocal/{ver_name}"
 elif loc == "GB" and ver == 2:
     file_tot_num = 424
     columns_drop = ['grdc_no','river','station','WaterArea','ForestArea','ForestAreaRatio','WaterAreaRatio','lat_org','long_org', 'land_GolfCourse','land_GolfCourse_Ratio']
-    attribute_values = pd.read_csv(f'{attribute_dir}/basin_data_limited_met&soil&geology&land_{ver_name}.csv', encoding= 'UTF-8', index_col=0, header=0)
     varssim_dir = f"/data0/funato/hsp/2_MERV/varssim_HBV"
 
+
 file_list = list(range(1, file_tot_num+1))
-#file_list = list(range(20,30))
 
 start_date_cal = '1993-01-01'
 end_date_cal = '2000-12-31'
 start_date_eva = '2001-01-01'
 end_date_eva = '2006-12-31'
 
-n_estimators = 500
-learning_rate = 0.1
+max_depth = 15
+max_features = 0.7
+n_estimators = 100
+max_samples = 0.5
+min_samples_split = 2
 
-output_dir = f"/data0/funato/hsp/0_out/XGB/{loc}"
+output_dir = f"/data0/funato/hsp/0_out/RF/{loc}/individual/"
 os.makedirs(output_dir, exist_ok=True)
 os.makedirs(output_dir + "/predict", exist_ok=True)
 os.makedirs(output_dir + "/results", exist_ok=True)
-
-# clean attribute values and normalize
-attribute_values_dropped = attribute_values.drop(columns=[col for col in columns_drop if col in attribute_values.columns]) # 87,193
-print(attribute_values_dropped.head())
-
-# Convert all columns except 'File_num' to numeric, coercing errors to NaN
-cols_to_numeric = [col for col in attribute_values_dropped.columns if col != 'File_num']
-attribute_values_dropped[cols_to_numeric] = attribute_values_dropped[cols_to_numeric].apply(pd.to_numeric, errors='coerce')
-attribute_values_numeric = attribute_values_dropped.drop(columns=['File_num']) if 'File_num' in attribute_values_dropped.columns else attribute_values_dropped
-attribute_mean = attribute_values_numeric.mean()
-attribute_std = attribute_values_numeric.std()
-attribute_valued_dropped = attribute_values_dropped.copy()
-attribute_valued_dropped.loc[:, attribute_values_numeric.columns] = (attribute_values_numeric - attribute_mean) / attribute_std
 
 
 def file_name(input_num, total_len):
@@ -79,15 +67,6 @@ def load_data(file_num):
     df = df.reindex(full_date_range)
     
     return df
-
-def load_attribute_values(input_data, file_num):
-    # input_data ; 2190, 3
-    attribute_row = attribute_valued_dropped[attribute_valued_dropped.index == file_num]
-    attribute_list = attribute_row.iloc[0] # 194,
-    attribute_list = attribute_list.drop('File_num') if 'File_num' in attribute_list.index else attribute_list #193
-    static_attributes = np.array([attribute_list.values] * input_data.shape[0])
-    input_data = np.hstack((input_data, static_attributes))
-    return input_data # 2190, 196
 
 
 def BMK(obs_data,sim_data,benchmark):    
@@ -140,9 +119,9 @@ def BMK(obs_data,sim_data,benchmark):
         return np.mean(np.abs(obs_data - sim_data))
     
 
-if os.path.exists(output_dir + f'/XGB_log.txt'):
-    open(output_dir + f'/XGB_log.txt', 'w').close()
-log_file = open(output_dir + f'/XGB_log.txt', 'a')
+if os.path.exists(output_dir + f'/RF_log.txt'):
+    open(output_dir + f'/RF_log.txt', 'w').close()
+log_file = open(output_dir + f'/RF_log.txt', 'a')
 
 results_cal = []
 results_eva = []
@@ -173,39 +152,19 @@ for file_num in file_list:
     input_cal = input_cal[:-1] #2898
     input_eva = input_eva[:-1] #1089
 
-    scaler = StandardScaler()
-    input_cal = scaler.fit_transform(input_cal)
-    input_eva = scaler.transform(input_eva)
-
-    # add static attributes using load_attribute_values function
-    input_cal = load_attribute_values(input_cal, file_num)
-    input_eva = load_attribute_values(input_eva, file_num)
-
     target_cal = df_cal['Obs flow'].values[1:] #2898
     target_eva = df_eva['Obs flow'].values[1:] #1089
 
 
-    xgb_model = xgb.XGBRegressor(
-        objective='reg:squarederror',
-        n_estimators=n_estimators,
-        max_depth=4,              # allow slightly more complexity
-        learning_rate=learning_rate,       # slightly faster learning
-        subsample=0.8,            
-        colsample_bytree=0.8,
-        reg_alpha=0.5,            # slightly less L1 regularization
-        reg_lambda=0.5            # slightly less L2 regularization
-    )
-
+    rf = RandomForestRegressor(max_depth=max_depth, max_features = max_features, n_estimators=n_estimators, min_samples_split=min_samples_split, oob_score=True, random_state=42, n_jobs=-1)
     
-    xgb_model.fit(input_cal, target_cal)
+    rf.fit(input_cal, target_cal)
     
-    predict_cal=xgb_model.predict(input_cal)
-    predict_eva=xgb_model.predict(input_eva)
+    predict_cal=rf.predict(input_cal)
+    predict_eva=rf.predict(input_eva)
 
     predict_cal[predict_cal < 0] = 0
     predict_eva[predict_eva < 0] = 0
-
-    print(f"file_num: {file_num}, NSE_cal: {BMK(target_cal, predict_cal, 'NSE')}, NSE_eva: {BMK(target_eva, predict_eva, 'NSE')}")
 
 
     file_row_cal = [f'file_{file_num}_cal'] + list(predict_cal.flatten())
@@ -221,12 +180,12 @@ for file_num in file_list:
         predict_cal_df = pd.DataFrame([date_row_cal])
         predict_eva_df = pd.DataFrame([date_row_eva])
 
-        predict_cal_df.to_csv(output_dir + f"/predict/XGB_predict_cal.csv", mode='w', index=False, header=False)
-        predict_eva_df.to_csv(output_dir + f"/predict/XGB_predict_eva.csv", mode='w', index=False, header=False)
+        predict_cal_df.to_csv(output_dir + f"/predict/RF_predict_cal.csv", mode='w', index=False, header=False)
+        predict_eva_df.to_csv(output_dir + f"/predict/RF_predict_eva.csv", mode='w', index=False, header=False)
 
-    with open(output_dir + f"/predict/XGB_predict_cal.csv", 'a') as file:
+    with open(output_dir + f"/predict/RF_predict_cal.csv", 'a') as file:
         pd.DataFrame([file_row_cal]).to_csv(file, header=False, index=False)
-    with open(output_dir + f"/predict/XGB_predict_eva.csv", 'a') as file:
+    with open(output_dir + f"/predict/RF_predict_eva.csv", 'a') as file:
         pd.DataFrame([file_row_eva]).to_csv(file, header=False, index=False)
 
     file_results_cal = {'file_num': file_num}
@@ -235,30 +194,38 @@ for file_num in file_list:
     # Loop over each benchmark and add results to the current file's dictionary
     for benchmark in benchmark_list:
         file_results_cal.update({
-            f'XGB_{benchmark}_cal': BMK(target_cal, predict_cal, benchmark)
+            f'RF_{benchmark}_cal': BMK(target_cal, predict_cal, benchmark)
         })
         file_results_eva.update({
-            f'XGB_{benchmark}_eva': BMK(target_eva, predict_eva, benchmark)
+            f'RF_{benchmark}_eva': BMK(target_eva, predict_eva, benchmark)
         })  
     
     results_cal.append(file_results_cal)
     results_eva.append(file_results_eva)
 
+    # Save results to CSV after each file
+    df_results_cal = pd.DataFrame(results_cal)
+    df_results_cal.to_csv(output_dir + f'/results/RF_results_cal.csv', index=False, header=True)
+
+    df_results_eva = pd.DataFrame(results_eva)
+    df_results_eva.to_csv(output_dir + f'/results/RF_results_eva.csv', index=False, header=True)
 
     end_time = datetime.now()
     end_time_st = end_time.strftime("%a %b %d %I:%M:%S %p JST %Y")
     log_file.write(f"end: {end_time_st}\n")
     log_file.write(f"elapsed: {end_time - start_time}\n")
+    log_file.write(f"Results saved for file {file_num}\n")
+    print(f"Results saved for file {file_num}")
 
 log_file.write(f"DONE\n")
 log_file.close()
 
-
+# Final save (redundant but ensures final state is saved)
 df_results_cal = pd.DataFrame(results_cal)
-df_results_cal.to_csv(output_dir + f'/results/XGB_results_cal.csv', index=False, header=True)
+df_results_cal.to_csv(output_dir + f'/results/RF_results_cal.csv', index=False, header=True)
 
 df_results_eva = pd.DataFrame(results_eva)
-df_results_eva.to_csv(output_dir + f'/results/XGB_results_eva.csv', index=False, header=True)
+df_results_eva.to_csv(output_dir + f'/results/RF_results_eva.csv', index=False, header=True)
 
 
 print("DONE")
