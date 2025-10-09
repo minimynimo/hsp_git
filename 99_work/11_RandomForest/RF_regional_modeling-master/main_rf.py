@@ -22,6 +22,7 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_squared_error
 import joblib
 from tqdm import tqdm
+import h5py
 
 from papercode.datasets import CamelsH5, CamelsTXT
 from papercode.datautils import add_basin_attributes, load_attributes
@@ -71,6 +72,95 @@ def load_data_for_basin(file_num):
     df['Date'] = pd.to_datetime(df['Date'])
     df.set_index('Date', inplace=True)
     return df
+
+def str2bool(v):
+    if isinstance(v, bool):
+        return v
+    if v.lower() in ('yes', 'true', 't', 'y', '1'):
+        return True
+    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+        return False
+    else:
+        raise argparse.ArgumentTypeError('Boolean value expected.')
+
+def save_evaluation_predictions(model, basins, cfg):
+    """Generate and save predictions for the evaluation period"""
+    print("\n--- Generating Evaluation Period Predictions ---")
+    try:
+        # Create evaluation dataset
+        eval_file = cfg["train_dir"] / 'eval_data.h5'
+        create_h5_files(out_file=eval_file,
+                        basins=basins,
+                        dates=[cfg["val_start"], cfg["val_end"]],
+                        with_basin_str=True,
+                        seq_length=cfg["seq_length"])
+        
+        eval_ds = CamelsH5(h5_file=str(eval_file),
+                          basins=basins,
+                          db_path=cfg["db_path"],
+                          concat_static=not cfg["no_static"],
+                          cache=False,
+                          no_static=cfg["no_static"])
+        
+        X_eval_list = []
+        y_eval_list = []
+        basin_eval_list = []
+        
+        # Load evaluation data
+        for i in tqdm(range(len(eval_ds)), desc="Loading evaluation data"):
+            data = eval_ds[i]
+            if cfg["no_static"]:
+                x, y, q_std = data
+            else:
+                if len(data) == 3:
+                    x, y, q_std = data
+                else:
+                    x, attributes, y, q_std = data
+            
+            # Flatten the sequence dimension for RF
+            x_flat = x.numpy().flatten()
+            y_val = y.numpy().item()
+            
+            # Get basin info
+            with h5py.File(str(eval_file), 'r') as f:
+                basin = f["sample_2_basin"][i].decode("ascii")
+            
+            X_eval_list.append(x_flat)
+            y_eval_list.append(y_val)
+            basin_eval_list.append(basin)
+        
+        X_eval = np.array(X_eval_list)
+        y_eval = np.array(y_eval_list)
+        
+        # Make predictions
+        predictions = model.predict(X_eval)
+        predictions[predictions < 0] = 0
+        
+        # Create evaluation results DataFrame
+        eval_df = pd.DataFrame({
+            'basin': basin_eval_list,
+            'prediction': predictions,
+            'observation': y_eval
+        })
+        
+        # Save evaluation predictions
+        os.makedirs(str(cfg["run_dir"]) + "/predict", exist_ok=True)
+        eval_output_path = f"{cfg['run_dir']}/predict/RF_evaluation_predictions.csv"
+        eval_df.to_csv(eval_output_path, index=False)
+        print(f"Evaluation predictions saved to {eval_output_path}")
+        
+        # Also save by basin for easier analysis
+        for basin in basins:
+            basin_data = eval_df[eval_df['basin'] == basin].copy()
+            if not basin_data.empty:
+                basin_output_path = f"{cfg['run_dir']}/predict/RF_evaluation_basin_{basin}.csv"
+                basin_data.to_csv(basin_output_path, index=False)
+        
+        print("Evaluation period predictions completed and saved.")
+        
+    except Exception as e:
+        print(f"Error generating evaluation predictions: {e}")
+        print("Continuing without evaluation predictions...")
 
 def predict_synthetic_data(model, basins, mean_dyn, std_dyn, cfg):
     """Generate predictions for synthetic data"""
@@ -168,7 +258,7 @@ def get_args() -> Dict:
                         help="If True, loads all data into memory")
     parser.add_argument('--num_workers', type=int, default=12,
                         help="Number of parallel threads for data loading")
-    parser.add_argument('--no_static', type=bool, default=True,
+    parser.add_argument('--no_static', type=str2bool, default=True,
                         help="If True, trains RF without static features")
     parser.add_argument('--concat_static', type=bool, default=True,
                         help="Always True for RF - concatenate static features")
@@ -205,7 +295,7 @@ def _setup_run(cfg: Dict) -> Dict:
     hour = f"{now.hour}".zfill(2)
     minute = f"{now.minute}".zfill(2)
     run_name = f'run_{month}{day}_{hour}{minute}_seed{cfg["seed"]}'
-    
+
     cfg['run_dir'] = Path(__file__).parent / "runs" / run_name
     if not cfg['run_dir'].exists():
         cfg['run_dir'].mkdir(parents=True)
@@ -353,6 +443,9 @@ def train(cfg):
         syn_predictions = predict_synthetic_data(model, basins, mean_dyn, std_dyn, cfg)
         save_synthetic_predictions(syn_predictions, str(cfg["run_dir"]))
         print("Synthetic data predictions completed and saved.")
+        
+        # Generate evaluation period predictions
+        save_evaluation_predictions(model, basins, cfg)
         
     except Exception as e:
         print(f"Error generating synthetic predictions: {e}")

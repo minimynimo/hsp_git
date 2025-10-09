@@ -7,7 +7,15 @@ start_core=3 # Start core (1-indexed)
 nseeds=1
 firstseed=300
 
-log_name="master_log_LSTM_static.log"
+static_bool=false
+
+
+if [ "$static_bool" = true ]; then
+    log_name="master_log_LSTM_static.log"
+else
+    log_name="master_log_LSTM_nostatic.log"
+fi
+
 
 loc="GB"
 
@@ -35,14 +43,24 @@ for (( seed = $firstseed ; seed < $((nseeds+$firstseed)) ; seed++ )); do
     echo $seed $gpucount $core $gpu >> "$output_dir/$log_name"
 
     if [ "$model" = "lstm" ]; then
-        outfile="/data0/funato/hsp/0_out/LSTM/GB/reports_static/lstm.$seed.out"
+        if [ "$static_bool" = true ]; then
+            #add current date and time to the outfile name
+            outfile="/data0/funato/hsp/0_out/LSTM/GB/reports_static/lstm.$seed.$(date +%Y-%m-%d_%H-%M-%S).out"
+        else
+            outfile="/data0/funato/hsp/0_out/LSTM/GB/reports_nostatic/lstm.$seed.$(date +%Y-%m-%d_%H-%M-%S).out"
+        fi
+
         mkdir -p "$(dirname "$outfile")" # Create output directory if it doesn't exist
-        start_time=$(date '+%Y-%m-%d %H:%M:%S') # Log start time
+        start_time=$(date '+%Y-%m-%d %H:%M:%S') # Log start time1
         echo "Start Time: $start_time | Seed: $seed" >> "$output_dir/$log_name"
-
-        echo "Running: taskset -c $core python3 /data0/funato/hsp/99_work/10_LSTM/lstm_regional_modeling-master/main.py train --no_static=True --concat_static=True --num_workers=$cores" >> "$output_dir/$log_name"
-
-        taskset -c $core python3 /data0/funato/hsp/99_work/10_LSTM/lstm_regional_modeling-master/main.py train --no_static=True --concat_static=True --num_workers=$cores > $outfile 2>> "$output_dir/$log_name" &
+        
+        if [ "$static_bool" = true ]; then  ## static data is used
+            echo "Running: taskset -c $core python3 /data0/funato/hsp/99_work/10_LSTM/lstm_regional_modeling-master/main.py train --no_static=False --concat_static=True --num_workers=$cores" >> "$output_dir/$log_name"
+            taskset -c $core python3 /data0/funato/hsp/99_work/10_LSTM/lstm_regional_modeling-master/main.py train --no_static=False --concat_static=True --num_workers=$cores > $outfile 2>> "$output_dir/$log_name" &
+        else  ## no static data is used
+            echo "Running: taskset -c $core python3 /data0/funato/hsp/99_work/10_LSTM/lstm_regional_modeling-master/main.py train --no_static=True --concat_static=True --num_workers=$cores" >> "$output_dir/$log_name"
+            taskset -c $core python3 /data0/funato/hsp/99_work/10_LSTM/lstm_regional_modeling-master/main.py train --no_static=True --concat_static=True --num_workers=$cores > $outfile 2>> "$output_dir/$log_name" &
+        fi
 
         wait # Ensure the process completes before logging end time
         end_time=$(date '+%Y-%m-%d %H:%M:%S') # Log end time

@@ -7,7 +7,7 @@ start_core=10 # Start core (1-indexed)
 nseeds=1
 firstseed=300
 
-static_bool=true
+static_bool=false
 # if static_bool is true, use static data; if false, do not use static data , change the log_name and the outfile name accordingly.
 
 if [ "$static_bool" = true ]; then
@@ -42,9 +42,9 @@ for (( seed = $firstseed ; seed < $((nseeds+$firstseed)) ; seed++ )); do
 
     if [ "$model" = "xgb" ]; then
         if [ "$static_bool" = true ]; then
-            outfile="/data0/funato/hsp/0_out/XGB/GB/reports_static/xgb.$seed.out"
+            outfile="/data0/funato/hsp/0_out/XGB/GB/reports_static/xgb.$seed.$(date +%Y-%m-%d_%H-%M-%S).out"
         else
-            outfile="/data0/funato/hsp/0_out/XGB/GB/reports_nostatic/xgb.$seed.out"
+            outfile="/data0/funato/hsp/0_out/XGB/GB/reports_nostatic/xgb.$seed.$(date +%Y-%m-%d_%H-%M-%S).out"
         fi
         mkdir -p "$(dirname "$outfile")" # Create output directory if it doesn't exist
         start_time=$(date '+%Y-%m-%d %H:%M:%S') # Log start time

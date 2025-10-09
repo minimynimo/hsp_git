@@ -42,9 +42,9 @@ for (( seed = $firstseed ; seed < $((nseeds+$firstseed)) ; seed++ )); do
 
     if [ "$model" = "tcn" ]; then
         if [ "$static_bool" = true ]; then
-            outfile="/data0/funato/hsp/0_out/TCN/GB/reports_static/tcn.$seed.out"
+            outfile="/data0/funato/hsp/0_out/TCN/GB/reports_static/tcn.$seed.$(date +%Y-%m-%d_%H-%M-%S).out"
         else
-            outfile="/data0/funato/hsp/0_out/TCN/GB/reports_nostatic/tcn.$seed.out"
+            outfile="/data0/funato/hsp/0_out/TCN/GB/reports_nostatic/tcn.$seed.$(date +%Y-%m-%d_%H-%M-%S).out"
         fi
         mkdir -p "$(dirname "$outfile")" # Create output directory if it doesn't exist
         start_time=$(date '+%Y-%m-%d %H:%M:%S') # Log start time

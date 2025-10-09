@@ -8,6 +8,7 @@ nseeds=1
 firstseed=300
 
 static_bool=false
+# if static_bool is true, use static data; if false, do not use static data
 
 if [ "$static_bool" = true ]; then
     log_name="master_log_RF_static.log"
@@ -41,9 +42,9 @@ for (( seed = $firstseed ; seed < $((nseeds+$firstseed)) ; seed++ )); do
 
     if [ "$model" = "rf" ]; then
         if [ "$static_bool" = true ]; then
-            outfile="/data0/funato/hsp/0_out/RF/GB/reports_static/rf.$seed.out"
+            outfile="/data0/funato/hsp/0_out/RF/GB/reports_static/rf.$seed.$(date +%Y-%m-%d_%H-%M-%S).out"
         else
-            outfile="/data0/funato/hsp/0_out/RF/GB/reports_nostatic/rf.$seed.out"
+            outfile="/data0/funato/hsp/0_out/RF/GB/reports_nostatic/rf.$seed.$(date +%Y-%m-%d_%H-%M-%S).out"
         fi
         
         mkdir -p "$(dirname "$outfile")" # Create output directory if it doesn't exist
@@ -52,11 +53,9 @@ for (( seed = $firstseed ; seed < $((nseeds+$firstseed)) ; seed++ )); do
 
         if [ "$static_bool" = true ]; then
             echo "Running: taskset -c $core python3 /data0/funato/hsp/99_work/11_RandomForest/RF_regional_modeling-master/main_rf.py train --no_static=False --concat_static=True --n_estimators=100 --max_depth=5 --max_features=0.7 --max_samples=0.5 --min_samples_split=2 --seed=$seed" >> "$output_dir/$log_name"
-
             taskset -c $core python3 /data0/funato/hsp/99_work/11_RandomForest/RF_regional_modeling-master/main_rf.py train --no_static=False --concat_static=True --n_estimators=100 --max_depth=5 --max_features=0.7 --max_samples=0.5 --min_samples_split=2 --seed=$seed > $outfile 2>> "$output_dir/$log_name" &
         else
             echo "Running: taskset -c $core python3 /data0/funato/hsp/99_work/11_RandomForest/RF_regional_modeling-master/main_rf.py train --no_static=True --concat_static=True --n_estimators=100 --max_depth=5 --max_features=0.7 --max_samples=0.5 --min_samples_split=2 --seed=$seed" >> "$output_dir/$log_name"
-
             taskset -c $core python3 /data0/funato/hsp/99_work/11_RandomForest/RF_regional_modeling-master/main_rf.py train --no_static=True --concat_static=True --n_estimators=100 --max_depth=5 --max_features=0.7 --max_samples=0.5 --min_samples_split=2 --seed=$seed > $outfile 2>> "$output_dir/$log_name" &
         fi
         wait # Ensure the process completes before logging end time

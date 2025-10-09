@@ -25,6 +25,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 from tqdm import tqdm
+import h5py
 
 from papercode.datasets import CamelsH5, CamelsTXT
 from papercode.datautils import (add_basin_attributes, load_attributes,
@@ -56,6 +57,95 @@ def load_data_for_basin(file_num):
     df['Date'] = pd.to_datetime(df['Date'])
     df.set_index('Date', inplace=True)
     return df
+
+def str2bool(v):
+    if isinstance(v, bool):
+        return v
+    if v.lower() in ('yes', 'true', 't', 'y', '1'):
+        return True
+    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+        return False
+    else:
+        raise argparse.ArgumentTypeError('Boolean value expected.')
+
+def save_evaluation_predictions(model, basins, cfg):
+    """Generate and save predictions for the evaluation period"""
+    print("\n--- Generating Evaluation Period Predictions ---")
+    try:
+        # Create evaluation dataset
+        eval_file = cfg["train_dir"] / 'eval_data.h5'
+        create_h5_files(out_file=eval_file,
+                        basins=basins,
+                        dates=[cfg["val_start"], cfg["val_end"]],
+                        with_basin_str=True,
+                        seq_length=cfg["seq_length"])
+        
+        eval_ds = CamelsH5(h5_file=str(eval_file),
+                          basins=basins,
+                          db_path=cfg["db_path"],
+                          concat_static=cfg["concat_static"],
+                          cache=False,
+                          no_static=cfg["no_static"])
+        
+        eval_loader = DataLoader(eval_ds, batch_size=1024, shuffle=False)
+        
+        model.eval()
+        all_predictions = []
+        all_targets = []
+        all_basins = []
+        all_dates = []
+        
+        with torch.no_grad():
+            for data in tqdm(eval_loader, desc="Generating evaluation predictions"):
+                if cfg["no_static"]:
+                    x, y, q_stds = data
+                else:
+                    x, y, q_stds = data
+                
+                # Move to device
+                device = next(model.parameters()).device
+                x = x.to(device)
+                
+                # Make predictions
+                predictions = model(x).cpu().numpy().flatten()
+                targets = y.numpy().flatten()
+                
+                all_predictions.extend(predictions)
+                all_targets.extend(targets)
+        
+        # Get basin and date information for each sample
+        basin_dates = []
+        for i in range(len(eval_ds)):
+            # Get basin info from dataset
+            with h5py.File(str(eval_file), 'r') as f:
+                basin = f["sample_2_basin"][i].decode("ascii")
+                basin_dates.append(basin)
+        
+        # Create evaluation results DataFrame
+        eval_df = pd.DataFrame({
+            'basin': basin_dates,
+            'prediction': all_predictions,
+            'observation': all_targets
+        })
+        
+        # Save evaluation predictions
+        os.makedirs(str(cfg["run_dir"]) + "/predict", exist_ok=True)
+        eval_output_path = f"{cfg['run_dir']}/predict/LSTM_evaluation_predictions.csv"
+        eval_df.to_csv(eval_output_path, index=False)
+        print(f"Evaluation predictions saved to {eval_output_path}")
+        
+        # Also save by basin for easier analysis
+        for basin in basins:
+            basin_data = eval_df[eval_df['basin'] == basin].copy()
+            if not basin_data.empty:
+                basin_output_path = f"{cfg['run_dir']}/predict/LSTM_evaluation_basin_{basin}.csv"
+                basin_data.to_csv(basin_output_path, index=False)
+        
+        print("Evaluation period predictions completed and saved.")
+        
+    except Exception as e:
+        print(f"Error generating evaluation predictions: {e}")
+        print("Continuing without evaluation predictions...")
 
 def save_synthetic_predictions_lstm(syn_predict_dfs_combined, output_dir, model_name):
     """Save synthetic predictions to CSV files"""
@@ -148,7 +238,7 @@ def get_args() -> Dict:
                         default=12,
                         help="Number of parallel threads for data loading")
     parser.add_argument('--no_static',
-                        type=bool,
+                        type=str2bool,
                         default=False,
                         help="If True, trains LSTM without static features")
     parser.add_argument('--concat_static',
@@ -202,7 +292,7 @@ def _setup_run(cfg: Dict) -> Dict:
     hour = f"{now.hour}".zfill(2)
     minute = f"{now.minute}".zfill(2)
     run_name = f'run_{day}{month}_{hour}{minute}_seed{cfg["seed"]}'
-    cfg['run_dir'] = Path(__file__).absolute().parent / "runs" / run_name
+    cfg['run_dir'] = Path(__file__).parent / "runs" / run_name
     if not cfg["run_dir"].is_dir():
         cfg["train_dir"] = cfg["run_dir"] / 'data' / 'train'
         cfg["train_dir"].mkdir(parents=True)
@@ -475,6 +565,10 @@ def train(cfg):
                     
                 X_syn = torch.tensor(np.array(X_syn_list), dtype=torch.float32)
                 
+                # Move tensor to the same device as the model
+                device = next(model.parameters()).device
+                X_syn = X_syn.to(device)
+                
                 # Make predictions
                 model.eval()
                 with torch.no_grad():
@@ -497,6 +591,9 @@ def train(cfg):
         # Save synthetic predictions
         save_synthetic_predictions_lstm(syn_predict_dfs_combined, str(cfg["run_dir"]), "LSTM")
         print("Synthetic data predictions completed and saved.")
+        
+        # Generate evaluation period predictions
+        save_evaluation_predictions(model, basins, cfg)
         
     except Exception as e:
         print(f"Error generating synthetic predictions: {e}")
