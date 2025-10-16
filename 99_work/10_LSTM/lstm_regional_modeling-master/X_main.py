@@ -1,0 +1,325 @@
+"""
+This file is part of the accompanying code to our manuscript:
+
+Kratzert, F., Klotz, D., Shalev, G., Klambauer, G., Hochreiter, S., Nearing, G., "Benchmarking
+a Catchment-Aware Long Short-Term Memory Network (LSTM) for Large-Scale Hydrological Modeling".
+submitted to Hydrol. Earth Syst. Sci. Discussions (2019)
+
+You should have received a copy of the Apache-2.0 license along with the code. If not,
+see <https://opensource.org/licenses/Apache-2.0>
+"""
+
+import argparse
+import json
+import random
+import sys
+from datetime import datetime
+from pathlib import Path, PosixPath
+from typing import Dict, List, Tuple
+
+import numpy as np
+import pandas as pd
+import torch
+import torch.nn as nn
+from torch.utils.data import DataLoader, Dataset
+from tqdm import tqdm
+
+from papercode.datautils import (add_basin_attributes, load_attributes)
+from papercode.ealstm import EALSTM
+from papercode.lstm import LSTM
+from papercode.nseloss import NSELoss
+from papercode.utils import get_basin_list
+
+# ####################### #
+# Global Definitions      #
+# ####################### #
+
+GLOBAL_SETTINGS = {
+    'loc': 'GB',
+    'ver': 2,
+    'seq_length': 270,
+    'train_start': pd.to_datetime('1993-01-01', format='%Y-%m-%d'),
+    'train_end': pd.to_datetime('2000-12-31', format='%Y-%m-%d'),
+    'val_start': pd.to_datetime('2001-01-01', format='%Y-%m-%d'),
+    'val_end': pd.to_datetime('2006-12-31', format='%Y-%m-%d')
+}
+
+DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
+# ####################### #
+# Model Definition        #
+# ####################### #
+
+class Model(nn.Module):
+    """Wrapper class that connects LSTM/EA-LSTM with fully connected layer"""
+    def __init__(self,
+                 input_size_dyn: int,
+                 input_size_stat: int,
+                 hidden_size: int,
+                 initial_forget_bias: int = 5,
+                 dropout: float = 0.0,
+                 concat_static: bool = True,
+                 no_static: bool = False):
+        super(Model, self).__init__()
+        self.input_size_dyn = input_size_dyn
+        self.input_size_stat = input_size_stat
+        self.hidden_size = hidden_size
+        self.dropout_rate = dropout
+        self.concat_static = concat_static
+        self.no_static = no_static
+
+        if self.concat_static or self.no_static:
+            self.lstm = LSTM(input_size=input_size_dyn,
+                             hidden_size=hidden_size,
+                             initial_forget_bias=initial_forget_bias)
+        else:
+            self.lstm = EALSTM(input_size_dyn=input_size_dyn,
+                               input_size_stat=input_size_stat,
+                               hidden_size=hidden_size,
+                               initial_forget_bias=initial_forget_bias)
+        self.dropout = nn.Dropout(p=dropout)
+        self.fc = nn.Linear(hidden_size, 1)
+
+    def forward(self, x_d: torch.Tensor, x_s: torch.Tensor = None) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        if self.concat_static or self.no_static:
+            h_n, c_n = self.lstm(x_d)
+        else:
+            h_n, c_n = self.lstm(x_d, x_s)
+        last_h = self.dropout(h_n[:, -1, :])
+        out = self.fc(last_h)
+        return out, h_n, c_n
+
+# ####################### #
+# Utility Functions       #
+# ####################### #
+
+def file_name(input_num, total_len):
+    return str(input_num).zfill(total_len)
+
+def load_data_for_basin(file_num):
+    varssim_dir = "/data0/funato/hsp/2_MERV/varssim_HBV"
+    df = pd.read_csv(f"{varssim_dir}/varssim{file_name(file_num, 3)}.csv")
+    df['Date'] = pd.to_datetime(df['Date'])
+    df.set_index('Date', inplace=True)
+    return df
+
+def str2bool(v):
+    if isinstance(v, bool): return v
+    if v.lower() in ('yes', 'true', 't', 'y', '1'): return True
+    elif v.lower() in ('no', 'false', 'f', 'n', '0'): return False
+    else: raise argparse.ArgumentTypeError('Boolean value expected.')
+
+# ####################### #
+# Data Handling           #
+# ####################### #
+
+class HydroDataset(Dataset):
+    """Custom PyTorch Dataset for hydrological data."""
+    def __init__(self, basins, dates, cfg, scalers, attributes):
+        super(HydroDataset, self).__init__()
+        self.basins = basins
+        self.dates = dates
+        self.cfg = cfg
+        self.scalers = scalers
+        self.attributes = attributes
+        self.seq_length = cfg['seq_length']
+        self.no_static = cfg['no_static']
+        self.concat_static = cfg['concat_static']
+        
+        self.x, self.y, self.q_stds_per_basin = self._create_dataset()
+
+    def __len__(self):
+        return len(self.x)
+
+    def __getitem__(self, idx):
+        return self.x[idx], self.y[idx]
+
+    def _create_dataset(self):
+        x_list, y_list = [], []
+        
+        dyn_cols = ['Precip', 'PET', 'Temp']
+        q_col = 'Obs flow'
+
+        for basin in tqdm(self.basins, desc="Preparing training data"):
+            df = load_data_for_basin(int(basin))
+            df_period = df.loc[self.dates[0]:self.dates[1]]
+            
+            dyn_data_scaled = (df_period[dyn_cols].values - self.scalers['dynamic_means']) / self.scalers['dynamic_stds']
+            q_data_scaled = (df_period[q_col].values - self.scalers['q_mean']) / self.scalers['q_std']
+            
+            static_data_scaled = None
+            if not self.no_static:
+                static_data = self.attributes.loc[int(basin)].values
+                static_data_scaled = (static_data - self.scalers['static_means']) / self.scalers['static_stds']
+
+            for i in range(self.seq_length - 1, len(df_period)):
+                start_idx = i - (self.seq_length - 1)
+                
+                dyn_seq = dyn_data_scaled[start_idx:i+1]
+                
+                final_features = dyn_seq
+                if not self.no_static and self.concat_static:
+                    static_repeated = np.tile(static_data_scaled, (self.seq_length, 1))
+                    final_features = np.concatenate([dyn_seq, static_repeated], axis=1)
+                
+                x_list.append(final_features)
+                y_list.append(q_data_scaled[i])
+
+        return np.array(x_list, dtype=np.float32), np.array(y_list, dtype=np.float32).reshape(-1, 1), None
+
+
+# ####################### #
+# Main Training Logic     #
+# ####################### #
+
+def get_args() -> Dict:
+    """Parse input arguments"""
+    parser = argparse.ArgumentParser()
+    parser.add_argument('mode', choices=["train"])
+    parser.add_argument('--seed', type=int, required=False)
+    parser.add_argument('--num_workers', type=int, default=12)
+    parser.add_argument('--no_static', type=str2bool, default=True)
+    parser.add_argument('--concat_static', type=str2bool, default=True)
+    parser.add_argument('--use_mse', type=str2bool, default=False)
+    # Model specific
+    parser.add_argument('--batch_size', type=int, default=256)
+    parser.add_argument('--hidden_size', type=int, default=256)
+    parser.add_argument('--dropout', type=float, default=0.4)
+    # Training specific
+    parser.add_argument('--epochs', type=int, default=30)
+    parser.add_argument('--learning_rate', type=float, default=1e-3)
+
+    cfg = vars(parser.parse_args())
+    if cfg["seed"] is None: cfg["seed"] = int(np.random.uniform(low=0, high=1e6))
+    cfg.update(GLOBAL_SETTINGS)
+    return cfg
+
+def _setup_run(cfg: Dict) -> Dict:
+    """Create folder structure for this run"""
+    now = datetime.now()
+    run_name = f'run_{now.strftime("%d%m_%H%M")}_seed{cfg["seed"]}'
+    cfg['run_dir'] = Path(__file__).parent / "runs" / run_name
+    cfg['run_dir'].mkdir(parents=True, exist_ok=True)
+    
+    with (cfg["run_dir"] / 'cfg.json').open('w') as fp:
+        temp_cfg = {}
+        for key, val in cfg.items():
+            if isinstance(val, (Path, PosixPath)): temp_cfg[key] = str(val)
+            elif isinstance(val, pd.Timestamp): temp_cfg[key] = val.strftime(format="%d%m%Y")
+            else: temp_cfg[key] = val
+        json.dump(temp_cfg, fp, sort_keys=True, indent=4)
+    return cfg
+
+def train_epoch(model: nn.Module, optimizer: torch.optim.Optimizer, loss_func: nn.Module, loader: DataLoader, cfg: Dict, epoch: int):
+    """Train model for a single epoch."""
+    model.train()
+    pbar = tqdm(loader, file=sys.stdout)
+    pbar.set_description(f'# Epoch {epoch}')
+
+    for x, y in pbar:
+        optimizer.zero_grad()
+        x, y = x.to(DEVICE), y.to(DEVICE)
+        
+        predictions = model(x)[0]
+        
+        if cfg["use_mse"]:
+            loss = loss_func(predictions, y)
+        else: # NSE Loss
+            # For NSE, we need to rescale both pred and obs to original scale
+            q_mean = torch.tensor(cfg['scalers']['q_mean'], device=DEVICE, dtype=torch.float32)
+            q_std = torch.tensor(cfg['scalers']['q_std'], device=DEVICE, dtype=torch.float32)
+
+            pred_rescaled = predictions * q_std + q_mean
+            y_rescaled = y * q_std + q_mean
+
+            # We need a dummy q_stds tensor; since we are using global scaling,
+            # we can use the global std for all samples.
+            q_stds_tensor = q_std.repeat(y.size(0))
+            loss = loss_func(pred_rescaled, y_rescaled, q_stds_tensor)
+
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
+        optimizer.step()
+        pbar.set_postfix_str(f"Loss: {loss.item():.5f}")
+
+def train(cfg):
+    """Main training function."""
+    # Fix random seeds
+    random.seed(cfg["seed"])
+    np.random.seed(cfg["seed"])
+    torch.cuda.manual_seed(cfg["seed"])
+    torch.manual_seed(cfg["seed"])
+    
+    if GLOBAL_SETTINGS['loc'] == "JP": file_tot_num = 87
+    else: file_tot_num = 396
+    basins = get_basin_list(file_tot_num=file_tot_num)
+    
+    cfg = _setup_run(cfg)
+
+    # Calculate and save scalers
+    print("\nCalculating scalers across all training basins...")
+    dyn_cols, q_col = ['Precip', 'PET', 'Temp'], 'Obs flow'
+    all_dyn_data, all_q_data = [], []
+    for basin in tqdm(basins, desc="Loading data for scaling"):
+        df = load_data_for_basin(int(basin))
+        df_period = df.loc[cfg['train_start']:cfg['train_end']]
+        all_dyn_data.append(df_period[dyn_cols])
+        all_q_data.append(df_period[[q_col]])
+
+    dyn_df, q_df = pd.concat(all_dyn_data), pd.concat(all_q_data)
+    scalers = {
+        'dynamic_means': dyn_df.mean().values.tolist(),
+        'dynamic_stds': dyn_df.std().values.tolist(),
+        'q_mean': q_df.mean().values[0],
+        'q_std': q_df.std().values[0]
+    }
+    
+    db_path = str(cfg['run_dir'] / 'attributes.db')
+    add_basin_attributes(db_path=db_path, loc=GLOBAL_SETTINGS['loc'], ver_name="ver2_0")
+    
+    attributes = None
+    if not cfg["no_static"]:
+        attributes = load_attributes(db_path=db_path, basins=basins, drop_lat_lon=True)
+        scalers['static_means'] = attributes.mean().values.tolist()
+        scalers['static_stds'] = attributes.std().values.tolist()
+
+    with (cfg['run_dir'] / 'scalers.json').open('w') as fp:
+        json.dump(scalers, fp, indent=4)
+    print(f"Scalers saved to {cfg['run_dir'] / 'scalers.json'}")
+    
+    # Pass scalers to cfg for access in train_epoch
+    cfg['scalers'] = scalers
+
+    # Create dataset and dataloader
+    dataset = HydroDataset(basins, [cfg['train_start'], cfg['train_end']], cfg, scalers, attributes)
+    loader = DataLoader(dataset, batch_size=cfg["batch_size"], shuffle=True, num_workers=cfg["num_workers"])
+
+    # Setup model
+    input_size_stat = 0 if cfg["no_static"] else 27
+    input_size_dyn = 3
+    if not cfg["no_static"] and cfg["concat_static"]:
+        input_size_dyn = 3 + input_size_stat
+
+    model = Model(input_size_dyn=input_size_dyn,
+                  input_size_stat=input_size_stat,
+                  hidden_size=cfg["hidden_size"],
+                  dropout=cfg["dropout"],
+                  concat_static=cfg["concat_static"],
+                  no_static=cfg["no_static"]).to(DEVICE)
+    
+    optimizer = torch.optim.Adam(model.parameters(), lr=cfg["learning_rate"])
+    loss_func = nn.MSELoss() if cfg["use_mse"] else NSELoss()
+
+    # Train
+    for epoch in range(1, cfg["epochs"] + 1):
+        train_epoch(model, optimizer, loss_func, loader, cfg, epoch)
+        torch.save(model.state_dict(), str(cfg["run_dir"] / f"model_epoch{epoch}.pt"))
+
+    torch.save(model.state_dict(), str(cfg["run_dir"] / "lstm_model_final.pt"))
+    print(f"Final LSTM model saved to {cfg['run_dir'] / 'lstm_model_final.pt'}")
+
+
+if __name__ == "__main__":
+    config = get_args()
+    train(config)
+
