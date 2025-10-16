@@ -1,7 +1,7 @@
 #!/bin/bash
 
-cores=1
-start_core=13 # Start core (1-indexed)
+cores=2
+start_core=4 # Start core (1-indexed)
 ###
 
 static_bool=false
@@ -50,14 +50,21 @@ for (( seed = $firstseed ; seed < $((nseeds+$firstseed)) ; seed++ )); do
         start_time=$(date '+%Y-%m-%d %H:%M:%S') # Log start time
         echo "Start Time: $start_time | Seed: $seed" >> "$output_dir/$log_name"
 
+        # --- MODIFICATION START ---
+        TCN_PARAMS="--num_channels 128 256 512" 
+        # Added --num_workers=2 to prevent performance warnings and issues
+        OTHER_PARAMS="--batch_size=32 --epochs=50 --kernel_size=7 --seed=$seed --num_workers=2"
+        # --- MODIFICATION END ---
+
+
         if [ "$static_bool" = true ]; then ## static data is used
-            echo "Running: taskset -c $core python3 /data0/funato/hsp/99_work/13_TCN/TCN_regional_modeling-master/main_tcn.py train --no_static=False --concat_static=True --batch_size=32 --epochs=50 --nb_filters=128 --kernel_size=4 --nb_stacks=3 --seed=$seed" >> "$output_dir/$log_name"
+            echo "Running: taskset -c $core python3 /data0/funato/hsp/99_work/13_TCN/TCN_regional_modeling-master/main_tcn.py train --no_static=False $OTHER_PARAMS $TCN_PARAMS" >> "$output_dir/$log_name"
 
-            taskset -c $core python3 /data0/funato/hsp/99_work/13_TCN/TCN_regional_modeling-master/main_tcn.py train --no_static=False --concat_static=True --batch_size=32 --epochs=50 --nb_filters=128 --kernel_size=4 --nb_stacks=3 --seed=$seed > $outfile 2>> "$output_dir/$log_name" &
+            taskset -c $core python3 /data0/funato/hsp/99_work/13_TCN/TCN_regional_modeling-master/main_tcn.py train --no_static=False $OTHER_PARAMS $TCN_PARAMS > $outfile 2>> "$output_dir/$log_name" &
         else #  no static data is used
-            echo "Running: taskset -c $core python3 /data0/funato/hsp/99_work/13_TCN/TCN_regional_modeling-master/main_tcn.py train --no_static=True --concat_static=True --batch_size=32 --epochs=50 --nb_filters=128 --kernel_size=4 --nb_stacks=3 --seed=$seed" >> "$output_dir/$log_name"
+            echo "Running: taskset -c $core python3 /data0/funato/hsp/99_work/13_TCN/TCN_regional_modeling-master/main_tcn.py train --no_static=True $OTHER_PARAMS $TCN_PARAMS" >> "$output_dir/$log_name"
 
-            taskset -c $core python3 /data0/funato/hsp/99_work/13_TCN/TCN_regional_modeling-master/main_tcn.py train --no_static=True --concat_static=True --batch_size=32 --epochs=50 --nb_filters=128 --kernel_size=4 --nb_stacks=3 --seed=$seed > $outfile 2>> "$output_dir/$log_name" &
+            taskset -c $core python3 /data0/funato/hsp/99_work/13_TCN/TCN_regional_modeling-master/main_tcn.py train --no_static=True $OTHER_PARAMS $TCN_PARAMS > $outfile 2>> "$output_dir/$log_name" &
         fi
 
         wait # Ensure the process completes before logging end time
@@ -72,6 +79,8 @@ for (( seed = $firstseed ; seed < $((nseeds+$firstseed)) ; seed++ )); do
         wait
     fi
 done
+
+
 
 ###RUN USING####
 # chmod +x /data0/funato/hsp/99_work/13_TCN/TCN_regional_modeling-master/run_main_tcn.sh
