@@ -5,6 +5,7 @@
 
 */.ipynb_checkpoints/*.ipynb
 .vscode
-runs/
+*runs*/
+*plots*/
 
 /data0/funato/hsp/99_work/12_XGBoost/XGB_regional_modeling-master/notebooks/*.p

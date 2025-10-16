@@ -1,7 +1,7 @@
 #!/bin/bash
 
 cores=1
-start_core=10 # Start core (1-indexed)
+start_core=1 # Start core (1-indexed)
 ###
 
 nseeds=1
@@ -51,11 +51,11 @@ for (( seed = $firstseed ; seed < $((nseeds+$firstseed)) ; seed++ )); do
         echo "Start Time: $start_time | Seed: $seed" >> "$output_dir/$log_name"
 
         if [ "$static_bool" = true ]; then  ## static data is used
-            echo "Running: taskset -c $core python3 /data0/funato/hsp/99_work/12_XGBoost/XGB_regional_modeling-master/main_xgb.py train --no_static=False --concat_static=True --n_estimators=500 --max_depth=4 --learning_rate=0.1 --seed=$seed" >> "$output_dir/$log_name"
-            taskset -c $core python3 /data0/funato/hsp/99_work/12_XGBoost/XGB_regional_modeling-master/main_xgb.py train --no_static=False --concat_static=True --n_estimators=500 --max_depth=4 --learning_rate=0.1 --seed=$seed > $outfile 2>> "$output_dir/$log_name" &
+            echo "Running: taskset -c $core python3 /data0/funato/hsp/99_work/12_XGBoost/XGB_regional_modeling-master/main_xgb.py train --no_static=False --n_estimators=500 --max_depth=4 --learning_rate=0.1 --seed=$seed" >> "$output_dir/$log_name"
+            taskset -c $core python3 /data0/funato/hsp/99_work/12_XGBoost/XGB_regional_modeling-master/main_xgb.py train --no_static=False --n_estimators=500 --max_depth=4 --learning_rate=0.1 --seed=$seed > $outfile 2>> "$output_dir/$log_name" &
         else ## no static data is used
-            echo "Running: taskset -c $core python3 /data0/funato/hsp/99_work/12_XGBoost/XGB_regional_modeling-master/main_xgb.py train --no_static=True --concat_static=True --n_estimators=500 --max_depth=4 --learning_rate=0.1 --seed=$seed" >> "$output_dir/$log_name"
-            taskset -c $core python3 /data0/funato/hsp/99_work/12_XGBoost/XGB_regional_modeling-master/main_xgb.py train --no_static=True --concat_static=True --n_estimators=500 --max_depth=4 --learning_rate=0.1 --seed=$seed > $outfile 2>> "$output_dir/$log_name" &
+            echo "Running: taskset -c $core python3 /data0/funato/hsp/99_work/12_XGBoost/XGB_regional_modeling-master/main_xgb.py train --no_static=True --n_estimators=500 --max_depth=4 --learning_rate=0.1 --seed=$seed" >> "$output_dir/$log_name"
+            taskset -c $core python3 /data0/funato/hsp/99_work/12_XGBoost/XGB_regional_modeling-master/main_xgb.py train --no_static=True --n_estimators=500 --max_depth=4 --learning_rate=0.1 --seed=$seed > $outfile 2>> "$output_dir/$log_name" &
         fi
         wait
         end_time=$(date '+%Y-%m-%d %H:%M:%S') # Log end time
