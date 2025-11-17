@@ -30,10 +30,10 @@ loc, ver = "GB", 2
 ver_name = "ver1_1" if ver == 1 else "ver2_0"
 
 # Define synthetic precipitation columns
-syn_precip_cols = ['syn_no_precip', 'syn_p_pet', 'syn_peak1_rate0',
-                   'syn_peak1_rate10', 'syn_peak1_rate30', 'syn_peak1_rate50',
-                   'syn_peak3_rate10', 'syn_peak3_rate30', 'syn_peak3_rate50',
-                   'syn_peak5_rate10', 'syn_peak5_rate30', 'syn_peak5_rate50']
+syn_precip_cols = ['syn_no_precip',
+                    'syn_peak1_rate0','syn_peak1_rate10', 'syn_peak1_rate30', 'syn_peak1_rate50',
+                    'syn_peak3_rate0', 'syn_peak3_rate10', 'syn_peak3_rate30', 'syn_peak3_rate50',
+                    'syn_peak5_rate0', 'syn_peak5_rate10', 'syn_peak5_rate30', 'syn_peak5_rate50']
 
 if loc == "JP" and ver == 2:
     file_tot_num = 87

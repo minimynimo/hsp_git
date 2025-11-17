@@ -23,10 +23,10 @@ file_tot_num = 424
 
 varssim_dir = f"/data0/funato/hsp/2_MERV/HYPER"
 
-precip_cols = ['no_precip',  'peak1_rate0',
-                   'peak1_rate10', 'peak1_rate30', 'peak1_rate50',
-                   'peak3_rate10', 'peak3_rate30', 'peak3_rate50',
-                   'peak5_rate10', 'peak5_rate30', 'peak5_rate50']
+precip_cols = ['no_precip',  
+               'peak1_rate0','peak1_rate10', 'peak1_rate30', 'peak1_rate50',
+               'peak3_rate0','peak3_rate10', 'peak3_rate30', 'peak3_rate50',
+               'peak5_rate0', 'peak5_rate10', 'peak5_rate30', 'peak5_rate50']
 
 # Define the calibration and evaluation periods
 start_date_cal = '1993-01-01'
@@ -41,14 +41,11 @@ if ver != 3:
                 "m21", "m22", "m23", "m24", "m25", "m26", "m27", "m28", "m29", "m30",
                 "m31", "m32", "m33", "m34", "m35", "m36", "m37", "m38", "m39", 
                 "m42", "m43", "m44", "m46"]
-if ver == 3:
-    model_list = ["m04","m06","m13","m15","m17","m26","m29","m30","m34","m36"]
-    model_list = [f"{model}_{i}" for model in model_list for i in range(1, 4)]
 
 output_dir = f'/data0/funato/hsp/0_out/BMA'
 
 os.makedirs(output_dir + '/results', exist_ok=True)
-os.makedirs(output_dir + '/predict', exist_ok=True)
+os.makedirs(output_dir + '/predict/synthetic', exist_ok=True)
 os.makedirs(output_dir + '/weights', exist_ok=True)
 
 #model_list = ["m34"]
@@ -65,11 +62,11 @@ def BMK(obs_data,sim_data,benchmark):
     """
     obs_data = np.array(obs_data)
     sim_data = np.array(sim_data)
-
+    """
     mask = ~np.isnan(obs_data) & ~np.isnan(sim_data)
     obs_data = obs_data[mask]
     sim_data = sim_data[mask]
-    """
+
 
     if benchmark == "KGE":
         r = np.corrcoef(obs_data, sim_data)[0, 1]
@@ -174,23 +171,13 @@ for file_num in range(1, file_tot_num + 1):  #range(1, file_tot_num + 1):
 
     # EVALUATION
     predict_eva = np.zeros(len(obs_eva))
-    for date in df_eva.index:
-        BMA_day_prediction_eva = 0
-        for i, model in enumerate(model_list):
-            model_eva = df_eva.at[date, model]
-            ave_day_prediction = df_eva.loc[date, model_list].mean()
-            BMA_day_prediction_eva += posterior_cal[i] * model_eva
-        predict_eva[df_eva.index.get_loc(date)] = BMA_day_prediction_eva
+    model_matrix_eva = df_eva[model_list].values  # shape: (n_dates, n_models)
+    predict_eva = np.dot(model_matrix_eva, posterior_cal)
 
     # Calibration testing for analysis
     predict_cal = np.zeros(len(obs_cal))
-    for date in df_cal.index:
-        BMA_day_prediction_cal = 0
-        for i, model in enumerate(model_list):
-            model_cal = df_cal.at[date, model]
-            if not np.isnan(model_cal):
-                BMA_day_prediction_cal += posterior_cal[i] * model_cal
-        predict_cal[df_cal.index.get_loc(date)] = BMA_day_prediction_cal
+    model_matrix_cal = df_cal[model_list].values  # shape: (n_dates, n_models)
+    predict_cal = np.dot(model_matrix_cal, posterior_cal)
 
     predict_cal[predict_cal < 0] = 0
     predict_eva[predict_eva < 0] = 0
@@ -276,12 +263,12 @@ for file_num in range(1, file_tot_num + 1):  #range(1, file_tot_num + 1):
             predict_cal_df = pd.DataFrame([date_row_cal])
             predict_eva_df = pd.DataFrame([date_row_eva])
 
-            predict_cal_df.to_csv(output_dir + f"/predict/BMA_predict_{precip_col}_cal.csv", mode='w', index=False, header=False)
-            predict_eva_df.to_csv(output_dir + f"/predict/BMA_predict_{precip_col}_eva.csv", mode='w', index=False, header=False)
+            predict_cal_df.to_csv(output_dir + f"/predict/synthetic/BMA_predict_{precip_col}_cal.csv", mode='w', index=False, header=False)
+            predict_eva_df.to_csv(output_dir + f"/predict/synthetic/BMA_predict_{precip_col}_eva.csv", mode='w', index=False, header=False)
 
-        with open(output_dir + f"/predict/BMA_predict_{precip_col}_cal.csv", 'a') as file:
+        with open(output_dir + f"/predict/synthetic/BMA_predict_{precip_col}_cal.csv", 'a') as file:
             pd.DataFrame([file_row_cal]).to_csv(file, header=False, index=False)
-        with open(output_dir + f"/predict/BMA_predict_{precip_col}_eva.csv", 'a') as file:
+        with open(output_dir + f"/predict/synthetic/BMA_predict_{precip_col}_eva.csv", 'a') as file:
             pd.DataFrame([file_row_eva]).to_csv(file, header=False, index=False)
 
 

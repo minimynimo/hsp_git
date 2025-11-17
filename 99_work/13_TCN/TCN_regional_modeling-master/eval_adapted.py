@@ -1,150 +1,74 @@
 """
 Adapted TCN Evaluation Script
 
-This script evaluates a trained TCN (Temporal Convolutional Network) model using an adapted approach 
-where the model is fine-tuned for 5 additional epochs on each basin individually before making predictions.
+This script evaluates a trained TCN model using an adapted approach where the model
+is fine-tuned for 5 additional epochs on each basin individually before making predictions.
+This version correctly handles missing data and uses per-basin scaling.
 
 Usage:
-    python eval_adapted.py --run_dir path/to/trained/model
+    python eval_adapted_tcn.py --run_dir path/to/trained/model
 """
 
 import argparse
 import json
-import os
-import sys
 from pathlib import Path
-from typing import Dict, List
-
 import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
 import copy
+from sklearn.metrics import mean_squared_error
+import re
 
-from papercode.datasets import CamelsH5
-from papercode.datautils import add_basin_attributes, load_attributes, rescale_features
-from papercode.utils import create_h5_files, get_basin_list
+# ####################### #
+# Global Definitions      #
+# ####################### #
 
-# Global Settings (matching main.py)
 GLOBAL_SETTINGS = {
     'loc': 'GB',
     'ver': 2,
-    'seq_length': 30,  # TCN uses shorter sequences
+    'seq_length': 270,
     'train_start': pd.to_datetime('1993-01-01', format='%Y-%m-%d'),
     'train_end': pd.to_datetime('2000-12-31', format='%Y-%m-%d'),
     'val_start': pd.to_datetime('2001-01-01', format='%Y-%m-%d'),
     'val_end': pd.to_datetime('2006-12-31', format='%Y-%m-%d')
 }
 
-benchmark_list = ["NSE", "KGE", "E1", "VE", "d", "RMSE", "MAE"]
-
-ver_name = "ver1_1" if GLOBAL_SETTINGS['ver'] == 1 else "ver2_0"
+benchmarks = ["NSE", "KGE", "E1", "VE", "RMSE", "MAE"]
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-if GLOBAL_SETTINGS['loc'] == "JP":
-    file_tot_num = 87
-    attribute_size = 196
-    output_mean = np.array([3.8526752089320553])
-elif GLOBAL_SETTINGS['loc'] == "GB":
-    file_tot_num = 396
-    attribute_size = 209
-    output_mean = np.array([1.838397528976445])
-
+if GLOBAL_SETTINGS['loc'] == "JP": file_tot_num = 87
+else: file_tot_num = 396
 file_num_list = list(map(str, range(1, file_tot_num + 1)))
 
-def file_name(input_num, total_len):
-    """Generate zero-padded filename"""
-    car_len = len(str(input_num))
-    zero_len = total_len - car_len
-    return '0' * zero_len + str(input_num)
+# ####################### #
+# TCN Model Definition    #
+# ####################### #
 
-def load_data_for_basin(file_num):
-    """Load data for a specific basin"""
-    varssim_dir = "/data0/funato/hsp/2_MERV/varssim_HBV"
-    df = pd.read_csv(f"{varssim_dir}/varssim{file_name(file_num, 3)}.csv")
-    df['Date'] = pd.to_datetime(df['Date'])
-    df.set_index('Date', inplace=True)
-    return df
-
-def normalize_basin_data(data, basin_stats):
-    """Normalize data using basin-specific statistics"""
-    normalized = np.zeros_like(data)
-    for i in range(data.shape[1]):
-        mean = basin_stats['mean'][i]
-        std = basin_stats['std'][i]
-        if std > 0:
-            normalized[:, i] = (data[:, i] - mean) / std
-        else:
-            normalized[:, i] = data[:, i] - mean
-    return normalized
-
-def denormalize_predictions(predictions, basin_stats, feature_idx=3):
-    """Denormalize predictions using basin-specific output statistics"""
-    mean = basin_stats['mean'][feature_idx]
-    std = basin_stats['std'][feature_idx]
-    if std > 0:
-        return predictions * std + mean
-    else:
-        return predictions + mean
-
-def create_sequences_tcn(data, seq_length, static_features=None):
-    """Create sequences for TCN"""
-    sequences = []
-    targets = []
-    
-    for i in range(seq_length, len(data)):
-        # Get sequence (keep temporal structure)
-        seq = data[i-seq_length:i, :3]  # Only dynamic features (P, PET, Temp)
-        
-        # Concatenate static features to each time step if provided
-        if static_features is not None:
-            static_expanded = np.tile(static_features, (seq_length, 1))
-            seq = np.concatenate([seq, static_expanded], axis=1)
-        
-        sequences.append(seq)
-        targets.append(data[i, 3])  # Assuming discharge is at index 3
-        
-    return np.array(sequences), np.array(targets)
-
-# TCN Model Components
 class Chomp1d(nn.Module):
     def __init__(self, chomp_size):
         super(Chomp1d, self).__init__()
         self.chomp_size = chomp_size
-
     def forward(self, x):
         return x[:, :, :-self.chomp_size].contiguous()
 
 class TemporalBlock(nn.Module):
     def __init__(self, n_inputs, n_outputs, kernel_size, stride, dilation, padding, dropout=0.2):
         super(TemporalBlock, self).__init__()
-        self.conv1 = nn.Conv1d(n_inputs, n_outputs, kernel_size,
-                               stride=stride, padding=padding, dilation=dilation)
+        self.conv1 = nn.Conv1d(n_inputs, n_outputs, kernel_size, stride=stride, padding=padding, dilation=dilation)
         self.chomp1 = Chomp1d(padding)
         self.relu1 = nn.ReLU()
         self.dropout1 = nn.Dropout(dropout)
-
-        self.conv2 = nn.Conv1d(n_outputs, n_outputs, kernel_size,
-                               stride=stride, padding=padding, dilation=dilation)
+        self.conv2 = nn.Conv1d(n_outputs, n_outputs, kernel_size, stride=stride, padding=padding, dilation=dilation)
         self.chomp2 = Chomp1d(padding)
         self.relu2 = nn.ReLU()
         self.dropout2 = nn.Dropout(dropout)
-
         self.net = nn.Sequential(self.conv1, self.chomp1, self.relu1, self.dropout1,
                                  self.conv2, self.chomp2, self.relu2, self.dropout2)
         self.downsample = nn.Conv1d(n_inputs, n_outputs, 1) if n_inputs != n_outputs else None
         self.relu = nn.ReLU()
-        self.init_weights()
-
-    def init_weights(self):
-        self.conv1.weight.data.normal_(0, 0.01)
-        self.conv2.weight.data.normal_(0, 0.01)
-        if self.downsample is not None:
-            self.downsample.weight.data.normal_(0, 0.01)
-
     def forward(self, x):
         out = self.net(x)
         res = x if self.downsample is None else self.downsample(x)
@@ -154,309 +78,39 @@ class TemporalConvNet(nn.Module):
     def __init__(self, num_inputs, num_channels, kernel_size=2, dropout=0.2):
         super(TemporalConvNet, self).__init__()
         layers = []
-        num_levels = len(num_channels)
-        for i in range(num_levels):
+        for i, out_channels in enumerate(num_channels):
             dilation_size = 2 ** i
             in_channels = num_inputs if i == 0 else num_channels[i-1]
-            out_channels = num_channels[i]
-            layers += [TemporalBlock(in_channels, out_channels, kernel_size, stride=1, dilation=dilation_size,
-                                     padding=(kernel_size-1) * dilation_size, dropout=dropout)]
-
+            layers.append(TemporalBlock(in_channels, out_channels, kernel_size, stride=1, dilation=dilation_size,
+                                     padding=(kernel_size-1) * dilation_size, dropout=dropout))
         self.network = nn.Sequential(*layers)
-
     def forward(self, x):
         return self.network(x)
 
 class TCNModel(nn.Module):
-    """TCN model for hydrological modeling"""
-    def __init__(self, input_size_dyn, input_size_stat=0, num_channels=[25, 50, 100], 
-                 kernel_size=2, dropout=0.2, no_static=False):
+    def __init__(self, input_size, num_channels, kernel_size, dropout):
         super(TCNModel, self).__init__()
-        
-        self.no_static = no_static
-        
-        # Always concatenate static features for simplicity
-        total_input_size = input_size_dyn
-            
-        self.tcn = TemporalConvNet(total_input_size, num_channels, kernel_size, dropout)
+        self.tcn = TemporalConvNet(input_size, num_channels, kernel_size, dropout=dropout)
         self.linear = nn.Linear(num_channels[-1], 1)
-        
     def forward(self, x):
-        # x shape: (batch_size, seq_length, features)
-        # TCN expects: (batch_size, features, seq_length)
         x = x.transpose(1, 2)
-        
-        # TCN forward pass
-        tcn_out = self.tcn(x)  # (batch_size, num_channels[-1], seq_length)
-        
-        # Take the last time step
-        out = tcn_out[:, :, -1]  # (batch_size, num_channels[-1])
-        
-        # Final prediction
-        out = self.linear(out)  # (batch_size, 1)
-        
-        return out
+        y1 = self.tcn(x)
+        return self.linear(y1[:, :, -1])
 
-def fine_tune_basin_model(base_model, train_loader, run_cfg, basin):
-    """Fine-tune the base model for a specific basin"""
-    # Create a copy of the base model for this basin
-    basin_model = copy.deepcopy(base_model)
-    basin_model.train()
-    
-    # Set up optimizer for fine-tuning with a smaller learning rate
-    fine_tune_lr = run_cfg.get("learning_rate", 0.001) * 0.1  # Use 10% of original learning rate
-    optimizer = torch.optim.Adam(basin_model.parameters(), lr=fine_tune_lr)
-    
-    # Loss function
-    loss_func = nn.MSELoss()
-    
-    print(f"  Fine-tuning model for basin {basin} for 5 epochs...")
-    
-    # Fine-tune for 5 epochs
-    for epoch in range(5):
-        epoch_loss = 0
-        n_batches = 0
-        
-        for batch in train_loader:
-            x_d, x_s, y = batch
-            x_d, y = x_d.to(DEVICE), y.to(DEVICE)
-            
-            # Normalize targets using basin-specific rescaling
-            y_rescaled = rescale_features(y, variable='output', loc=GLOBAL_SETTINGS['loc'])
-            
-            optimizer.zero_grad()
-            
-            # Forward pass - use the concatenated input
-            predictions = basin_model(x_d)
-            
-            # Calculate loss
-            loss = loss_func(predictions.squeeze(), y_rescaled.squeeze())
-            loss.backward()
-            
-            # Gradient clipping
-            if run_cfg.get("clip_norm", True):
-                torch.nn.utils.clip_grad_norm_(basin_model.parameters(), 
-                                             run_cfg.get("clip_value", 1))
-            
-            optimizer.step()
-            
-            epoch_loss += loss.item()
-            n_batches += 1
-        
-        avg_loss = epoch_loss / n_batches if n_batches > 0 else 0
-        print(f"  Epoch {epoch+1}/5, Loss: {avg_loss:.6f}")
-    
-    return basin_model
+# ####################### #
+# Utility Functions       #
+# ####################### #
 
-def evaluate_basin_adapted_period(basin_model, basin, start_date, end_date, run_cfg, static_attrs=None):
-    """Evaluate the fine-tuned model on a basin for a specific period"""
-    # Load data for this basin
-    df = load_data_for_basin(int(basin))
-    
-    # Filter by date range with warmup
-    warmup_start = start_date - pd.DateOffset(days=run_cfg["seq_length"] - 1)
-    period_data = df[warmup_start:end_date].copy()
-    
-    if len(period_data) < run_cfg["seq_length"]:
-        return None, None, None
-    
-    # Prepare input data (P, PET, Temp, Obs flow for normalization)
-    input_cols = ['Precip', 'PET', 'Temp', 'Obs flow']
-    input_data = period_data[input_cols].values
-    
-    # Calculate basin-specific normalization statistics
-    basin_stats = {
-        'mean': np.nanmean(input_data, axis=0),
-        'std': np.nanstd(input_data, axis=0)
-    }
-    
-    # Normalize the data per basin
-    input_data_norm = normalize_basin_data(input_data, basin_stats)
-    
-    # Create sequences
-    static_features = static_attrs[basin] if static_attrs and basin in static_attrs else None
-    sequences, targets = create_sequences_tcn(input_data_norm, run_cfg["seq_length"], static_features)
-    
-    # Get dates for predictions (after warmup period)
-    dates = period_data.index[run_cfg["seq_length"]:]
-    
-    # Only include sequences within the actual period (not warmup)
-    actual_period_mask = dates >= start_date
-    sequences = sequences[actual_period_mask]
-    targets = targets[actual_period_mask]
-    dates = dates[actual_period_mask]
-    
-    if len(sequences) == 0:
-        return None, None, None
-    
-    # Convert to tensors
-    sequences = torch.FloatTensor(sequences)
-    batch_size = 128  # Set batch size for inference
-    predictions = []
-    basin_model.eval()
-    with torch.no_grad():
-        for i in range(0, len(sequences), batch_size):
-            batch = sequences[i:i+batch_size].to(DEVICE)
-            batch_pred = basin_model(batch).cpu().numpy().flatten()
-            predictions.append(batch_pred)
-    predictions = np.concatenate(predictions)
-    # Rescale predictions
-    predictions_rescaled = rescale_features(predictions, variable='output', loc=GLOBAL_SETTINGS['loc'])
-    predictions_rescaled[predictions_rescaled < 0] = 0
-    # Get actual targets (denormalized)
-    targets_rescaled = denormalize_predictions(targets, basin_stats)
-    return predictions_rescaled, targets_rescaled, dates
+def file_name(input_num, total_len): return str(input_num).zfill(total_len)
 
-def get_param_string(run_cfg):
-    """Create parameter string for file naming"""
-    # Check if the config uses the new format (nb_filters, nb_stacks) or old format (num_channels)
-    if 'nb_filters' in run_cfg and 'nb_stacks' in run_cfg:
-        nb_filters = run_cfg.get("nb_filters", 128)
-        nb_stacks = run_cfg.get("nb_stacks", 3)
-        param_channels = f"f{nb_filters}_s{nb_stacks}"
-    else:
-        num_channels = run_cfg.get("num_channels", [25, 50, 100])
-        param_channels = f"ch{'-'.join(map(str, num_channels))}"
-    
-    kernel_size = run_cfg.get("kernel_size", 2)
-    dropout = run_cfg.get("dropout", 0.2)
-    learning_rate = run_cfg.get("learning_rate", 0.001)
-    seq_length = run_cfg.get("seq_length", 30)
-    
-    return f"{param_channels}_k{kernel_size}_d{dropout}_lr{learning_rate}_w{seq_length}"
+def load_data_for_basin(file_num):
+    varssim_dir = "/data0/funato/hsp/2_MERV/varssim_HBV"
+    df = pd.read_csv(f"{varssim_dir}/varssim{file_name(file_num, 3)}.csv", index_col='Date', parse_dates=True)
+    return df
 
-def evaluate_adapted(model, run_cfg, output_dir):
-    """Evaluate model using adapted approach (fine-tuning per basin)"""
-    print("\n--- Adapted Evaluation (Fine-tuning per basin) ---")
-    
-    basins = file_num_list
-    
-    # Define periods
-    periods = {
-        'cal': (GLOBAL_SETTINGS["train_start"], GLOBAL_SETTINGS["train_end"]),
-        'eva': (GLOBAL_SETTINGS["val_start"], GLOBAL_SETTINGS["val_end"])
-    }
-    
-    for period_name, (start_date, end_date) in periods.items():
-        print(f"\nEvaluating {period_name.upper()} period ({start_date.date()} to {end_date.date()})")
-        
-        # Collect all predictions and targets by basin
-        basin_predictions = {}
-        basin_dates = {}
-        all_results = []
-        
-        for basin in tqdm(basins, desc=f"Processing basins for {period_name}"):
-            try:
-                # Create training dataset for this basin (always use training period for fine-tuning)
-                train_file = output_dir.parent / "temp" / f'train_data_basin_{basin}.h5'
-                train_file.parent.mkdir(parents=True, exist_ok=True)
-                
-                create_h5_files(out_file=train_file,
-                                basins=[basin],
-                                dates=[GLOBAL_SETTINGS["train_start"], GLOBAL_SETTINGS["train_end"]],
-                                with_basin_str=True,
-                                seq_length=run_cfg["seq_length"])
-                
-                # Create datasets
-                db_path = str(run_cfg["run_dir"] / "attributes.db")
-                
-                train_ds = CamelsH5(h5_file=str(train_file),
-                                   basins=[basin],
-                                   db_path=db_path,
-                                   cache=False,
-                                   no_static=run_cfg["no_static"])
-                
-                # Create data loader for training
-                train_loader = DataLoader(train_ds, batch_size=32, shuffle=True)
-                
-                # Fine-tune model for this basin
-                basin_model = fine_tune_basin_model(model, train_loader, run_cfg, basin)
-                
-                # Evaluate on the current period using direct data loading
-                predictions, targets, dates = evaluate_basin_adapted_period(
-                    basin_model, basin, start_date, end_date, run_cfg)
-                
-                if predictions is not None:
-                    basin_predictions[basin] = predictions
-                    basin_dates[basin] = dates
-                    
-                    # Calculate metrics for this basin
-                    valid_idx = targets >= 0
-                    if np.sum(valid_idx) > 0:
-                        obs_valid = targets[valid_idx]
-                        pred_valid = predictions[valid_idx]
-                        
-                        # Calculate benchmarks
-                        metrics = {}
-                        for benchmark in benchmark_list:
-                            metrics[benchmark] = BMK(obs_valid, pred_valid, benchmark)
-                        
-                        result_row = {'basin': basin}
-                        result_row.update(metrics)
-                        all_results.append(result_row)
-                        
-                        print(f"Basin {basin}: NSE = {metrics['NSE']:.4f}")
-                
-                # Clean up temporary files
-                train_file.unlink(missing_ok=True)
-                
-            except Exception as e:
-                print(f"Error processing basin {basin}: {e}")
-                continue
-        
-        if not basin_predictions:
-            print(f"No valid predictions for {period_name} period")
-            continue
-        
-        # Create prediction matrix (basins x dates)
-        all_dates = []
-        for dates in basin_dates.values():
-            all_dates.extend(dates)
-        unique_dates = sorted(list(set(all_dates)))
-        
-        # Create prediction DataFrame
-        pred_matrix = []
-        basin_order = []
-        
-        for basin in sorted(basin_predictions.keys(), key=int):
-            basin_order.append(basin)
-            basin_preds = basin_predictions[basin]
-            basin_dates_list = basin_dates[basin]
-            
-            # Create row for this basin
-            row = {}
-            for i, date in enumerate(basin_dates_list):
-                row[date.strftime('%Y-%m-%d')] = basin_preds[i]
-            
-            pred_matrix.append(row)
-        
-        # Convert to DataFrame with basins as index and dates as columns
-        pred_df = pd.DataFrame(pred_matrix, index=basin_order)
-        pred_df = pred_df.reindex(columns=sorted(pred_df.columns))
-        
-        # Save prediction file
-        param_string = get_param_string(run_cfg)
-        pred_output_path = output_dir / "predict" / f"TCN_predict_{param_string}_{period_name}.csv"
-        pred_output_path.parent.mkdir(parents=True, exist_ok=True)
-        pred_df.to_csv(pred_output_path, index_label='basin')
-        print(f"Predictions saved to {pred_output_path}")
-        
-        # Create results DataFrame (basins x benchmarks)
-        if all_results:
-            results_df = pd.DataFrame(all_results)
-            results_df = results_df.set_index('basin')
-            
-            # Save results file
-            results_output_path = output_dir / "results" / f"TCN_results_{param_string}_{period_name}.csv"
-            results_output_path.parent.mkdir(parents=True, exist_ok=True)
-            results_df.to_csv(results_output_path, index_label='basin')
-            print(f"Results saved to {results_output_path}")
-            
-            # Print summary
-            print(f"{period_name.upper()} Period Summary:")
-            #print(f"Mean NSE: {results_df['NSE'].mean():.4f}")
-            #print(f"Median NSE: {results_df['NSE'].median():.4f}")
-            #print(f"NSE > 0.5: {(results_df['NSE'] > 0.5).sum()}/{len(results_df)} basins")
+def load_attributes(db_path, basins, drop_lat_lon=True):
+    from papercode.datautils import load_attributes as load_attributes_from_lib
+    return load_attributes_from_lib(db_path, basins, drop_lat_lon)
 
 def BMK(obs_data, sim_data, benchmark):    
     """Calculate benchmark metrics"""
@@ -515,77 +169,207 @@ def BMK(obs_data, sim_data, benchmark):
     elif benchmark == "MAE":
         return np.mean(np.abs(obs_data - sim_data))
 
+
+def get_seed_label_from_run_cfg(run_cfg):
+    """Return seed label like 'seed_300' extracted from run_cfg['run_dir'] or path string.
+
+    If no seed found, returns 'seed_unknown'.
+    """
+    try:
+        rd = run_cfg.get("run_dir") if isinstance(run_cfg, dict) else run_cfg
+        if rd is None:
+            return 'seed_unknown'
+        s = str(rd)
+        m = re.search(r"seed[_-]?(\d+)", s)
+        if m:
+            return f"seed_{m.group(1)}"
+    except Exception:
+        pass
+    return 'seed_unknown'
+
+
+# ####################### #
+# Data Handling           #
+# ####################### #
+
+class FineTuneDataset(Dataset):
+    def __init__(self, basin, dates, cfg, static_attrs):
+        self.samples, self.scalers = [], {}
+        self._prepare_data(basin, dates, cfg, static_attrs)
+
+    def _prepare_data(self, basin, dates, cfg, static_attrs):
+        df = load_data_for_basin(int(basin))
+        df_period = df.loc[dates[0]:dates[1]]
+        dyn_cols, q_col = ['Precip', 'PET', 'Temp'], 'Obs flow'
+
+        is_nan = df_period[dyn_cols + [q_col]].isnull().any(axis=1)
+        clean_blocks = [df_period.iloc[s] for s in np.ma.clump_unmasked(np.ma.masked_array(is_nan, is_nan))]
+        if not clean_blocks: return
+        
+        basin_clean_df = pd.concat(clean_blocks)
+        self.scalers = {
+            'q_mean': basin_clean_df[q_col].mean(), 'q_std': basin_clean_df[q_col].std(),
+            'dynamic_means': basin_clean_df[dyn_cols].mean().values, 'dynamic_stds': basin_clean_df[dyn_cols].std().values
+        }
+
+        dyn_scaled = (df_period[dyn_cols].values - self.scalers['dynamic_means']) / self.scalers['dynamic_stds']
+        q_scaled = (df_period[q_col].values - self.scalers['q_mean']) / self.scalers['q_std']
+        
+        static_scaled = None
+        if static_attrs is not None and not cfg["no_static"]:
+            static_data = static_attrs.loc[int(basin)].values
+            # For adapted eval, static attrs don't need scaling as they are constant for the basin
+            static_scaled = static_data
+
+        for block_df in clean_blocks:
+            if len(block_df) < cfg['seq_length']: continue
+            start_loc = df_period.index.get_loc(block_df.index[0])
+            end_loc = df_period.index.get_loc(block_df.index[-1])
+            block_dyn, block_q = dyn_scaled[start_loc:end_loc+1], q_scaled[start_loc:end_loc+1]
+            
+            for i in range(len(block_df) - cfg['seq_length'] + 1):
+                target_idx = i + cfg['seq_length'] - 1
+                dyn_seq = block_dyn[i:target_idx + 1]
+                final_features = dyn_seq
+                if static_scaled is not None:
+                    static_seq = np.tile(static_scaled, (cfg['seq_length'], 1))
+                    final_features = np.concatenate([dyn_seq, static_seq], axis=1)
+                self.samples.append((final_features.astype(np.float32), block_q[target_idx].astype(np.float32)))
+
+    def __len__(self): return len(self.samples)
+    def __getitem__(self, idx):
+        x, y = self.samples[idx]
+        return torch.from_numpy(x), torch.tensor([y])
+
+# ####################### #
+# Main Logic              #
+# ####################### #
+
+def fine_tune_and_evaluate(base_model, basin, dates, cfg, static_attrs):
+    """Fine-tune a model for a specific basin and then evaluate it."""
+    ft_dataset = FineTuneDataset(basin, (GLOBAL_SETTINGS['train_start'], GLOBAL_SETTINGS['train_end']), cfg, static_attrs)
+    if len(ft_dataset) == 0:
+        print(f"Skipping basin {basin}: Not enough clean data for fine-tuning.")
+        return None, None, None
+
+    ft_loader = DataLoader(ft_dataset, batch_size=32, shuffle=True)
+    
+    basin_model = copy.deepcopy(base_model).train()
+    optimizer = torch.optim.Adam(basin_model.parameters(), lr=1e-4)
+    loss_func = nn.MSELoss()
+    
+    print(f"  Fine-tuning basin {basin} for 5 epochs...")
+    for _ in range(5):
+        for x, y in ft_loader:
+            x, y = x.to(DEVICE), y.to(DEVICE)
+            optimizer.zero_grad()
+            preds = basin_model(x)
+            loss = loss_func(preds, y)
+            loss.backward()
+            optimizer.step()
+            
+    basin_model.eval()
+    
+    # Create a separate dataset for the evaluation period
+    eval_dataset = FineTuneDataset(basin, dates, cfg, static_attrs)
+    if len(eval_dataset) == 0: return None, None, None
+    eval_loader = DataLoader(eval_dataset, batch_size=1024, shuffle=False)
+    
+    predictions, observations, eval_dates = [], [], []
+    with torch.no_grad():
+        for x, y_scaled in eval_loader:
+            x = x.to(DEVICE)
+            preds_scaled = basin_model(x).cpu().numpy().flatten()
+            
+            # Use the scalers from the *fine-tuning* dataset to rescale
+            scalers = ft_dataset.scalers
+            preds_rescaled = (preds_scaled * scalers['q_std']) + scalers['q_mean']
+            obs_rescaled = y_scaled.numpy().flatten() * scalers['q_std'] + scalers['q_mean']
+            
+            predictions.extend(preds_rescaled)
+            observations.extend(obs_rescaled)
+
+    eval_dates = [s[2] for s in eval_dataset.samples] if hasattr(eval_dataset.samples[0], '__len__') and len(eval_dataset.samples[0]) > 2 else range(len(eval_dataset))
+    # print metric for NSE
+    if observations and predictions:
+        nse_value = BMK(np.array(observations), np.array(predictions), "NSE")
+        print(f"    Basin {basin} NSE: {nse_value:.4f}")
+
+    return np.array(predictions), np.array(observations), eval_dates
+
 def main():
     parser = argparse.ArgumentParser(description='Adapted TCN Evaluation')
-    parser.add_argument('--run_dir', type=str, required=True,
-                        help='Path to the trained model directory')
-    parser.add_argument('--model_epoch', type=int, default=50,
-                        help='Which epoch model to use for evaluation')
-    parser.add_argument('--n_basins', type=int, default=None,
-                        help='Number of basins to process (for testing)')
-    
+    parser.add_argument('--run_dir', type=str, required=True)
+    parser.add_argument('--model_epoch', type=int, default=30)
+    parser.add_argument('--n_basins', type=int, default=None)
     args = parser.parse_args()
     
     run_dir = Path(args.run_dir)
-    if not run_dir.exists():
-        raise ValueError(f"Run directory {run_dir} does not exist")
-    
-    # Load run configuration
     with open(run_dir / 'cfg.json', 'r') as fp:
-        run_cfg = json.load(fp)
-    
-    run_cfg["run_dir"] = run_dir  # Add run_dir to config
-    
+        cfg = json.load(fp)
+
     print("Adapted TCN Evaluation")
-    print(f"Model directory: {run_dir}")
-    print(f"Using model from epoch: {args.model_epoch}")
     
-    # Limit number of basins for testing if specified
-    global file_num_list
-    if args.n_basins is not None:
-        file_num_list = file_num_list[:args.n_basins]
-        print(f"Processing only first {args.n_basins} basins for testing")
-    
-    # Create output directory
-    output_dir = Path("/data0/funato/hsp/0_out/TCN/GB/adapted")
-    output_dir.mkdir(parents=True, exist_ok=True)
-    
-    # Create base model
-    input_size_stat = 0 if run_cfg["no_static"] else 209  # GB attribute size
-    input_size_dyn = 3 if (run_cfg["no_static"]) else 3
-    
-    # Handle different parameter formats
-    if 'nb_filters' in run_cfg and 'nb_stacks' in run_cfg:
-        # New format: nb_filters and nb_stacks
-        nb_filters = run_cfg.get("nb_filters", 128)
-        nb_stacks = run_cfg.get("nb_stacks", 3)
-        num_channels = [nb_filters] * nb_stacks
-    else:
-        # Old format: num_channels list
-        num_channels = run_cfg.get("num_channels", [25, 50, 100])
-    
-    model = TCNModel(input_size_dyn=input_size_dyn,
-                     input_size_stat=input_size_stat,
-                     num_channels=num_channels,
-                     kernel_size=run_cfg.get("kernel_size", 2),
-                     dropout=run_cfg.get("dropout", 0.2),
-                     no_static=run_cfg["no_static"]).to(DEVICE)
-    
-    # Load trained model weights
-    model_file = run_dir / f"model_epoch{args.model_epoch}.pt"
-    if not model_file.exists():
-        model_file = run_dir / "tcn_model_final.pt"
-        if not model_file.exists():
-            raise ValueError(f"Model file not found. Looked for {run_dir}/model_epoch{args.model_epoch}.pt and {run_dir}/tcn_model_final.pt")
-    
+    basins_to_process = file_num_list
+    if args.n_basins:
+        basins_to_process = file_num_list[:args.n_basins]
+        
+    model_file = run_dir / f"tcn_model_epoch{args.model_epoch}.pt"
+    if not model_file.exists(): model_file = run_dir / "tcn_model_final.pt"
     print(f"Loading base model from: {model_file}")
-    model.load_state_dict(torch.load(model_file, map_location=DEVICE))
+
+    is_no_static = cfg.get('no_static', False)
+    input_size = 3
+    if not is_no_static:
+        # This assumes the number of static features is known and consistent
+        # A better approach would be to save this in cfg.json during training
+        # For now, we hardcode a common value for GB attributes
+        input_size += 27 
+
+    base_model = TCNModel(input_size=input_size, 
+                          num_channels=cfg["num_channels"], 
+                          kernel_size=cfg["kernel_size"], 
+                          dropout=cfg["dropout"]).to(DEVICE)
+    base_model.load_state_dict(torch.load(model_file, map_location=DEVICE))
     
-    # Evaluate using adapted approach
-    evaluate_adapted(model, run_cfg, output_dir)
+    static_attrs = None
+    if not is_no_static:
+        db_path = run_dir / "attributes.db"
+        static_attrs = load_attributes(db_path, basins=basins_to_process, drop_lat_lon=True)
+
+    output_dir = Path(f"/data0/funato/hsp/0_out/TCN/{GLOBAL_SETTINGS['loc']}/adapted")
     
-    print("\nAdapted evaluation completed successfully!")
-    print(f"Results saved in: {output_dir}")
+    for name, dates in {'cal': (GLOBAL_SETTINGS['train_start'], GLOBAL_SETTINGS['train_end']), 
+                        'eva': (GLOBAL_SETTINGS['val_start'], GLOBAL_SETTINGS['val_end'])}.items():
+        print(f"\nEvaluating {name.upper()} period...")
+        
+        all_preds_df, all_results = pd.DataFrame(), []
+        for basin in tqdm(basins_to_process, desc=f"Processing basins for {name}"):
+            preds, obs, eval_dates = fine_tune_and_evaluate(base_model, basin, dates, cfg, static_attrs)
+            if preds is not None:
+                preds_df = pd.DataFrame({'date': eval_dates, 'prediction': preds}).set_index('date')
+                all_preds_df[basin] = preds_df['prediction']
+                # Calculate benchmarks for this basin
+                metrics = {}
+                for benchmark in benchmarks:
+                    metrics[benchmark] = BMK(obs, preds, benchmark)
+                result_row = {'basin': basin}
+                result_row.update(metrics)
+                all_results.append(result_row)
+
+        if all_results:
+            seed_label = get_seed_label_from_run_cfg(cfg)
+            pred_path = output_dir / "predict" / f"TCN_predict_{seed_label}_{name}.csv"
+            pred_path.parent.mkdir(parents=True, exist_ok=True)
+            all_preds_df.sort_index().to_csv(pred_path)
+            print(f"Predictions saved to {pred_path}")
+
+            results_df = pd.DataFrame(all_results).set_index('basin')
+            results_path = output_dir / "results" / f"TCN_results_{name}.csv"
+            results_path.parent.mkdir(parents=True, exist_ok=True)
+            results_df.to_csv(results_path)
+            print(f"Results saved to {results_path}")
+            print(f"\n{name.upper()} Period Summary:\n{results_df.describe()}")
 
 if __name__ == "__main__":
     main()

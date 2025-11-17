@@ -1,14 +1,14 @@
 #!/bin/bash
 
-cores=2
-start_core=4 # Start core (1-indexed)
+cores=1
+start_core=13 # Start core (1-indexed)
 ###
 
 static_bool=false
 # if static_bool is true, use static data; if false, do not use static data
 
 nseeds=1
-firstseed=300
+firstseed=309
 
 if [ "$static_bool" = true ]; then
     log_name="master_log_TCN_static.log"

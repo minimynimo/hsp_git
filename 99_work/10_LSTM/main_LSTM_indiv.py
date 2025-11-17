@@ -23,11 +23,11 @@ from run_LSTM import calc_nse
 from run_LSTM import BMK
 
 num_epochs = 100 # Number of training epochs
-hidden_size = 20 # Number of LSTM cells
+hidden_size = 16 # Number of LSTM cells
 learning_rate = 0.005 # Learning rate used to update the weights
 window_size = 365 # Length of the meteorological record provided to the network
-batch_size = 512 # Number of samples in each batch
-dropout_rate = 0.1 # Dropout rate of the final fully connected Layer [0.0, 1.0]
+batch_size = 256 # Number of samples in each batch
+dropout_rate = 0.4 # Dropout rate of the final fully connected Layer [0.0, 1.0]
 
 #loc, ver = "JP", 2
 #loc, ver = "US", 2

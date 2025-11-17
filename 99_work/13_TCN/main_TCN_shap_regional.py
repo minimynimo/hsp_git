@@ -28,10 +28,10 @@ ver_name = "ver1_1" if ver == 1 else "ver2_0"
 attribute_dir = f'/data0/funato/hsp/3_gis_data/{loc}/0_data/river_basin/dataset_{loc}'
 
 # Define synthetic precipitation columns
-syn_precip_cols = ['syn_no_precip', 'syn_p_pet', 'syn_peak1_rate0',
-                   'syn_peak1_rate10', 'syn_peak1_rate30', 'syn_peak1_rate50',
-                   'syn_peak3_rate10', 'syn_peak3_rate30', 'syn_peak3_rate50',
-                   'syn_peak5_rate10', 'syn_peak5_rate30', 'syn_peak5_rate50']
+syn_precip_cols = ['syn_no_precip',
+                    'syn_peak1_rate0','syn_peak1_rate10', 'syn_peak1_rate30', 'syn_peak1_rate50',
+                    'syn_peak3_rate0','syn_peak3_rate10', 'syn_peak3_rate30', 'syn_peak3_rate50',
+                    'syn_peak5_rate0', 'syn_peak5_rate10', 'syn_peak5_rate30', 'syn_peak5_rate50']
 
 if loc == "JP" and ver == 2:
     file_tot_num = 87
@@ -59,14 +59,14 @@ end_date_cal = '2000-12-31'
 start_date_eva = '2001-01-01'
 end_date_eva = '2006-12-31'
 
-output_dir = f"/data0/funato/hsp/0_out/TCN_temp/{loc}/shap/regional"
+output_dir = f"/data0/funato/hsp/0_out/TCN_temp/{loc}/shap/regional_424"
 os.makedirs(output_dir, exist_ok=True)
 os.makedirs(output_dir + "/predict/og", exist_ok=True)
 os.makedirs(output_dir + "/results", exist_ok=True)
 os.makedirs(output_dir + "/hydrographs", exist_ok=True)
 os.makedirs(output_dir + "/predict/synthetic", exist_ok=True)
 
-output_dir_shap = f"0_out/1_fig/shap/TCN_temp/{loc}/regional"
+output_dir_shap = f"0_out/1_fig/shap/TCN_temp/{loc}/regional_424"
 os.makedirs(output_dir_shap, exist_ok=True)
 
 
@@ -216,6 +216,14 @@ TCN_model = Model(inputs=model_in, outputs=model_out)
 TCN_model.compile(optimizer='adam', loss='mse')
 
 TCN_model.fit(input_cal_seq, target_cal_seq, epochs=epochs, batch_size=batch_size, validation_split=0.2, callbacks=[early_stopping])
+
+# Save the trained model
+model_save_path = os.path.join(output_dir, "TCN_model.h5")
+TCN_model.save(model_save_path)
+log_file.write(f"Model saved to: {model_save_path}\n")
+log_file.flush()
+print(f"Model saved to: {model_save_path}")
+
 print("--- Performing SHAP Analysis using KernelExplainer (this may be slow) ---")
 # Use a subset of the training data as background for the explainer
 # KernelExplainer is slow, so we use a very small background set.
@@ -306,9 +314,9 @@ print("--- Evaluating Model and Generating Outputs ---")
 log_file.write("Evaluating model and generating outputs...\n")
 log_file.flush()    
 results_cal, results_eva = [], []
-syn_predict_dfs_combined = {col: {} for col in syn_precip_cols}
 
-sys.exit(0)  # Exit early for debugging purposes
+# Initialize dictionaries to store all synthetic predictions with correct format (dates as columns)
+syn_predict_all = {col: {} for col in syn_precip_cols}
 
 for file_num in file_list:
     basin_data = individual_basin_data[file_num]
@@ -401,7 +409,7 @@ for file_num in file_list:
             dates_predict_syn = dates_syn[timesteps:]
             
             temp_syn_df = pd.DataFrame({'Date': dates_predict_syn, 'prediction': predict_syn}).set_index('Date')
-            syn_predict_dfs_combined[syn_precip_col][file_num] = temp_syn_df
+            syn_predict_all[syn_precip_col][file_num] = temp_syn_df
 
         # save the dimension sze of temp_syn_df
         log_file.write(f"Shape of synthetic predictions for {syn_precip_col}: {temp_syn_df.shape}\n")
@@ -416,11 +424,14 @@ df_results_cal.to_csv(output_dir + f'/results/TCN_results_cal.csv', index=False,
 df_results_eva = pd.DataFrame(results_eva)
 df_results_eva.to_csv(output_dir + f'/results/TCN_results_eva.csv', index=False, header=True)
 
-for syn_precip_col, basin_preds_dict in syn_predict_dfs_combined.items():
+# Save synthetic predictions with correct format: basins as rows (index), dates as columns
+for syn_precip_col, basin_preds_dict in syn_predict_all.items():
     log_file.write(f"Processing synthetic column: {syn_precip_col}\n")
 
-    if not basin_preds_dict: continue
+    if not basin_preds_dict: 
+        continue
     
+    # Combine all basin predictions - dates as index, basins as columns
     combined_syn_df = pd.DataFrame()
     for file_num, df_preds in basin_preds_dict.items():
         df_preds = df_preds.rename(columns={'prediction': f'file_{file_num}'})
@@ -430,6 +441,7 @@ for syn_precip_col, basin_preds_dict in syn_predict_dfs_combined.items():
         else:
             combined_syn_df = combined_syn_df.join(df_preds, how='outer')
 
+    # Filter to appropriate end date
     if syn_precip_col.startswith('syn_peak'):
         end_date_syn_final = '2001-02-10'
         combined_syn_df = combined_syn_df.loc[:end_date_syn_final]
@@ -438,7 +450,17 @@ for syn_precip_col, basin_preds_dict in syn_predict_dfs_combined.items():
         combined_syn_df = combined_syn_df.loc[:end_date_syn_final]
     
     combined_syn_df.sort_index(inplace=True)
-    combined_syn_df.to_csv(f"{output_dir}/predict/synthetic/TCN_predict_{syn_precip_col.replace('syn_','')}.csv")
+    
+    # Transpose to get basins as rows (index) and dates as columns
+    combined_syn_df_transposed = combined_syn_df.T
+    
+    # Clean up basin names (remove 'file_' prefix)
+    combined_syn_df_transposed.index = combined_syn_df_transposed.index.str.replace('file_', '')
+    combined_syn_df_transposed.index.name = 'basin'
+    
+    # Save with correct format
+    combined_syn_df_transposed.to_csv(f"{output_dir}/predict/synthetic/TCN_predict_{syn_precip_col.replace('syn_','')}.csv")
+    log_file.write(f"Saved {syn_precip_col} with shape: {combined_syn_df_transposed.shape} (basins × dates)\n")
 
 log_file.write("DONE\n")
 log_file.close()

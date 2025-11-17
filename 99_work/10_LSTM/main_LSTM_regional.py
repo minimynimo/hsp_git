@@ -38,16 +38,16 @@ import sys
 
 benchmark_list = ["KGE","NSE","E1", "VE", "d","RMSE","MAE"]
 
-#loc, ver = "JP", 2
+# loc, ver = "JP", 2
 loc, ver = "GB", 2
 
 ver_name = "ver1_1" if ver == 1 else "ver2_0"
 
 # Define synthetic precipitation columns
-syn_precip_cols = ['syn_no_precip', 'syn_p_pet', 'syn_peak1_rate0',
-                   'syn_peak1_rate10', 'syn_peak1_rate30', 'syn_peak1_rate50',
-                   'syn_peak3_rate10', 'syn_peak3_rate30', 'syn_peak3_rate50',
-                   'syn_peak5_rate10', 'syn_peak5_rate30', 'syn_peak5_rate50']
+syn_precip_cols = ['syn_no_precip', 'syn_p_pet', 
+                   'syn_peak1_rate0', 'syn_peak1_rate10', 'syn_peak1_rate30', 'syn_peak1_rate50',
+                   'syn_peak3_rate0', 'syn_peak3_rate10', 'syn_peak3_rate30', 'syn_peak3_rate50',
+                   'syn_peak5_rate0', 'syn_peak5_rate10', 'syn_peak5_rate30', 'syn_peak5_rate50']
 
 if loc == "JP" and ver == 2:
     file_tot_num = 87
@@ -408,7 +408,18 @@ for syn_precip_col, basin_preds_dict in syn_predict_dfs_combined.items():
         combined_syn_df = combined_syn_df.loc[:end_date_syn_final]
     
     combined_syn_df.sort_index(inplace=True)
-    combined_syn_df.to_csv(f"{output_dir}/predict/synthetic/LSTM_predict_{syn_precip_col.replace('syn_','')}.csv")
+    
+    # Transpose to match RF format: basins as rows, dates as columns
+    combined_syn_df_transposed = combined_syn_df.T
+    combined_syn_df_transposed.index = combined_syn_df_transposed.index.str.replace('file_', '')
+    combined_syn_df_transposed.index.name = 'basin'
+    
+    # Column names should be dates as strings
+    combined_syn_df_transposed.columns = combined_syn_df_transposed.columns.astype(str).str.split(' ').str[0]
+    
+    output_file = f"{output_dir}/predict/synthetic/LSTM_predict_{syn_precip_col.replace('syn_','')}.csv"
+    combined_syn_df_transposed.to_csv(output_file)
+    print(f"Saved {output_file}")
 
 log_file.write("DONE\n")
 log_file.close()

@@ -53,13 +53,13 @@ n_estimators = 500
 learning_rate = 0.1
 max_depth = 4
 
-output_dir = f"/data0/funato/hsp/0_out/XGB/{loc}/shap/regional"
+output_dir = f"/data0/funato/hsp/0_out/XGB/{loc}/shap/regional_424"
 os.makedirs(output_dir, exist_ok=True)
 os.makedirs(output_dir + "/predict/og", exist_ok=True)
 os.makedirs(output_dir + "/results", exist_ok=True)
 os.makedirs(output_dir + "/predict/synthetic", exist_ok=True)
 
-output_dir_shap = f"0_out/1_fig/shap/XGB/{loc}/regional"
+output_dir_shap = f"0_out/1_fig/shap/XGB/{loc}/regional_424"
 os.makedirs(output_dir_shap, exist_ok=True)
 
 # Clean attribute values and normalize
@@ -256,6 +256,14 @@ xgb_model = xgb.XGBRegressor(
 xgb_model.fit(X_train_final, all_target_cal_stacked)
 print("Regional XGBoost model trained.")
 
+# Save the trained model
+import joblib
+model_save_path = os.path.join(output_dir, "XGB_model.pkl")
+joblib.dump(xgb_model, model_save_path)
+log_file.write(f"Model saved to: {model_save_path}\n")
+log_file.flush()
+print(f"Model saved to: {model_save_path}")
+
 predict_cal_aggregated = xgb_model.predict(X_train_final)
 predict_eva_aggregated = xgb_model.predict(X_eval_final)
 
@@ -409,7 +417,17 @@ for syn_precip_col, basin_preds_dict in syn_predict_dfs_combined.items():
         combined_syn_df = combined_syn_df.loc[:end_date_syn_final]
     
     combined_syn_df.sort_index(inplace=True)
-    combined_syn_df.to_csv(f"{output_dir}/predict/synthetic/XGB_predict_{syn_precip_col.replace('syn_','')}.csv")
+    
+    # Transpose to get basins as rows (index) and dates as columns
+    combined_syn_df_transposed = combined_syn_df.T
+    
+    # Clean up basin names (remove 'file_' prefix)
+    combined_syn_df_transposed.index = combined_syn_df_transposed.index.str.replace('file_', '')
+    combined_syn_df_transposed.index.name = 'basin'
+    
+    # Save with correct format
+    combined_syn_df_transposed.to_csv(f"{output_dir}/predict/synthetic/XGB_predict_{syn_precip_col.replace('syn_','')}.csv")
+    log_file.write(f"Saved {syn_precip_col} with shape: {combined_syn_df_transposed.shape} (basins × dates)\n")
 
 df_results_cal = pd.DataFrame(results_cal).set_index('file_num')
 df_results_cal.to_csv(output_dir + f'/results/XGB_results_cal.csv')

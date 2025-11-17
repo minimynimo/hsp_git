@@ -316,7 +316,16 @@ for syn_precip_col, basin_preds_dict in syn_predict_dfs_combined.items():
             combined_syn_df = combined_syn_df.loc[:end_date_syn_final]
         
         combined_syn_df.sort_index(inplace=True)
-        combined_syn_df.to_csv(f"{output_dir}/predict/synthetic/RF_predict_{syn_precip_col.replace('syn_', '')}.csv", index=True, header=True)
+        
+        # Transpose to match XGB format: basins as rows, dates as columns
+        combined_syn_df_transposed = combined_syn_df.T
+        combined_syn_df_transposed.index = combined_syn_df_transposed.index.str.replace('file_', '')
+        combined_syn_df_transposed.index.name = 'basin'
+        
+        # Column names should be dates as strings
+        combined_syn_df_transposed.columns = combined_syn_df_transposed.columns.astype(str).str.split(' ').str[0]
+        
+        combined_syn_df_transposed.to_csv(f"{output_dir}/predict/synthetic/RF_predict_{syn_precip_col.replace('syn_', '')}.csv", index=True, header=True)
 
 df_results_cal = pd.DataFrame(results_cal)
 df_results_cal.to_csv(output_dir + f'/results/RF_results_cal.csv', index=False, header=True)

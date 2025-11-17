@@ -45,6 +45,8 @@ GLOBAL_SETTINGS = {
 
 benchmark_list = ["NSE", "KGE", "E1", "VE", "d", "RMSE", "MAE"]
 
+evaluate_syn_data = False
+
 # Define synthetic precipitation columns (matching main.py)
 syn_precip_cols = ['syn_no_precip', 'syn_p_pet', 
                    'syn_peak1_rate0', 'syn_peak1_rate10', 'syn_peak1_rate30', 'syn_peak1_rate50',
@@ -418,7 +420,7 @@ def evaluate_original_data(model, run_cfg, basins, static_attrs=None):
         
         # Save prediction file
         param_string = get_param_string(run_cfg)
-        pred_output_path = output_dir / "predict" / f"TCN_predict_{param_string}_{period_name}.csv"
+        pred_output_path = output_dir / "predict" / f"TCN_predict_seed{arg['run_dir'].split('seed')[1]}_{period_name}_.csv"
         pred_output_path.parent.mkdir(parents=True, exist_ok=True)
         pred_df.to_csv(pred_output_path, index_label='basin')
         print(f"Predictions saved to {pred_output_path}")
@@ -655,7 +657,8 @@ def main():
     evaluate_original_data(model, run_cfg, file_num_list, static_attrs)
     
     # Evaluate on synthetic scenarios
-    evaluate_synthetic_data(model, run_cfg, file_num_list, static_attrs)
+    if evaluate_syn_data:
+        evaluate_synthetic_data(model, run_cfg, file_num_list, static_attrs)
     
     print("\nRegional evaluation completed successfully!")
 

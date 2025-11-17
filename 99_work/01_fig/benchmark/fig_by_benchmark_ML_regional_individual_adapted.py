@@ -5,9 +5,19 @@ import numpy as np
 from scipy import stats
 
 model_list = ["RF", "XGB", "TCN", "LSTM"]
-train_types = ["regional", "individual", "adapted"]
+train_types = ["regional", "adapted","individual"]
 
-benchmark_list = ["KGE", "NSE", "E1", "VE", "d", "RMSE", "MAE"]
+benchmark_list = ["KGE", "NSE", "E1", "VE", "RMSE", "MAE"]
+
+fs = 15
+
+##LSTM_individual parameter
+num_epochs = 100 # Number of training epochs
+hidden_size = 16 # Number of LSTM cells
+learning_rate = 0.005 # Learning rate used to update the weights
+window_size = 365 # Length of the meteorological record provided to the network
+batch_size = 256 # Number of samples in each batch
+dropout_rate = 0.4 # Dropout rate of the final fully connected Layer [0.0, 1.0]
 
 color_list = {
     "RF":   "#FF7F00",   # Orange
@@ -18,24 +28,25 @@ color_list = {
 
 # Markers for different training types
 marker_list = {
-    "regional": "",     # Circle
-    "individual": "",   # Square
-    "adapted": ""       # Triangle
+    "RF":  'o',      # Circle
+    "XGB":  's',    # Square
+    "TCN":  '^',    # Triangle
+    "LSTM": 'd'     # Diamond
 }
 
 # Line styles for different training types
 linestyle_list = {
     "regional": "-",     # Solid
-    "individual": "--",  # Dashed
-    "adapted": ":"       # Dotted
+    "adapted": "--",       # Dotted
+    "individual": ":",  # Dashed
 }
 
 
 benchmark_limits = {
-    'KGE': {'min': -1, 'max': 1},
-    'NSE': {'min': -1, 'max': 1},
+    'KGE': {'min': 0, 'max': 1},
+    'NSE': {'min': 0, 'max': 1},
     'logNSE': {'min': -150, 'max': 1},
-    'E1': {'min': -1, 'max': 1},
+    'E1': {'min': 0, 'max': 1},
     'VE': {'min': -2, 'max': 1},
     'd': {'min': -2, 'max': 1},
     'RMSE': {'min': 0, 'max': 10},
@@ -43,14 +54,14 @@ benchmark_limits = {
 }
 
 benchmark_limits_cdf = {
-    'KGE': {'min': -1, 'max': 1},
-    'NSE': {'min': -1, 'max': 1},
+    'KGE': {'min': 0, 'max': 1},
+    'NSE': {'min': 0, 'max': 1},
     'logNSE': {'min': -150, 'max': 1},
-    'E1': {'min': -1, 'max': 1},
+    'E1': {'min': 0, 'max': 1},
     'VE': {'min': -2, 'max': 1},
     'd': {'min': 0, 'max': 1},
-    'RMSE': {'min': 0, 'max': 10},
-    'MAE': {'min': 0, 'max': 10}
+    'RMSE': {'min': 0, 'max': 5},
+    'MAE': {'min': 0, 'max': 5}
 }
 
 output_dir_box = "/data0/funato/hsp/0_out/1_fig/benchmark/ML_training_comparison/box"
@@ -60,11 +71,14 @@ os.makedirs(output_dir_cdf, exist_ok=True)
 
 def get_file_path(model, train_type):
     if model == "TCN" and train_type == "regional":
-        return f"/data0/funato/hsp/0_out/TCN/GB/shap/regional/results/{model}_results_eva.csv"
+        return f"/data0/funato/hsp/0_out/TCN/GB/regional/results/{model}_results_eva.csv"
     elif model == "LSTM" and train_type == "individual":
-        return f"/data0/funato/hsp/0_out/LSTM/GB/individual/results/LSTM_results_h20_lr0.005_e100_w365_b512_d0.1_eva.csv"
+        return f"/data0/funato/hsp/0_out/LSTM/GB/individual/results/LSTM_results_h{hidden_size}_lr{learning_rate}_e{num_epochs}_w{window_size}_b{batch_size}_d{dropout_rate}_eva.csv"
     else:
-        return f"/data0/funato/hsp/0_out/{model}/GB/{train_type}/results/{model}_results_eva.csv"
+        if train_type == "adapted":
+            return f"/data0/funato/hsp/0_out/{model}/GB/adapted_396/results/{model}_results_eva.csv"
+        else:
+            return f"/data0/funato/hsp/0_out/{model}/GB/{train_type}/results/{model}_results_eva.csv"
 
 for benchmark in benchmark_list:
     print(f"\n=== Processing {benchmark} ===")
@@ -78,6 +92,9 @@ for benchmark in benchmark_list:
             df = pd.read_csv(file_path)
             has_benchmark = benchmark in df.columns
             data_count = len(df[benchmark].dropna())
+            print(f"  {model} - {train_type}: Exists: {exists}, Has '{benchmark}': {has_benchmark}, Data count: {data_count}")
+            if not exists or not has_benchmark or data_count == 0:
+                print(f"    Warning: Missing or incomplete data for {model} - {train_type}")
     
     # === BOXPLOT FIGURE ===
     plt.figure(figsize=(12, 6))
@@ -133,8 +150,9 @@ for benchmark in benchmark_list:
     plt.savefig(output_path_box, dpi=300, bbox_inches='tight')
     plt.close()
     
-    # === CDF FIGURE ===
-    plt.figure(figsize=(10, 6))
+    # === CDF FIGURE with subplots per model ===
+    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+    axes = axes.flatten()
     
     # Collect data for CDF plotting
     cdf_data = {}
@@ -149,41 +167,38 @@ for benchmark in benchmark_list:
                     if len(data) > 0:
                         cdf_data[model][train_type] = data
     
-    # Plot CDFs
-    for model in model_list:
+    # Plot CDFs - one subplot per model
+    for model_idx, model in enumerate(model_list):
+        ax = axes[model_idx]
+        
         for train_type in train_types:
             if train_type in cdf_data[model]:
                 data = cdf_data[model][train_type]
                 sorted_data = np.sort(data)
                 cdf_values = np.arange(1, len(sorted_data) + 1) / len(sorted_data)
                 
-                plt.plot(sorted_data, cdf_values, 
-                        color=color_list[model], 
+                ax.plot(sorted_data, cdf_values, 
                         linestyle=linestyle_list[train_type],
-                        marker=marker_list[train_type],
-                        markersize=4,
-                        markevery=max(1, len(sorted_data)//20),  # Show markers sparingly
-                        label=f"{model}_{train_type}",
-                        linewidth=2,
-                        alpha=0.8)
+                        label=train_type,
+                        linewidth=2.5,
+                        alpha=0.8,
+                        color=color_list[model])
+        
+        ax.set_xlabel(benchmark, fontsize=fs*0.9)
+        ax.set_ylabel('CDF', fontsize=fs*0.9)
+        ax.tick_params(axis='both', which='major', labelsize=fs*0.9)
+        ax.set_title(f'{model}', fontsize=fs, fontweight='bold')
+        ax.grid(alpha=0.3)
+        ax.legend(loc='upper left', fontsize=fs*0.8)
+        ax.set_ylim(0, 1)
+        
+        # Apply benchmark limits if available
+        if benchmark in benchmark_limits_cdf:
+            ax.set_xlim(benchmark_limits_cdf[benchmark]['min'], 
+                       benchmark_limits_cdf[benchmark]['max'])
+
     
-    plt.xlabel(benchmark)
-    plt.ylabel('Cumulative Probability')
-    plt.title(f'CDF: {benchmark}')
-    plt.grid(alpha=0.3)
-    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=8)
-    plt.ylim(0, 1)
-    
-    # Apply benchmark limits if available (use the same limits as box plots)
-    if benchmark in benchmark_limits:
-        plt.xlim(benchmark_limits[benchmark]['min'], 
-                 benchmark_limits[benchmark]['max'])
-        print(f"Applied CDF limits: {benchmark_limits[benchmark]}")
-    elif benchmark in benchmark_limits_cdf:
-        plt.xlim(benchmark_limits_cdf[benchmark]['min'], 
-                 benchmark_limits_cdf[benchmark]['max'])
-        print(f"Applied CDF-specific limits: {benchmark_limits_cdf[benchmark]}")
-    
+    fig.suptitle(f'CDF Comparison: {benchmark}', fontsize=fs, y=0.995)
     plt.tight_layout()
     
     # Save CDF plot

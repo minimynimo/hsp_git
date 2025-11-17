@@ -130,7 +130,7 @@ if [[ -n "$N_BASINS" ]]; then
 fi
 
 # Run regional evaluation
-run_evaluation "regional" "/data0/funato/hsp/99_work/13_TCN/TCN_regional_modeling-master/eval_regional.py"
+#run_evaluation "regional" "/data0/funato/hsp/99_work/13_TCN/TCN_regional_modeling-master/eval_regional.py"
 
 # Run adapted evaluation
 run_evaluation "adapted" "/data0/funato/hsp/99_work/13_TCN/TCN_regional_modeling-master/eval_adapted.py"

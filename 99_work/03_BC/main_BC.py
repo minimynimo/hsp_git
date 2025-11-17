@@ -44,10 +44,10 @@ ver_name = "ver1_1" if ver == 1 else "ver2_0"
 file_tot_num = 424
 varssim_dir = f"/data0/funato/hsp/2_MERV/HYPER"
 
-precip_cols = ['no_precip',  'peak1_rate0',
-                   'peak1_rate10', 'peak1_rate30', 'peak1_rate50',
-                   'peak3_rate10', 'peak3_rate30', 'peak3_rate50',
-                   'peak5_rate10', 'peak5_rate30', 'peak5_rate50']
+precip_cols = ['no_precip',  
+               'peak1_rate0','peak1_rate10', 'peak1_rate30', 'peak1_rate50',
+               'peak3_rate0', 'peak3_rate10', 'peak3_rate30', 'peak3_rate50',
+               'peak5_rate0', 'peak5_rate10', 'peak5_rate30', 'peak5_rate50']
 
 file_list = list(range(1, file_tot_num+1))
 
@@ -59,7 +59,7 @@ end_date_eva = '2006-12-31'
 output_dir = f'/data0/funato/hsp/0_out/BC'
 os.makedirs(output_dir, exist_ok=True)
 os.makedirs(output_dir + '/results', exist_ok=True)
-os.makedirs(output_dir + '/predict', exist_ok=True)
+os.makedirs(output_dir + '/predict/synthetic', exist_ok=True)
 
 param_file_path = os.path.join(output_dir, 'parameters.txt')
 with open(param_file_path, 'w') as param_file:
@@ -331,8 +331,8 @@ for file_num in file_list:
         syn_eva = syn_df[start_date_eva:end_date_eva].copy()   
 
         # Load BMA predictions for synthetic data
-        syn_bma_df_cal = pd.read_csv(f'/data0/funato/hsp/0_out/BMA/predict/BMA_predict_{precip_col}_cal.csv', index_col=0)
-        syn_bma_df_eva = pd.read_csv(f'/data0/funato/hsp/0_out/BMA/predict/BMA_predict_{precip_col}_eva.csv', index_col=0)
+        syn_bma_df_cal = pd.read_csv(f'/data0/funato/hsp/0_out/BMA/predict/synthetic/BMA_predict_{precip_col}_cal.csv', index_col=0)
+        syn_bma_df_eva = pd.read_csv(f'/data0/funato/hsp/0_out/BMA/predict/synthetic/BMA_predict_{precip_col}_eva.csv', index_col=0)
 
         syn_cal['Sim flow'] = syn_bma_df_cal.loc[f'file_{file_num}_cal'].values
         syn_eva['Sim flow'] = syn_bma_df_eva.loc[f'file_{file_num}_eva'].values
@@ -388,11 +388,11 @@ for file_num in file_list:
             syn_predict_cal_df = pd.DataFrame([syn_date_row_cal])
             syn_predict_eva_df = pd.DataFrame([syn_date_row_eva])
 
-            syn_predict_cal_df.to_csv(output_dir + f"/predict/BC_predict_{precip_col}_cal.csv", mode='w', index=False, header=False)
-            syn_predict_eva_df.to_csv(output_dir + f"/predict/BC_predict_{precip_col}_eva.csv", mode='w', index=False, header=False)
-        with open(output_dir + f"/predict/BC_predict_{precip_col}_cal.csv", 'a') as file:
+            syn_predict_cal_df.to_csv(output_dir + f"/predict/synthetic/BC_predict_{precip_col}_cal.csv", mode='w', index=False, header=False)
+            syn_predict_eva_df.to_csv(output_dir + f"/predict/synthetic/BC_predict_{precip_col}_eva.csv", mode='w', index=False, header=False)
+        with open(output_dir + f"/predict/synthetic/BC_predict_{precip_col}_cal.csv", 'a') as file:
             pd.DataFrame([syn_file_row_cal]).to_csv(file, header=False, index=False)
-        with open(output_dir + f"/predict/BC_predict_{precip_col}_eva.csv", 'a') as file:
+        with open(output_dir + f"/predict/synthetic/BC_predict_{precip_col}_eva.csv", 'a') as file:
             pd.DataFrame([syn_file_row_eva]).to_csv(file, header=False, index=False)
 
 
