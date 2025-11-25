@@ -1,22 +1,16 @@
 import os
-# Configure GPU usage - will use GPU if available, fall back to CPU if not
+# Disable GPU before importing TensorFlow - must be set before TF initialization
+os.environ['CUDA_VISIBLE_DEVICES'] = '-1'  # Force CPU usage
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # 0 = all messages, 3 = only errors
 
 import tensorflow as tf
 
-# Check for GPU availability and configure memory growth to prevent memory issues
+# Verify GPU is disabled
 gpus = tf.config.experimental.list_physical_devices('GPU')
 if gpus:
-    try:
-        # Enable memory growth for all GPUs to prevent memory allocation issues
-        for gpu in gpus:
-            tf.config.experimental.set_memory_growth(gpu, True)
-        print(f"GPU(s) detected and configured: {len(gpus)} GPU(s) available")
-    except RuntimeError as e:
-        print(f"GPU configuration error: {e}")
-        print("Falling back to CPU")
+    print(f"Warning: GPU detected even after disabling. This shouldn't happen.")
 else:
-    print("No GPU detected. Using CPU.")
+    print("GPU disabled. Using CPU for all computations.")
 
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -45,10 +39,10 @@ ver_name = "ver1_1" if ver == 1 else "ver2_0"
 attribute_dir = f'/data0/funato/hsp/3_gis_data/{loc}/0_data/river_basin/dataset_{loc}'
 
 # Define synthetic precipitation columns
-syn_precip_cols = ['syn_no_precip', 'syn_p_pet', 'syn_peak1_rate0',
-                   'syn_peak1_rate10', 'syn_peak1_rate30', 'syn_peak1_rate50',
-                   'syn_peak3_rate10', 'syn_peak3_rate30', 'syn_peak3_rate50',
-                   'syn_peak5_rate10', 'syn_peak5_rate30', 'syn_peak5_rate50']
+syn_precip_cols = ['syn_no_precip', 
+                   'syn_peak1_rate0','syn_peak1_rate10', 'syn_peak1_rate30', 'syn_peak1_rate50',
+                   'syn_peak3_rate0','syn_peak3_rate10', 'syn_peak3_rate30', 'syn_peak3_rate50',
+                   'syn_peak5_rate0','syn_peak5_rate10', 'syn_peak5_rate30', 'syn_peak5_rate50']
 
 if loc == "JP" and ver == 2:
     file_tot_num = 87
@@ -78,14 +72,14 @@ start_date_eva = '2001-01-01'
 end_date_eva = '2006-12-31'
 
 # --- Updated output directories for LSTM ---
-output_dir = f"/data0/funato/hsp/0_out/LSTM_temp/{loc}/shap/regional"
+output_dir = f"/data0/funato/hsp/0_out/LSTM/{loc}/shap/regional_424"
 os.makedirs(output_dir, exist_ok=True)
 os.makedirs(output_dir + "/predict/og", exist_ok=True)
 os.makedirs(output_dir + "/results", exist_ok=True)
 os.makedirs(output_dir + "/hydrographs", exist_ok=True)
 os.makedirs(output_dir + "/predict/synthetic", exist_ok=True)
 
-output_dir_shap = f"0_out/1_fig/shap/LSTM_temp/{loc}/regional"
+output_dir_shap = f"0_out/1_fig/shap/LSTM/{loc}/regional_424"
 os.makedirs(output_dir_shap, exist_ok=True)
 
 
@@ -260,6 +254,13 @@ print(f"Training LSTM model on {hardware_type}...")
 LSTM_model.fit(input_cal_seq, target_cal_seq, epochs=epochs, batch_size=batch_size, validation_split=0.2, callbacks=[early_stopping])
 
 print("Training completed.")
+
+# Save the trained model
+model_save_path = os.path.join(output_dir, "LSTM_model.h5")
+LSTM_model.save(model_save_path)
+log_file.write(f"Model saved to: {model_save_path}\n")
+log_file.flush()
+print(f"Model saved to: {model_save_path}")
 
 print("--- Performing SHAP Analysis using KernelExplainer ---")
 # Use a subset of the training data as background for the explainer
@@ -449,7 +450,8 @@ df_results_eva = pd.DataFrame(results_eva)
 df_results_eva.to_csv(output_dir + f'/results/LSTM_results_eva.csv', index=False, header=True)
 
 for syn_precip_col, basin_preds_dict in syn_predict_dfs_combined.items():
-    if not basin_preds_dict: continue
+    if not basin_preds_dict: 
+        continue
     
     combined_syn_df = pd.DataFrame()
     for file_num, df_preds in basin_preds_dict.items():
@@ -464,7 +466,17 @@ for syn_precip_col, basin_preds_dict in syn_predict_dfs_combined.items():
         combined_syn_df = combined_syn_df.loc[:end_date_syn_final]
     
     combined_syn_df.sort_index(inplace=True)
-    combined_syn_df.to_csv(f"{output_dir}/predict/synthetic/LSTM_predict_{syn_precip_col.replace('syn_','')}.csv")
+    
+    # Transpose to get basins as rows (index) and dates as columns
+    combined_syn_df_transposed = combined_syn_df.T
+    
+    # Clean up basin names (remove 'file_' prefix)
+    combined_syn_df_transposed.index = combined_syn_df_transposed.index.str.replace('file_', '')
+    combined_syn_df_transposed.index.name = 'basin'
+    
+    # Save with correct format
+    combined_syn_df_transposed.to_csv(f"{output_dir}/predict/synthetic/LSTM_predict_{syn_precip_col.replace('syn_','')}.csv")
+    log_file.write(f"Saved {syn_precip_col} with shape: {combined_syn_df_transposed.shape} (basins × dates)\n")
 
 log_file.write("DONE\n")
 log_file.close()

@@ -56,7 +56,7 @@ if GLOBAL_SETTINGS['loc'] == "JP":
     attribute_size = 196
     output_mean = np.array([3.8526752089320553])
 elif GLOBAL_SETTINGS['loc'] == "GB":
-    file_tot_num = 396
+    file_tot_num = 424
     attribute_size = 209
     output_mean = np.array([1.838397528976445])
 

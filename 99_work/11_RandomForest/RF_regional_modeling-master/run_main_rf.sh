@@ -1,7 +1,7 @@
 #!/bin/bash
 
 cores=1
-start_core=1 # Start core (1-indexed)
+start_core=10 # Start core (1-indexed)
 ###
 
 nseeds=1
@@ -18,7 +18,7 @@ fi
 
 loc="GB"
 
-end_core=$((start_core + cores - 1))  # Calculate end core based on core count
+end_core=$((start_core + cores))  # Calculate end core based on core count
 
 gpucount=-1
 

@@ -45,7 +45,7 @@ GLOBAL_SETTINGS = {
 
 benchmark_list = ["NSE", "KGE", "E1", "VE", "d", "RMSE", "MAE"]
 
-evaluate_syn_data = False
+evaluate_syn_data = True
 
 # Define synthetic precipitation columns (matching main.py)
 syn_precip_cols = ['syn_no_precip', 'syn_p_pet', 
@@ -55,13 +55,15 @@ syn_precip_cols = ['syn_no_precip', 'syn_p_pet',
 
 ver_name = "ver1_1" if GLOBAL_SETTINGS['ver'] == 1 else "ver2_0"
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+DEVICE = torch.device("cpu")  # Force CPU for debugging
+
 
 if GLOBAL_SETTINGS['loc'] == "JP":
     file_tot_num = 87
     attribute_size = 196
     output_mean = np.array([3.8526752089320553])
 elif GLOBAL_SETTINGS['loc'] == "GB":
-    file_tot_num = 396
+    file_tot_num = 424
     attribute_size = 209
     output_mean = np.array([1.838397528976445])
 
@@ -252,7 +254,7 @@ def evaluate_basin_period(model, basin, start_date, end_date, run_cfg, static_at
     
     # Convert to tensors
     sequences = torch.FloatTensor(sequences)
-    batch_size = 128  # Set batch size for inference
+    batch_size = 1024  # Increased for faster inference
     predictions = []
     model.eval()
     with torch.no_grad():
@@ -324,7 +326,7 @@ def evaluate_synthetic_basin_period(model, basin, scenario_col, start_date, end_
     
     # Convert to tensors
     sequences = torch.FloatTensor(sequences)
-    batch_size = 128  # Set batch size for inference
+    batch_size = 1024  # Increased for faster inference
     predictions = []
     model.eval()
     with torch.no_grad():
@@ -349,6 +351,7 @@ def evaluate_original_data(model, run_cfg, basins, static_attrs=None):
     }
     
     output_dir = Path("/data0/funato/hsp/0_out/TCN/GB/regional")
+    os.makedirs(output_dir, exist_ok=True)
     
     for period_name, (start_date, end_date) in periods.items():
         print(f"\nEvaluating {period_name.upper()} period ({start_date.date()} to {end_date.date()})")
@@ -378,11 +381,11 @@ def evaluate_original_data(model, run_cfg, basins, static_attrs=None):
                         for benchmark in benchmark_list:
                             metrics[benchmark] = BMK(obs_valid, pred_valid, benchmark)
                         
-                        result_row = {'basin': basin}
-                        result_row.update(metrics)
-                        all_results.append(result_row)
+                result_row = {'basin': basin}
+                result_row.update(metrics)
+                all_results.append(result_row)
                         
-                        #print(f"Basin {basin}: NSE = {metrics['NSE']:.4f}")
+                #print(f"Basin {basin}: NSE = {metrics['NSE']:.4f}")
                 
             except Exception as e:
                 print(f"Error processing basin {basin}: {e}")
@@ -392,40 +395,32 @@ def evaluate_original_data(model, run_cfg, basins, static_attrs=None):
             print(f"No valid predictions for {period_name} period")
             continue
         
-        # Create prediction matrix (basins x dates)
-        all_dates = []
-        for dates in basin_dates.values():
-            all_dates.extend(dates)
-        unique_dates = sorted(list(set(all_dates)))
+        # Save predictions incrementally
+        param_string = get_param_string(run_cfg)
+        pred_output_path = output_dir / "predict" / f"TCN_predict_{period_name}.csv"
+        pred_output_path.parent.mkdir(parents=True, exist_ok=True)
         
-        # Create prediction DataFrame
-        pred_matrix = []
-        basin_order = []
-        
+        first_basin = True
         for basin in sorted(basin_predictions.keys(), key=int):
-            basin_order.append(basin)
             basin_preds = basin_predictions[basin]
             basin_dates_list = basin_dates[basin]
             
-            # Create row for this basin
-            row = {}
+            # Create row for this basin with dates as columns
+            row_dict = {}
             for i, date in enumerate(basin_dates_list):
-                row[date.strftime('%Y-%m-%d')] = basin_preds[i]
+                row_dict[date.strftime('%Y-%m-%d')] = basin_preds[i]
             
-            pred_matrix.append(row)
+            basin_row = pd.DataFrame([row_dict], index=[basin])
+            basin_row.index.name = 'basin'
+            
+            # Append to CSV incrementally
+            if first_basin:
+                basin_row.to_csv(pred_output_path, mode='w', header=True)
+                first_basin = False
+            else:
+                basin_row.to_csv(pred_output_path, mode='a', header=False)
         
-        # Convert to DataFrame with basins as index and dates as columns
-        pred_df = pd.DataFrame(pred_matrix, index=basin_order)
-        pred_df = pred_df.reindex(columns=sorted(pred_df.columns))
-        
-        # Save prediction file
-        param_string = get_param_string(run_cfg)
-        pred_output_path = output_dir / "predict" / f"TCN_predict_seed{arg['run_dir'].split('seed')[1]}_{period_name}_.csv"
-        pred_output_path.parent.mkdir(parents=True, exist_ok=True)
-        pred_df.to_csv(pred_output_path, index_label='basin')
-        print(f"Predictions saved to {pred_output_path}")
-        
-        # Create results DataFrame (basins x benchmarks)
+        print(f"Predictions saved to {pred_output_path}")        # Create results DataFrame (basins x benchmarks)
         if all_results:
             results_df = pd.DataFrame(all_results)
             results_df = results_df.set_index('basin')
@@ -473,31 +468,31 @@ def evaluate_synthetic_data(model, run_cfg, basins, static_attrs=None):
             print(f"No valid predictions for scenario {scenario_col}")
             continue
         
-        # Create prediction matrix (basins x dates)
-        pred_matrix = []
-        basin_order = []
-        
-        for basin in sorted(basin_predictions.keys(), key=int):
-            basin_order.append(basin)
-            basin_preds = basin_predictions[basin]
-            basin_dates_list = basin_dates[basin]
-            
-            # Create row for this basin
-            row = {}
-            for i, date in enumerate(basin_dates_list):
-                row[date.strftime('%Y-%m-%d')] = basin_preds[i]
-            
-            pred_matrix.append(row)
-        
-        # Convert to DataFrame with basins as index and dates as columns
-        pred_df = pd.DataFrame(pred_matrix, index=basin_order)
-        pred_df = pred_df.reindex(columns=sorted(pred_df.columns))
-        
-        # Save synthetic prediction file
+        # Save predictions incrementally
         param_string = get_param_string(run_cfg)
         pred_output_path = output_dir / "predict" / "synthetic" / f"TCN_predict_{param_string}_{scenario_col}_eva.csv"
         pred_output_path.parent.mkdir(parents=True, exist_ok=True)
-        pred_df.to_csv(pred_output_path, index_label='basin')
+        
+        first_basin = True
+        for basin in sorted(basin_predictions.keys(), key=int):
+            basin_preds = basin_predictions[basin]
+            basin_dates_list = basin_dates[basin]
+            
+            # Create row for this basin with dates as columns
+            row_dict = {}
+            for i, date in enumerate(basin_dates_list):
+                row_dict[date.strftime('%Y-%m-%d')] = basin_preds[i]
+            
+            basin_row = pd.DataFrame([row_dict], index=[basin])
+            basin_row.index.name = 'basin'
+            
+            # Append to CSV incrementally
+            if first_basin:
+                basin_row.to_csv(pred_output_path, mode='w', header=True)
+                first_basin = False
+            else:
+                basin_row.to_csv(pred_output_path, mode='a', header=False)
+        
         print(f"Synthetic predictions saved to {pred_output_path}")
 
 def get_param_string(run_cfg):
@@ -654,7 +649,7 @@ def main():
             run_cfg["no_static"] = True
     
     # Evaluate on original data
-    evaluate_original_data(model, run_cfg, file_num_list, static_attrs)
+    #evaluate_original_data(model, run_cfg, file_num_list, static_attrs)
     
     # Evaluate on synthetic scenarios
     if evaluate_syn_data:

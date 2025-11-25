@@ -35,10 +35,10 @@ ver_name = "ver1_1" if ver == 1 else "ver2_0"
 attribute_dir = f'/data0/funato/hsp/3_gis_data/{loc}/0_data/river_basin/dataset_{loc}'
 
 # Define synthetic precipitation columns
-syn_precip_cols = ['syn_no_precip', 'syn_p_pet', 'syn_peak1_rate0',
-                   'syn_peak1_rate10', 'syn_peak1_rate30', 'syn_peak1_rate50',
-                   'syn_peak3_rate10', 'syn_peak3_rate30', 'syn_peak3_rate50',
-                   'syn_peak5_rate10', 'syn_peak5_rate30', 'syn_peak5_rate50']
+syn_precip_cols = ['syn_no_precip',
+                   'syn_peak1_rate0','syn_peak1_rate10', 'syn_peak1_rate30', 'syn_peak1_rate50',
+                   'syn_peak3_rate0','syn_peak3_rate10', 'syn_peak3_rate30', 'syn_peak3_rate50',
+                   'syn_peak5_rate0','syn_peak5_rate10', 'syn_peak5_rate30', 'syn_peak5_rate50']
 
 if loc == "JP" and ver == 2:
     file_tot_num = 87
@@ -68,7 +68,7 @@ start_date_eva = '2001-01-01'
 end_date_eva = '2006-12-31'
 
 # --- Updated output directories for LSTM ---
-output_dir = f"/data0/funato/hsp/0_out/LSTM/{loc}/adapted"
+output_dir = f"/data0/funato/hsp/0_out/LSTM/{loc}/adapted_424"
 os.makedirs(output_dir, exist_ok=True)
 os.makedirs(output_dir + "/predict/og", exist_ok=True)
 os.makedirs(output_dir + "/results", exist_ok=True)
@@ -234,32 +234,45 @@ if input_eva_seq.shape[0] > max_eval_samples:
     input_eva_seq = input_eva_seq[indices_eva]
     target_eva_seq = target_eva_seq[indices_eva]
 
-print("--- Building and Training LSTM Model ---")
-model_in = Input(shape=(timesteps, all_input_cal.shape[1]))
-# Removed recurrent_dropout to avoid potential issues
-model_out = LSTM(hidden_size, return_sequences=False)(model_in)
-model_out = Dropout(dropout_rate)(model_out)
-model_out = Dense(1, activation='linear')(model_out)
-LSTM_model = Model(inputs=model_in, outputs=model_out)
+# Try to load pre-trained regional model from shap_regional directory
+regional_model_path = f"/data0/funato/hsp/0_out/LSTM/{loc}/shap/regional/LSTM_model.h5"
+if os.path.exists(regional_model_path):
+    print(f"Loading pre-trained regional model from {regional_model_path}...")
+    from keras.models import load_model
+    from keras.losses import MeanSquaredError
+    # Include loss function in custom_objects for proper deserialization
+    LSTM_model = load_model(regional_model_path, custom_objects={
+        'mse': MeanSquaredError(),
+        'MeanSquaredError': MeanSquaredError
+    })
+    print("Pre-trained regional LSTM model loaded successfully.")
+else:
+    print("No pre-trained model found. Building and training a new LSTM model...")
+    model_in = Input(shape=(timesteps, all_input_cal.shape[1]))
+    # Removed recurrent_dropout to avoid potential issues
+    model_out = LSTM(hidden_size, return_sequences=False)(model_in)
+    model_out = Dropout(dropout_rate)(model_out)
+    model_out = Dense(1, activation='linear')(model_out)
+    LSTM_model = Model(inputs=model_in, outputs=model_out)
 
-optimizer = Adam(learning_rate=learning_rate)
-LSTM_model.compile(optimizer=optimizer, loss='mse')
+    optimizer = Adam(learning_rate=learning_rate)
+    LSTM_model.compile(optimizer=optimizer, loss='mse')
 
-# Train the model on CPU with error handling
-print("Training LSTM model on CPU...")
-try:
-    LSTM_model.fit(input_cal_seq, target_cal_seq, epochs=epochs, batch_size=batch_size, validation_split=0.2, callbacks=[early_stopping])
-    print("Training completed successfully.")
-except Exception as e:
-    print(f"Training error: {e}")
-    print("Attempting to continue with reduced batch size...")
+    # Train the model on CPU with error handling
+    print("Training LSTM model on CPU...")
     try:
-        reduced_batch_size = min(batch_size // 2, 8)
-        LSTM_model.fit(input_cal_seq, target_cal_seq, epochs=epochs, batch_size=reduced_batch_size, validation_split=0.2, callbacks=[early_stopping])
-        print(f"Training completed with reduced batch size: {reduced_batch_size}")
-    except Exception as e2:
-        print(f"Training failed even with reduced batch size: {e2}")
-        sys.exit(1)
+        LSTM_model.fit(input_cal_seq, target_cal_seq, epochs=epochs, batch_size=batch_size, validation_split=0.2, callbacks=[early_stopping])
+        print("Training completed successfully.")
+    except Exception as e:
+        print(f"Training error: {e}")
+        print("Attempting to continue with reduced batch size...")
+        try:
+            reduced_batch_size = min(batch_size // 2, 8)
+            LSTM_model.fit(input_cal_seq, target_cal_seq, epochs=epochs, batch_size=reduced_batch_size, validation_split=0.2, callbacks=[early_stopping])
+            print(f"Training completed with reduced batch size: {reduced_batch_size}")
+        except Exception as e2:
+            print(f"Training failed even with reduced batch size: {e2}")
+            sys.exit(1)
 
 print("--- Fine-tuning Model for Each Basin and Generating Outputs ---")
 results_cal, results_eva = [], []
@@ -409,7 +422,14 @@ for syn_precip_col, basin_preds_dict in syn_predict_dfs_combined.items():
         combined_syn_df = combined_syn_df.loc[:end_date_syn_final]
     
     combined_syn_df.sort_index(inplace=True)
-    combined_syn_df.to_csv(f"{output_dir}/predict/synthetic/LSTM_predict_{syn_precip_col.replace('syn_','')}.csv")
+    
+    # Transpose to have basins as rows (index) and dates as columns (like regional model format)
+    combined_syn_df_transposed = combined_syn_df.T
+    # Clean up the index by removing 'file_' prefix to just have basin numbers
+    combined_syn_df_transposed.index = combined_syn_df_transposed.index.str.replace('file_', '')
+    combined_syn_df_transposed.index.name = 'basin'
+    
+    combined_syn_df_transposed.to_csv(f"{output_dir}/predict/synthetic/LSTM_predict_{syn_precip_col.replace('syn_','')}.csv")
 
 log_file.write("DONE\n")
 log_file.close()

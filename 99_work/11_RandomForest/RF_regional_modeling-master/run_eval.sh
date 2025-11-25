@@ -11,6 +11,10 @@ RUN_DIR=""
 N_BASINS=""
 PYTHON_PATH="/data0/funato/hsp/.venv/bin/python"
 
+START_CORE=3 # 1 indexed
+CORES=2
+END_CORE=$((START_CORE + CORES - 1))
+
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -87,12 +91,13 @@ run_evaluation() {
     echo "========================================="
     
     # Build command
-    local cmd="$PYTHON_PATH $script_name --run_dir $RUN_DIR"
+    local cmd="taskset -c $START_CORE-$END_CORE $PYTHON_PATH $script_name --run_dir $RUN_DIR"
     if [[ -n "$N_BASINS" ]]; then
         cmd="$cmd --n_basins $N_BASINS"
     fi
     
     echo "Command: $cmd"
+    echo "Using Cores: $START_CORE to $END_CORE"
     
     # Run the evaluation
     if ! $cmd; then
@@ -111,7 +116,7 @@ if [[ -n "$N_BASINS" ]]; then
 fi
 
 # Run regional evaluation
-run_evaluation "regional" "/data0/funato/hsp/99_work/11_RandomForest/RF_regional_modeling-master/eval_regional.py"
+#run_evaluation "regional" "/data0/funato/hsp/99_work/11_RandomForest/RF_regional_modeling-master/eval_regional.py"
 
 # Run adapted evaluation
 run_evaluation "adapted" "/data0/funato/hsp/99_work/11_RandomForest/RF_regional_modeling-master/eval_adapted.py"
@@ -144,4 +149,4 @@ echo ""
 ###RUN USING####
 # chmod +x /data0/funato/hsp/99_work/11_RandomForest/RF_regional_modeling-master/run_eval.sh
 # /data0/funato/hsp/99_work/11_RandomForest/RF_regional_modeling-master/run_eval.sh --run_dir /data0/funato/hsp/99_work/11_RandomForest/RF_regional_modeling-master/runs_rf/rf_run_1016_1516_seed300 --n_basins 2  # For testing with 2 basins
-# /data0/funato/hsp/99_work/11_RandomForest/RF_regional_modeling-master/run_eval.sh --run_dir /data0/funato/hsp/99_work/11_RandomForest/RF_regional_modeling-master/runs_rf/rf_run_1016_1516_seed300
+# nohup /data0/funato/hsp/99_work/11_RandomForest/RF_regional_modeling-master/run_eval.sh --run_dir /data0/funato/hsp/99_work/11_RandomForest/RF_regional_modeling-master/runs_rf/rf_run_1120_0000_seed300 > output_eval_rf.log 2>&1 &

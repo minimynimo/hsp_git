@@ -39,6 +39,11 @@ GLOBAL_SETTINGS = {
 
 benchmark_list = ["NSE", "KGE", "E1", "VE", "d", "RMSE", "MAE"]
 
+syn_precip_cols = ['syn_no_precip', 'syn_p_pet',
+                   'syn_peak1_rate0', 'syn_peak1_rate10', 'syn_peak1_rate30', 'syn_peak1_rate50',
+                   'syn_peak3_rate0', 'syn_peak3_rate10', 'syn_peak3_rate30', 'syn_peak3_rate50',
+                   'syn_peak5_rate0', 'syn_peak5_rate10', 'syn_peak5_rate30', 'syn_peak5_rate50']
+
 ver_name = "ver1_1" if GLOBAL_SETTINGS['ver'] == 1 else "ver2_0"
 
 if GLOBAL_SETTINGS['loc'] == "JP":
@@ -46,7 +51,7 @@ if GLOBAL_SETTINGS['loc'] == "JP":
     attribute_size = 196
     output_mean = np.array([3.8526752089320553])
 elif GLOBAL_SETTINGS['loc'] == "GB":
-    file_tot_num = 396
+    file_tot_num = 424
     attribute_size = 209
     output_mean = np.array([1.838397528976445])
 
@@ -207,6 +212,49 @@ def evaluate_basin_adapted_period(basin_model, basin, basin_stats, start_date, e
     
     return predictions, targets_rescaled, dates
 
+def evaluate_basin_synthetic_period(basin_model, basin, basin_stats, scenario_col, start_date, end_date, run_cfg, static_attrs=None):
+    """Evaluate basin-specific model on synthetic data."""
+    df = load_data_for_basin(int(basin))
+    warmup_start = start_date - pd.DateOffset(days=run_cfg["seq_length"] - 1)
+    period_data = df[warmup_start:end_date].copy()
+    
+    if len(period_data) < run_cfg["seq_length"] or scenario_col not in period_data.columns:
+        return None, None
+    
+    # Create synthetic data
+    period_data_syn = period_data.copy()
+    period_data_syn['Precip'] = period_data_syn[scenario_col]
+    
+    if 'peak' in scenario_col:
+        if 'Temp_at_peak' in period_data_syn.columns:
+            period_data_syn['Temp'] = period_data_syn['Temp_at_peak']
+        if 'PET_at_peak' in period_data_syn.columns:
+            period_data_syn['PET'] = period_data_syn['PET_at_peak']
+    
+    input_cols = ['Precip', 'PET', 'Temp', 'Obs_flow_at_peak'] if 'peak' in scenario_col else ['Precip', 'PET', 'Temp', 'Obs flow']
+    input_data_syn = period_data_syn[input_cols].values
+    
+    # Normalize using basin stats from training
+    input_data_norm = normalize_basin_data(input_data_syn, basin_stats)
+    
+    # Create sequences
+    static_features = static_attrs[basin] if static_attrs and basin in static_attrs else None
+    sequences, _ = create_sequences_rf(input_data_norm, run_cfg["seq_length"], static_features)
+    
+    # Get dates
+    dates = period_data_syn.index[run_cfg["seq_length"]:]
+    actual_period_mask = dates >= start_date
+    sequences = sequences[actual_period_mask]
+    dates = dates[actual_period_mask]
+    
+    if len(sequences) == 0:
+        return None, None
+    
+    predictions = basin_model.predict(sequences)
+    predictions[predictions < 0] = 0
+    
+    return predictions, dates
+
 def get_param_string(run_cfg):
     """Create parameter string for file naming"""
     n_estimators = run_cfg.get("n_estimators", 100)
@@ -231,6 +279,21 @@ def evaluate_adapted(run_cfg, basins, static_attrs=None):
     
     output_dir = Path("/data0/funato/hsp/0_out/RF/GB/adapted")
     
+    # Train basin-specific models once using calibration data
+    print("\n" + "="*60)
+    print("Training basin-specific models on calibration data...")
+    print("="*60)
+    
+    basin_models = {}
+    basin_stats_dict = {}
+    
+    for basin in tqdm(basins, desc="Training basin models"):
+        model, stats = train_basin_model(basin, run_cfg, static_attrs)
+        if model is not None:
+            basin_models[basin] = model
+            basin_stats_dict[basin] = stats
+    
+    # Evaluate on cal and eva periods using the trained models
     for period_name, (start_date, end_date) in periods.items():
         print(f"\nEvaluating {period_name.upper()} period ({start_date.date()} to {end_date.date()})")
         
@@ -240,17 +303,13 @@ def evaluate_adapted(run_cfg, basins, static_attrs=None):
         all_results = []
         
         for basin in tqdm(basins, desc=f"Processing basins for {period_name}"):
+            if basin not in basin_models:
+                continue
+                
             try:
-                # Train basin-specific model
-                basin_model, basin_stats = train_basin_model(basin, run_cfg, static_attrs)
-                
-                if basin_model is None:
-                    print(f"Could not train model for basin {basin}")
-                    continue
-                
-                # Evaluate on the current period
+                # Evaluate on the current period using pre-trained model
                 predictions, targets, dates = evaluate_basin_adapted_period(
-                    basin_model, basin, basin_stats, start_date, end_date, run_cfg, static_attrs)
+                    basin_models[basin], basin, basin_stats_dict[basin], start_date, end_date, run_cfg, static_attrs)
                 
                 if predictions is not None:
                     basin_predictions[basin] = predictions
@@ -270,8 +329,6 @@ def evaluate_adapted(run_cfg, basins, static_attrs=None):
                         result_row = {'basin': basin}
                         result_row.update(metrics)
                         all_results.append(result_row)
-                        
-                        print(f"Basin {basin}: NSE = {metrics['NSE']:.4f}")
                 
             except Exception as e:
                 print(f"Error processing basin {basin}: {e}")
@@ -330,6 +387,65 @@ def evaluate_adapted(run_cfg, basins, static_attrs=None):
             print(f"Mean NSE: {results_df['NSE'].mean():.4f}")
             print(f"Median NSE: {results_df['NSE'].median():.4f}")
             print(f"NSE > 0.5: {(results_df['NSE'] > 0.5).sum()}/{len(results_df)} basins")
+    
+    # Evaluate on synthetic scenarios using the trained models
+    print("\n" + "="*60)
+    print("Starting Synthetic Scenario Evaluation...")
+    print("="*60)
+    
+    val_start = GLOBAL_SETTINGS["val_start"]
+    val_end = GLOBAL_SETTINGS["val_end"]
+    
+    for scenario_col in syn_precip_cols:
+        print(f"\nProcessing scenario: {scenario_col}")
+        syn_end = pd.to_datetime('2001-02-10') if 'peak' in scenario_col else val_end
+        
+        basin_predictions = {}
+        basin_dates = {}
+        
+        for basin in tqdm(basins, desc=f"Processing {scenario_col}"):
+            if basin not in basin_models:
+                continue
+                
+            try:
+                predictions, dates = evaluate_basin_synthetic_period(
+                    basin_models[basin], basin, basin_stats_dict[basin], scenario_col, val_start, syn_end, run_cfg, static_attrs)
+                
+                if predictions is not None:
+                    basin_predictions[basin] = predictions
+                    basin_dates[basin] = dates
+                    
+            except Exception as e:
+                print(f"Error processing basin {basin} for {scenario_col}: {e}")
+                continue
+        
+        if not basin_predictions:
+            print(f"No valid predictions for scenario {scenario_col}")
+            continue
+        
+        # Create prediction DataFrame
+        pred_matrix = []
+        basin_order = []
+        
+        for basin in sorted(basin_predictions.keys(), key=int):
+            basin_order.append(basin)
+            basin_preds = basin_predictions[basin]
+            basin_dates_list = basin_dates[basin]
+            
+            row = {}
+            for i, date in enumerate(basin_dates_list):
+                row[date.strftime('%Y-%m-%d')] = basin_preds[i]
+            
+            pred_matrix.append(row)
+        
+        pred_df = pd.DataFrame(pred_matrix, index=basin_order)
+        pred_df = pred_df.reindex(columns=sorted(pred_df.columns))
+        
+        param_string = get_param_string(run_cfg)
+        pred_output_path = output_dir / "predict" / "synthetic" / f"RF_predict_{param_string}_{scenario_col}_eva.csv"
+        pred_output_path.parent.mkdir(parents=True, exist_ok=True)
+        pred_df.to_csv(pred_output_path, index_label='basin')
+        print(f"Synthetic predictions saved to {pred_output_path}")
 
 def BMK(obs_data, sim_data, benchmark):    
     """Calculate benchmark metrics"""

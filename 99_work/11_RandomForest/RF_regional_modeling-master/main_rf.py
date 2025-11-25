@@ -43,7 +43,7 @@ ver_name = "ver1_1" if GLOBAL_SETTINGS['ver'] == 1 else "ver2_0"
 if GLOBAL_SETTINGS['loc'] == "JP":
     file_tot_num = 87
 elif GLOBAL_SETTINGS['loc'] == "GB":
-    file_tot_num = 396
+    file_tot_num = 424
 
 file_num_list = list(map(str, range(1, file_tot_num + 1)))
 

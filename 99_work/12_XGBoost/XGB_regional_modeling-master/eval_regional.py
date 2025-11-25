@@ -210,6 +210,103 @@ def evaluate_period(model, basins, cfg, scalers, attributes, start_date, end_dat
     metrics_df = metrics_df.set_index('basin')
     return results_df, metrics_df
 
+def evaluate_synthetic_period(model, basins, cfg, scalers, attributes, scenario_col, start_date, end_date):
+    """Evaluate the XGBoost model on synthetic data for a specific scenario."""
+    print(f"\nProcessing synthetic scenario: {scenario_col}")
+    print(f"Period: {start_date.date()} to {end_date.date()}")
+    
+    X_list, basin_list, date_list = [], [], []
+    dyn_cols = ['Precip', 'PET', 'Temp']
+    seq_length = cfg['seq_length']
+
+    for basin in tqdm(basins, desc=f"Processing basins for {scenario_col}"):
+        if basin not in scalers['basin_scalers']:
+            continue
+
+        df = load_data_for_basin(int(basin))
+        warmup_start = start_date - pd.DateOffset(days=seq_length - 1)
+        df_period = df.loc[warmup_start:end_date]
+        
+        # Check if synthetic column exists
+        if scenario_col not in df_period.columns:
+            continue
+        
+        # Create synthetic data by replacing precipitation
+        df_syn = df_period.copy()
+        df_syn['Precip'] = df_syn[scenario_col]
+        
+        # Use peak temperature and PET if it's a peak scenario
+        if 'peak' in scenario_col:
+            if 'Temp_at_peak' in df_syn.columns:
+                df_syn['Temp'] = df_syn['Temp_at_peak']
+            if 'PET_at_peak' in df_syn.columns:
+                df_syn['PET'] = df_syn['PET_at_peak']
+        
+        # Use per-basin scaler from original data
+        bscaler = scalers['basin_scalers'][basin]
+        dyn_data_scaled = (df_syn[dyn_cols].values - bscaler['dynamic_means']) / bscaler['dynamic_stds']
+        
+        static_data_scaled = None
+        if not cfg["no_static"]:
+            static_data = attributes.loc[int(basin)].values
+            static_data_scaled = (static_data - scalers['static_means']) / scalers['static_stds']
+        
+        # Check for NaN in synthetic data
+        is_nan = df_syn[dyn_cols].isnull().any(axis=1)
+        
+        clumps = np.ma.clump_unmasked(np.ma.masked_array(is_nan, is_nan))
+        if not isinstance(clumps, list):
+            clumps = [clumps] if clumps else []
+
+        for s in clumps:
+            start_loc, end_loc = s.start, s.stop
+            block_len = end_loc - start_loc
+            if block_len < seq_length:
+                continue
+
+            block_dyn_scaled = dyn_data_scaled[start_loc:end_loc]
+            
+            for i in range(block_len - seq_length + 1):
+                target_idx_in_block = i + seq_length - 1
+                current_date = df_syn.index[start_loc + target_idx_in_block]
+                if current_date < start_date:
+                    continue
+
+                dyn_seq_flat = block_dyn_scaled[i:target_idx_in_block + 1].flatten()
+                
+                final_features = dyn_seq_flat
+                if not cfg["no_static"]:
+                    final_features = np.concatenate([dyn_seq_flat, static_data_scaled])
+                
+                X_list.append(final_features)
+                basin_list.append(basin)
+                date_list.append(current_date)
+
+    if not X_list:
+        print(f"No valid data for scenario {scenario_col}")
+        return None
+
+    X_eval = np.array(X_list, dtype=np.float32)
+    
+    print("Making predictions...")
+    predictions_scaled = model.predict(X_eval)
+    
+    # Rescale predictions using per-basin scalers
+    results_df = pd.DataFrame({
+        'date': date_list,
+        'basin': basin_list,
+        'pred_scaled': predictions_scaled
+    })
+    
+    def rescale_row(row):
+        b_scaler = scalers['basin_scalers'][row['basin']]
+        return row['pred_scaled'] * b_scaler['q_std'] + b_scaler['q_mean']
+        
+    results_df['prediction'] = results_df.apply(rescale_row, axis=1)
+    results_df['prediction'] = results_df['prediction'].clip(lower=0)
+
+    return results_df
+
 def main():
     parser = argparse.ArgumentParser(description='Regional XGBoost Evaluation')
     parser.add_argument('--run_dir', type=str, required=True)
@@ -245,7 +342,7 @@ def main():
     model.load_model(model_file)
     
     if GLOBAL_SETTINGS['loc'] == "JP": file_tot_num = 87
-    else: file_tot_num = 396
+    else: file_tot_num = 424
     basins = list(map(str, range(1, file_tot_num + 1)))
     if args.n_basins:
         basins = basins[:args.n_basins]
@@ -272,21 +369,51 @@ def main():
             pred_dir.mkdir(parents=True, exist_ok=True)
             pred_path = pred_dir / f"XGB_predict_{period_name}.csv"
             
-            pivot_df = predictions_df.pivot_table(index='date', columns='basin', values='prediction')
-            pivot_df.sort_index(inplace=True)
-            pivot_df.to_csv(pred_path)
+            pivot_df = predictions_df.pivot_table(index='basin', columns='date', values='prediction')
+            # Sort basins numerically
+            basin_ids_sorted = sorted([int(b) for b in pivot_df.index])
+            pivot_df = pivot_df.loc[[str(b) for b in basin_ids_sorted]]
+            pivot_df.to_csv(pred_path, index_label='basin')
             print(f"Pivoted predictions for {period_name} period saved to {pred_path}")
             
             results_dir = output_base / "results"
             results_dir.mkdir(parents=True, exist_ok=True)
             results_path = results_dir / f"XGB_results_{period_name}.csv"
-            metrics_df.to_csv(results_path, index=False)
+            metrics_df.to_csv(results_path, index_label='basin')
             print(f"Metrics for {period_name} period saved to {results_path}")
             
             print(f"\n--- {period_name.upper()} Period Summary ---")
             print(metrics_df.describe())
             print("\n")
+    
+    # Evaluate on synthetic scenarios
+    print("\n" + "="*60)
+    print("Starting Synthetic Scenario Evaluation...")
+    print("="*60)
+    
+    for scenario_col in syn_precip_cols:
+        # Use evaluation period for synthetic scenarios
+        # For peak scenarios, use shorter period
+        syn_end = pd.to_datetime('2001-02-10') if 'peak' in scenario_col else val_end
+        
+        predictions_df = evaluate_synthetic_period(
+            model, basins, cfg, scalers, attributes, scenario_col, val_start, syn_end)
+        
+        if predictions_df is not None:
+            pred_dir = output_base / "predict" / "synthetic"
+            pred_dir.mkdir(parents=True, exist_ok=True)
+            pred_path = pred_dir / f"XGB_predict_{scenario_col}_eva.csv"
+            
+            pivot_df = predictions_df.pivot_table(index='basin', columns='date', values='prediction')
+            # Sort basins numerically
+            basin_ids_sorted = sorted([int(b) for b in pivot_df.index])
+            pivot_df = pivot_df.loc[[str(b) for b in basin_ids_sorted]]
+            pivot_df.to_csv(pred_path, index_label='basin')
+            print(f"Pivoted synthetic predictions for '{scenario_col}' saved to {pred_path}")
+    
+    print("\nRegional XGBoost evaluation completed successfully!")
 
 if __name__ == "__main__":
     main()
+
 

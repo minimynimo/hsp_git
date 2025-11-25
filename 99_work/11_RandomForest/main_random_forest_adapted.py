@@ -5,6 +5,7 @@ matplotlib.use('Agg') # Use 'Agg' backend for non-interactive plotting
 
 import numpy as np
 import os
+import joblib
 
 from sklearn.ensemble import RandomForestRegressor
 from datetime import datetime
@@ -18,10 +19,10 @@ ver_name = "ver1_1" if ver == 1 else "ver2_0"
 
 attribute_dir = f'/data0/funato/hsp/3_gis_data/{loc}/0_data/river_basin/dataset_{loc}'
 
-syn_precip_cols = ['syn_no_precip', 'syn_p_pet', 'syn_peak1_rate0',
-                   'syn_peak1_rate10', 'syn_peak1_rate30', 'syn_peak1_rate50',
-                   'syn_peak3_rate10', 'syn_peak3_rate30', 'syn_peak3_rate50',
-                   'syn_peak5_rate10', 'syn_peak5_rate30', 'syn_peak5_rate50']
+syn_precip_cols = ['syn_no_precip', 'syn_p_pet', 
+                   'syn_peak1_rate0','syn_peak1_rate10', 'syn_peak1_rate30', 'syn_peak1_rate50',
+                   'syn_peak3_rate0','syn_peak3_rate10', 'syn_peak3_rate30', 'syn_peak3_rate50',
+                   'syn_peak5_rate0','syn_peak5_rate10', 'syn_peak5_rate30', 'syn_peak5_rate50']
 
 dynamic_features = ["Precip", "Temp", "PET"]
 
@@ -49,7 +50,7 @@ n_estimators = 100
 max_samples = 0.5
 min_samples_split = 2
 
-output_dir = f"/data0/funato/hsp/0_out/RF/{loc}/adapted"
+output_dir = f"/data0/funato/hsp/0_out/RF/{loc}/adapted_424"
 os.makedirs(output_dir, exist_ok=True)
 os.makedirs(output_dir + "/predict/og", exist_ok=True)
 os.makedirs(output_dir + "/results", exist_ok=True)
@@ -236,16 +237,24 @@ for file_num in file_list:
 X_train_final = np.vstack(X_train_final_list)
 X_eval_final = np.vstack(X_eval_final_list)
 
-print("Training the regional Random Forest model...")
+# Define feature names (needed for SHAP analysis later)
 all_feature_names = dynamic_features + [col for col in attribute_values_normalized.columns if col != 'File_num']
 
-assert X_train_final.shape[1] == len(all_feature_names), \
-    f"Number of features ({X_train_final.shape[1]}) in X_train_final does not match all_feature_names length ({len(all_feature_names)})"
+# Try to load pre-trained regional model from shap_regional directory
+regional_model_path = f"/data0/funato/hsp/0_out/RF/{loc}/shap/regional_424/RF_model.pkl"
+if os.path.exists(regional_model_path):
+    print(f"Loading pre-trained regional model from {regional_model_path}...")
+    rf = joblib.load(regional_model_path)
+    print("Pre-trained regional Random Forest model loaded successfully.")
+else:
+    print("No pre-trained model found. Training a new regional Random Forest model...")
+    assert X_train_final.shape[1] == len(all_feature_names), \
+        f"Number of features ({X_train_final.shape[1]}) in X_train_final does not match all_feature_names length ({len(all_feature_names)})"
 
-rf = RandomForestRegressor(max_depth=max_depth, max_features=max_features, n_estimators=n_estimators, min_samples_split=min_samples_split, oob_score=True, random_state=42, n_jobs=-1)
+    rf = RandomForestRegressor(max_depth=max_depth, max_features=max_features, n_estimators=n_estimators, min_samples_split=min_samples_split, oob_score=True, random_state=42, n_jobs=-1)
 
-rf.fit(X_train_final, all_target_cal_stacked)
-print("Regional Random Forest model trained.")
+    rf.fit(X_train_final, all_target_cal_stacked)
+    print("Regional Random Forest model trained.")
 
 predict_cal_aggregated = rf.predict(X_train_final)
 predict_eva_aggregated = rf.predict(X_eval_final)
@@ -455,7 +464,14 @@ for syn_precip_col, basin_preds_dict in syn_predict_dfs_combined.items():
             combined_syn_df = combined_syn_df.loc[:end_date_syn_final]
         
         combined_syn_df.sort_index(inplace=True)
-        combined_syn_df.to_csv(f"{output_dir}/predict/synthetic/RF_predict_{syn_precip_col.replace('syn_', '')}.csv", index=True, header=True)
+        
+        # Transpose to have basins as rows (index) and dates as columns (like regional model format)
+        combined_syn_df_transposed = combined_syn_df.T
+        # Clean up the index by removing 'file_' prefix to just have basin numbers
+        combined_syn_df_transposed.index = combined_syn_df_transposed.index.str.replace('file_', '')
+        combined_syn_df_transposed.index.name = 'basin'
+        
+        combined_syn_df_transposed.to_csv(f"{output_dir}/predict/synthetic/RF_predict_{syn_precip_col.replace('syn_', '')}.csv", index=True, header=True)
 
 end_time_total = datetime.now()
 end_time_total_st = end_time_total.strftime("%a %b %d %I:%M:%S %p JST %Y")

@@ -128,6 +128,10 @@ def load_data(file_num):
 
 def BMK(obs_data,sim_data,benchmark):
     if len(obs_data) == 0 or len(sim_data) == 0: return np.nan
+    mask = ~np.isnan(obs_data) & ~np.isnan(sim_data)
+    obs_data = obs_data[mask]
+    sim_data = sim_data[mask]
+    
     if benchmark == "NSE":
         obs_ave = np.mean(obs_data)
         return 1 - (np.sum(np.square(obs_data - sim_data)) / np.sum(np.square(obs_data - obs_ave)))

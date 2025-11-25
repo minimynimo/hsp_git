@@ -24,7 +24,7 @@ from papercode.ealstm import EALSTM
 # Global Definitions      #
 # ####################### #
 
-syn_precip_cols = ['syn_no_precip', 'syn_p_pet',
+syn_precip_cols = ['syn_no_precip', 
                    'syn_peak1_rate0', 'syn_peak1_rate10', 'syn_peak1_rate30', 'syn_peak1_rate50',
                    'syn_peak3_rate0', 'syn_peak3_rate10', 'syn_peak3_rate30', 'syn_peak3_rate50',
                    'syn_peak5_rate0', 'syn_peak5_rate10', 'syn_peak5_rate30', 'syn_peak5_rate50']
@@ -39,6 +39,7 @@ GLOBAL_SETTINGS = {'loc': 'GB',
 benchmark_list = ["NSE", "KGE", "E1", "VE", "d", "RMSE", "MAE"]
 
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+DEVICE = torch.device("cpu")  # Force CPU for debugging
 
 # ####################### #
 # Model Definition        #
@@ -234,16 +235,53 @@ class HydroDataset(Dataset):
 # Main Evaluation Logic   #
 # ####################### #
 
+def evaluate_basin_incremental(model, basin, dates, cfg, scalers, attributes, syn_col=None):
+    """Evaluate a single basin and return predictions."""
+    model.eval()
+    
+    # Skip basins without scalers
+    if basin not in scalers['basin_scalers']:
+        return None, None, None
+        
+    dataset = HydroDataset(basin, dates, cfg, scalers, attributes, syn_col)
+    if len(dataset) == 0:
+        return None, None, None
+    
+    loader = DataLoader(dataset, batch_size=1024, shuffle=False, num_workers=0)
+    
+    bscaler = scalers['basin_scalers'][basin]
+    
+    basin_preds_list = []
+    basin_obs_list = []
+    
+    with torch.no_grad():
+        for x, y_raw in loader:
+            x = x.to(DEVICE)
+            preds_scaled = model(x).cpu().numpy().flatten()
+            
+            # Rescale using the correct per-basin scaler
+            preds_rescaled = (preds_scaled * bscaler['q_std']) + bscaler['q_mean']
+            preds_rescaled[preds_rescaled < 0] = 0
+
+            basin_preds_list.extend(preds_rescaled)
+            basin_obs_list.extend(y_raw.numpy())
+
+    return np.array(basin_preds_list), np.array(basin_obs_list), dataset.dates
+
 def evaluate(model, basins, dates, cfg, scalers, attributes, period_name, syn_col=None):
     """Main evaluation function for a given period and scenario."""
     model.eval()
     all_preds, all_obs, all_basins, all_dates = [], [], [], []
 
     for basin in tqdm(basins, desc=f"Processing basins for {period_name}"):
+        # Skip basins without scalers
+        if basin not in scalers['basin_scalers']:
+            continue
+            
         dataset = HydroDataset(basin, dates, cfg, scalers, attributes, syn_col)
         if len(dataset) == 0: continue
         
-        loader = DataLoader(dataset, batch_size=1024, shuffle=False, num_workers=2)
+        loader = DataLoader(dataset, batch_size=1024, shuffle=False, num_workers=0)
         
         bscaler = scalers['basin_scalers'][basin]
         
@@ -282,12 +320,12 @@ def evaluate(model, basins, dates, cfg, scalers, attributes, period_name, syn_co
             metrics = results_df.groupby('basin').apply(
                 lambda x: pd.Series({
                     benchmark: BMK(x['observation'], x['prediction'], benchmark)
-                })
+                }), include_groups=False
             ).reset_index() if metrics is None else metrics.merge(
                 results_df.groupby('basin').apply(
                     lambda x: pd.Series({
                         benchmark: BMK(x['observation'], x['prediction'], benchmark)
-                    })
+                    }), include_groups=False
                 ).reset_index(), on='basin'
             )            
 
@@ -340,8 +378,9 @@ def main():
     model.load_state_dict(torch.load(model_file, map_location=DEVICE))
     
     if GLOBAL_SETTINGS['loc'] == "JP": file_tot_num = 87
-    else: file_tot_num = 396
-    basins = [str(i) for i in range(1, file_tot_num + 1)]
+    else: file_tot_num = 424
+    # Use zero-padded basin IDs to match scalers.json format
+    basins = [str(i).zfill(3) for i in range(1, file_tot_num + 1)]
     if args.n_basins:
         basins = basins[:args.n_basins]
         
@@ -357,31 +396,96 @@ def main():
     
     output_base = Path(f"/data0/funato/hsp/0_out/LSTM/{GLOBAL_SETTINGS['loc']}/regional")
     
+    # Evaluate cal and eva periods with incremental saving
     for name, dates in {'cal': (train_start, train_end), 'eva': (val_start, val_end)}.items():
-        preds_df, metrics_df = evaluate(model, basins, dates, cfg, scalers, attributes, name)
+        print(f"\nEvaluating {name.upper()} period...")
         
-        if preds_df is not None:
-            (output_base / "predict").mkdir(parents=True, exist_ok=True)
-            pivot_df = preds_df.pivot_table(index='date', columns='basin', values='prediction').sort_index()
-            pivot_df.to_csv(output_base / "predict" / f"LSTM_predict_{name}.csv")
-            print(f"Pivoted predictions for {name} saved.")
+        pred_path = output_base / "predict" / f"LSTM_predict_{name}.csv"
+        pred_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        all_metrics = []
+        first_basin = True
+        
+        for basin in tqdm(basins, desc=f"Processing basins for {name}"):
+            preds, obs, eval_dates = evaluate_basin_incremental(model, basin, dates, cfg, scalers, attributes, None)
             
-            if metrics_df is not None:
-                (output_base / "results").mkdir(parents=True, exist_ok=True)
-                metrics_df.to_csv(output_base / "results" / f"LSTM_results_{name}.csv", index=False)
-                print(f"Metrics for {name} saved.")
-                print(f"\n--- {name.upper()} Period Summary ---\n{metrics_df.describe()}\n")
+            if preds is not None:
+                # Create row with basin as integer index and dates as columns
+                basin_row_dict = {}
+                for i, date in enumerate(eval_dates):
+                    basin_row_dict[date.strftime('%Y-%m-%d')] = preds[i]
+                
+                # Use integer basin ID
+                basin_int = int(basin)
+                basin_row = pd.DataFrame([basin_row_dict], index=[basin_int])
+                basin_row.index.name = 'basin'
+                
+                # Append to CSV incrementally
+                if first_basin:
+                    basin_row.to_csv(pred_path, mode='w', header=True)
+                    first_basin = False
+                else:
+                    basin_row.to_csv(pred_path, mode='a', header=False)
+                
+                # Calculate metrics
+                metrics_row = {'basin': basin_int}
+                for benchmark in benchmark_list:
+                    metrics_row[benchmark] = BMK(obs, preds, benchmark)
+                all_metrics.append(metrics_row)
+        
+        if all_metrics:
+            # Sort CSV by basin ID numerically
+            temp_df = pd.read_csv(pred_path, index_col='basin')
+            temp_df.index = temp_df.index.astype(int)
+            temp_df.to_csv(pred_path)
+            print(f"Predictions saved to {pred_path}")
+            
+            # Save metrics
+            metrics_df = pd.DataFrame(all_metrics)
+            results_path = output_base / "results" / f"LSTM_results_{name}.csv"
+            results_path.parent.mkdir(parents=True, exist_ok=True)
+            metrics_df.to_csv(results_path, index=False)
+            print(f"Metrics saved to {results_path}")
+            print(f"\n--- {name.upper()} Period Summary ---\n{metrics_df.describe()}\n")
+    
+
 
     print("\n" + "="*40 + "\nStarting Synthetic Scenario Evaluation...\n" + "="*40)
     for syn_col in syn_precip_cols:
         syn_dates = (val_start, pd.to_datetime('2001-02-10') if 'peak' in syn_col else val_end)
-        preds_df, _ = evaluate(model, basins, syn_dates, cfg, scalers, attributes, syn_col, syn_col)
-        if preds_df is not None:
-            pred_dir = output_base / "predict" / "synthetic"
-            pred_dir.mkdir(parents=True, exist_ok=True)
-            pivot_df = preds_df.pivot_table(index='date', columns='basin', values='prediction').sort_index()
-            pivot_df.to_csv(pred_dir / f"LSTM_predict_{syn_col}_eva.csv")
-            print(f"Pivoted synthetic predictions for '{syn_col}' saved.")
+        
+        pred_path = output_base / "predict" / "synthetic" / f"LSTM_predict_{syn_col}_eva.csv"
+        pred_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        first_basin = True
+        
+        for basin in tqdm(basins, desc=f"Processing basins for {syn_col}"):
+            preds, obs, eval_dates = evaluate_basin_incremental(model, basin, syn_dates, cfg, scalers, attributes, syn_col)
+            
+            if preds is not None:
+                # Create row with basin as integer index and dates as columns
+                basin_row_dict = {}
+                for i, date in enumerate(eval_dates):
+                    basin_row_dict[date.strftime('%Y-%m-%d')] = preds[i]
+                
+                # Use integer basin ID
+                basin_int = int(basin)
+                basin_row = pd.DataFrame([basin_row_dict], index=[basin_int])
+                basin_row.index.name = 'basin'
+                
+                # Append to CSV incrementally
+                if first_basin:
+                    basin_row.to_csv(pred_path, mode='w', header=True)
+                    first_basin = False
+                else:
+                    basin_row.to_csv(pred_path, mode='a', header=False)
+        
+        # Sort CSV by basin ID numerically
+        if pred_path.exists():
+            temp_df = pd.read_csv(pred_path, index_col='basin')
+            temp_df.index = temp_df.index.astype(int)
+            temp_df.to_csv(pred_path)
+            print(f"Synthetic predictions for '{syn_col}' saved to {pred_path}")
 
 if __name__ == "__main__":
     main()

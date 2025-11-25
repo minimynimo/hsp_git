@@ -12,6 +12,10 @@ MODEL_EPOCH=30
 N_BASINS=""
 PYTHON_PATH="/data0/funato/hsp/.venv/bin/python"
 
+START_CORE=12 # 1 indexed
+CORES=2
+END_CORE=$((START_CORE + CORES - 1))
+
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -94,12 +98,13 @@ run_evaluation() {
     echo "========================================="
     
     # Build command
-    local cmd="$PYTHON_PATH $script_name --run_dir $RUN_DIR --model_epoch $MODEL_EPOCH"
+    local cmd="taskset -c $START_CORE-$END_CORE $PYTHON_PATH $script_name --run_dir $RUN_DIR --model_epoch $MODEL_EPOCH"
     if [[ -n "$N_BASINS" ]]; then
         cmd="$cmd --n_basins $N_BASINS"
     fi
     
     echo "Command: $cmd"
+    echo "Using CPU cores: $START_CORE-$END_CORE"
     
     # Run the evaluation
     if ! $cmd; then
@@ -122,7 +127,7 @@ fi
 run_evaluation "regional" "/data0/funato/hsp/99_work/10_LSTM/lstm_regional_modeling-master/eval_regional.py"
 
 # Run adapted evaluation
-run_evaluation "adapted" "/data0/funato/hsp/99_work/10_LSTM/lstm_regional_modeling-master/eval_adapted.py"
+#run_evaluation "adapted" "/data0/funato/hsp/99_work/10_LSTM/lstm_regional_modeling-master/eval_adapted.py"
 
 echo ""
 echo "========================================="
@@ -152,4 +157,4 @@ echo ""
 # run using 
 # chmod +x /data0/funato/hsp/99_work/10_LSTM/lstm_regional_modeling-master/run_eval.sh
 # regional
-# /data0/funato/hsp/99_work/10_LSTM/lstm_regional_modeling-master/run_eval.sh --run_dir /data0/funato/hsp/99_work/10_LSTM/lstm_regional_modeling-master/runs/run_1510_1759_seed46589 --model_epoch 30
+# nohup /data0/funato/hsp/99_work/10_LSTM/lstm_regional_modeling-master/run_eval.sh --run_dir /data0/funato/hsp/99_work/10_LSTM/lstm_regional_modeling-master/runs/run_1911_1458_seed926134 --model_epoch 30 > output_eval_lstm_regional.log 2>&1 &

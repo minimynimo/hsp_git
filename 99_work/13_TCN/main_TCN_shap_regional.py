@@ -59,14 +59,14 @@ end_date_cal = '2000-12-31'
 start_date_eva = '2001-01-01'
 end_date_eva = '2006-12-31'
 
-output_dir = f"/data0/funato/hsp/0_out/TCN_temp/{loc}/shap/regional_424"
+output_dir = f"/data0/funato/hsp/0_out/TCN/{loc}/shap/regional_424"
 os.makedirs(output_dir, exist_ok=True)
 os.makedirs(output_dir + "/predict/og", exist_ok=True)
 os.makedirs(output_dir + "/results", exist_ok=True)
 os.makedirs(output_dir + "/hydrographs", exist_ok=True)
 os.makedirs(output_dir + "/predict/synthetic", exist_ok=True)
 
-output_dir_shap = f"0_out/1_fig/shap/TCN_temp/{loc}/regional_424"
+output_dir_shap = f"0_out/1_fig/shap/TCN/{loc}/regional_424"
 os.makedirs(output_dir_shap, exist_ok=True)
 
 

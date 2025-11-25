@@ -41,12 +41,17 @@ GLOBAL_SETTINGS = {
 
 benchmark_list = ["NSE", "KGE", "E1", "VE", "d", "RMSE", "MAE"]
 
+syn_precip_cols = ['syn_no_precip', 'syn_p_pet',
+                   'syn_peak1_rate0', 'syn_peak1_rate10', 'syn_peak1_rate30', 'syn_peak1_rate50',
+                   'syn_peak3_rate0', 'syn_peak3_rate10', 'syn_peak3_rate30', 'syn_peak3_rate50',
+                   'syn_peak5_rate0', 'syn_peak5_rate10', 'syn_peak5_rate30', 'syn_peak5_rate50']
+
 ver_name = "ver1_1" if GLOBAL_SETTINGS['ver'] == 1 else "ver2_0"
 
 if GLOBAL_SETTINGS['loc'] == "JP":
     file_tot_num = 87
 else:
-    file_tot_num = 396
+    file_tot_num = 424
 
 file_num_list = list(map(str, range(1, file_tot_num + 1)))
 
@@ -271,6 +276,70 @@ def evaluate_basin_adapted_period(basin_model, basin_stats, basin, start_date, e
     
     return predictions, y_eval_raw, date_list
 
+def evaluate_basin_synthetic_period(basin_model, basin_stats, basin, scenario_col, start_date, end_date, run_cfg, static_attrs=None):
+    """Evaluate basin-specific model on synthetic data."""
+    df = load_data_for_basin(int(basin))
+    warmup_start = start_date - pd.DateOffset(days=run_cfg["seq_length"] - 1)
+    df_period = df.loc[warmup_start:end_date]
+
+    if len(df_period) < run_cfg["seq_length"] or scenario_col not in df_period.columns:
+        return None, None
+
+    # Create synthetic data
+    df_syn = df_period.copy()
+    df_syn['Precip'] = df_syn[scenario_col]
+    
+    if 'peak' in scenario_col:
+        if 'Temp_at_peak' in df_syn.columns:
+            df_syn['Temp'] = df_syn['Temp_at_peak']
+        if 'PET_at_peak' in df_syn.columns:
+            df_syn['PET'] = df_syn['PET_at_peak']
+
+    dyn_cols = ['Precip', 'PET', 'Temp']
+    dyn_data_scaled = (df_syn[dyn_cols].values - basin_stats['dynamic_means']) / basin_stats['dynamic_stds']
+    
+    static_data_scaled = None
+    if static_attrs is not None and not static_attrs.empty:
+        static_data_scaled = (static_attrs.loc[int(basin)].values - basin_stats['static_means']) / basin_stats['static_stds']
+
+    X_list, date_list = [], []
+    seq_length = run_cfg['seq_length']
+    
+    is_nan = df_syn[dyn_cols].isnull().any(axis=1)
+    clumps = np.ma.clump_unmasked(np.ma.masked_array(is_nan, is_nan))
+    if not isinstance(clumps, list):
+        clumps = [clumps] if clumps else []
+
+    for s in clumps:
+        start_loc, end_loc = s.start, s.stop
+        block_len = end_loc - start_loc
+        if block_len < seq_length: continue
+
+        block_dyn_scaled = dyn_data_scaled[start_loc:end_loc]
+        
+        for i in range(block_len - seq_length + 1):
+            target_idx_in_block = i + seq_length - 1
+            current_date = df_syn.index[start_loc + target_idx_in_block]
+            if current_date < start_date: continue
+
+            dyn_seq_flat = block_dyn_scaled[i:target_idx_in_block + 1].flatten()
+            
+            final_features = dyn_seq_flat
+            if static_data_scaled is not None:
+                final_features = np.concatenate([dyn_seq_flat, static_data_scaled])
+            
+            X_list.append(final_features)
+            date_list.append(current_date)
+
+    if not X_list:
+        return None, None
+
+    X_eval = np.array(X_list, dtype=np.float32)
+    predictions = basin_model.predict(X_eval)
+    predictions[predictions < 0] = 0
+    
+    return predictions, date_list
+
 def main():
     parser = argparse.ArgumentParser(description='Adapted XGBoost Evaluation')
     parser.add_argument('--run_dir', type=str, required=True)
@@ -305,25 +374,38 @@ def main():
     }
     output_dir = Path("/data0/funato/hsp/0_out/XGB/GB/adapted")
 
+    # Train basin-specific models once using calibration data
+    print("\n" + "="*60)
+    print("Training basin-specific models on calibration data...")
+    print("="*60)
+    
+    basin_models = {}
+    basin_stats = {}
+    
+    for basin in tqdm(basins_to_process, desc="Training basin models"):
+        model, stats = train_basin_model(basin, run_cfg, static_attrs)
+        if model is not None:
+            basin_models[basin] = model
+            basin_stats[basin] = stats
+    
+    # Evaluate on cal and eva periods using the trained models
     for period_name, (start_date, end_date) in periods.items():
         print(f"\nEvaluating {period_name.upper()} period ({start_date.date()} to {end_date.date()})")
         
-        all_predictions_df = pd.DataFrame()
+        all_predictions_dict = {}
         all_metrics = []
         
         for basin in tqdm(basins_to_process, desc=f"Processing basins for {period_name}"):
-            basin_model, basin_stats = train_basin_model(basin, run_cfg, static_attrs)
-            if basin_model is None:
-                print(f"Skipping basin {basin} due to insufficient training data.")
+            if basin not in basin_models:
                 continue
 
             predictions, targets, dates = evaluate_basin_adapted_period(
-                basin_model, basin_stats, basin, start_date, end_date, run_cfg, static_attrs)
+                basin_models[basin], basin_stats[basin], basin, start_date, end_date, run_cfg, static_attrs)
             
             if predictions is not None:
                 basin_preds_df = pd.DataFrame({'date': dates, 'prediction': predictions})
                 basin_preds_df.set_index('date', inplace=True)
-                all_predictions_df[basin] = basin_preds_df['prediction']
+                all_predictions_dict[basin] = basin_preds_df['prediction']
 
                 metrics = {}
                 for benchmark in benchmark_list:
@@ -339,8 +421,17 @@ def main():
         # Save Predictions
         pred_output_path = output_dir / "predict" / f"XGB_predict_{period_name}.csv"
         pred_output_path.parent.mkdir(parents=True, exist_ok=True)
-        all_predictions_df.sort_index(inplace=True)
-        all_predictions_df.to_csv(pred_output_path, index_label='date')
+        # Build predictions with basins as rows and dates as columns
+        # Create DataFrame from dictionary, original has dates as index, basins as columns
+        # Transpose to get basins as index (rows), dates as columns
+        all_predictions_df = pd.DataFrame(all_predictions_dict)
+        predictions_for_save = all_predictions_df.T
+        # Sort basin IDs numerically and convert index to integers
+        basin_ids_sorted = sorted([int(b) for b in predictions_for_save.index])
+        predictions_for_save.index = predictions_for_save.index.astype(int)
+        predictions_for_save = predictions_for_save.loc[basin_ids_sorted]
+        # Save with basin as index label
+        predictions_for_save.to_csv(pred_output_path, index_label='basin')
         print(f"Predictions saved to {pred_output_path}")
 
         # Save Results
@@ -352,6 +443,51 @@ def main():
 
         print(f"\n{period_name.upper()} Period Summary:")
         print(results_df.describe())
+    
+    # Evaluate on synthetic scenarios using the trained models
+    print("\n" + "="*60)
+    print("Starting Synthetic Scenario Evaluation...")
+    print("="*60)
+    
+    val_start = GLOBAL_SETTINGS["val_start"]
+    val_end = GLOBAL_SETTINGS["val_end"]
+    
+    for scenario_col in syn_precip_cols:
+        print(f"\nProcessing scenario: {scenario_col}")
+        syn_end = pd.to_datetime('2001-02-10') if 'peak' in scenario_col else val_end
+        
+        all_predictions_dict = {}
+        
+        for basin in tqdm(basins_to_process, desc=f"Processing {scenario_col}"):
+            if basin not in basin_models:
+                continue
+
+            predictions, dates = evaluate_basin_synthetic_period(
+                basin_models[basin], basin_stats[basin], basin, scenario_col, val_start, syn_end, run_cfg, static_attrs)
+            
+            if predictions is not None:
+                basin_preds_df = pd.DataFrame({'date': dates, 'prediction': predictions})
+                basin_preds_df.set_index('date', inplace=True)
+                all_predictions_dict[basin] = basin_preds_df['prediction']
+
+        if all_predictions_dict:
+            pred_output_path = output_dir / "predict" / "synthetic" / f"XGB_predict_{scenario_col}_eva.csv"
+            pred_output_path.parent.mkdir(parents=True, exist_ok=True)
+            # Build predictions with basins as rows and dates as columns
+            # Create DataFrame from dictionary, has dates as index, basins as columns
+            # Transpose to get basins as index (rows), dates as columns
+            all_predictions_df = pd.DataFrame(all_predictions_dict)
+            predictions_for_save = all_predictions_df.T
+            # Sort basin IDs numerically and convert index to integers
+            basin_ids_sorted = sorted([int(b) for b in predictions_for_save.index])
+            predictions_for_save.index = predictions_for_save.index.astype(int)
+            predictions_for_save = predictions_for_save.loc[basin_ids_sorted]
+            # Save with basin as index label
+            predictions_for_save.to_csv(pred_output_path, index_label='basin')
+            print(f"Synthetic predictions saved to {pred_output_path}")
+    
+    print("\nAdapted XGBoost evaluation completed successfully!")
 
 if __name__ == "__main__":
     main()
+

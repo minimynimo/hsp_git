@@ -265,7 +265,7 @@ def train(cfg):
     torch.manual_seed(cfg["seed"])
     
     if GLOBAL_SETTINGS['loc'] == "JP": file_tot_num = 87
-    else: file_tot_num = 396
+    else: file_tot_num = 424
     basins = get_basin_list(file_tot_num=file_tot_num)
     
     cfg = _setup_run(cfg)

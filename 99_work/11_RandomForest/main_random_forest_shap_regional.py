@@ -248,6 +248,12 @@ rf = RandomForestRegressor(max_depth=max_depth, max_features=max_features, n_est
 rf.fit(X_train_final, all_target_cal_stacked)
 print("Regional Random Forest model trained.")
 
+# Save the trained model
+import joblib
+model_save_path = os.path.join(output_dir, "RF_model.pkl")
+joblib.dump(rf, model_save_path)
+print(f"Model saved to: {model_save_path}")
+
 predict_cal_aggregated = rf.predict(X_train_final)
 predict_eva_aggregated = rf.predict(X_eval_final)
 
@@ -404,7 +410,17 @@ for syn_precip_col, basin_preds_dict in syn_predict_dfs_combined.items():
             combined_syn_df = combined_syn_df.loc[:end_date_syn_final]
         
         combined_syn_df.sort_index(inplace=True)
-        combined_syn_df.to_csv(f"{output_dir}/predict/synthetic/RF_predict_{syn_precip_col.replace('syn_', '')}.csv", index=True, header=True)
+        
+        # Transpose to get basins as rows (index) and dates as columns
+        combined_syn_df_transposed = combined_syn_df.T
+        
+        # Clean up basin names (remove 'file_' prefix)
+        combined_syn_df_transposed.index = combined_syn_df_transposed.index.str.replace('file_', '')
+        combined_syn_df_transposed.index.name = 'basin'
+        
+        # Save with correct format
+        combined_syn_df_transposed.to_csv(f"{output_dir}/predict/synthetic/RF_predict_{syn_precip_col.replace('syn_', '')}.csv", index=True, header=True)
+        print(f"Saved {syn_precip_col} with shape: {combined_syn_df_transposed.shape} (basins × dates)")
 
 df_results_cal = pd.DataFrame(results_cal)
 df_results_cal.to_csv(output_dir + f'/results/RF_results_cal.csv', index=False, header=True)

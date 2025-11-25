@@ -70,13 +70,16 @@ os.makedirs(output_dir_box, exist_ok=True)
 os.makedirs(output_dir_cdf, exist_ok=True)
 
 def get_file_path(model, train_type):
-    if model == "TCN" and train_type == "regional":
-        return f"/data0/funato/hsp/0_out/TCN/GB/regional/results/{model}_results_eva.csv"
-    elif model == "LSTM" and train_type == "individual":
+    if model == "LSTM" and train_type == "individual":
         return f"/data0/funato/hsp/0_out/LSTM/GB/individual/results/LSTM_results_h{hidden_size}_lr{learning_rate}_e{num_epochs}_w{window_size}_b{batch_size}_d{dropout_rate}_eva.csv"
     else:
         if train_type == "adapted":
-            return f"/data0/funato/hsp/0_out/{model}/GB/adapted_396/results/{model}_results_eva.csv"
+            if os.path.exists(f"/data0/funato/hsp/0_out/{model}/GB/adapted_424/results/{model}_results_eva.csv"):
+                return f"/data0/funato/hsp/0_out/{model}/GB/adapted_424/results/{model}_results_eva.csv"
+            else:
+                return f"/data0/funato/hsp/0_out/{model}/GB/adapted_396/results/{model}_results_eva.csv"
+        elif train_type == "regional":
+            return f"/data0/funato/hsp/0_out/{model}/GB/shap/regional_424/results/{model}_results_eva.csv"
         else:
             return f"/data0/funato/hsp/0_out/{model}/GB/{train_type}/results/{model}_results_eva.csv"
 
@@ -89,12 +92,16 @@ for benchmark in benchmark_list:
         for train_type in train_types:
             file_path = get_file_path(model, train_type)
             exists = os.path.exists(file_path)
-            df = pd.read_csv(file_path)
-            has_benchmark = benchmark in df.columns
-            data_count = len(df[benchmark].dropna())
-            print(f"  {model} - {train_type}: Exists: {exists}, Has '{benchmark}': {has_benchmark}, Data count: {data_count}")
-            if not exists or not has_benchmark or data_count == 0:
-                print(f"    Warning: Missing or incomplete data for {model} - {train_type}")
+            if exists:
+                df = pd.read_csv(file_path)
+                # Column name format: try {MODEL}_{BENCHMARK}_eva first, then {BENCHMARK}
+                col_name = f"{model}_{benchmark}_eva"
+                if col_name not in df.columns:
+                    col_name = benchmark
+                if col_name not in df.columns:
+                    print(f"    Warning: Missing or incomplete data for {model} - {train_type}")
+            else:
+                print(f"  {model} - {train_type}: File does not exist: {file_path}")
     
     # === BOXPLOT FIGURE ===
     plt.figure(figsize=(12, 6))
@@ -111,8 +118,12 @@ for benchmark in benchmark_list:
             file_path = get_file_path(model, train_type)
             if os.path.exists(file_path):
                 df = pd.read_csv(file_path)
-                if benchmark in df.columns:
-                    data = df[benchmark].dropna()
+                # Column name format: try {MODEL}_{BENCHMARK}_eva first, then {BENCHMARK}
+                col_name = f"{model}_{benchmark}_eva"
+                if col_name not in df.columns:
+                    col_name = benchmark
+                if col_name in df.columns:
+                    data = df[col_name].dropna()
                     if len(data) > 0:
                         all_data.append(data)
                         all_positions.append(position_counter)
@@ -162,8 +173,12 @@ for benchmark in benchmark_list:
             file_path = get_file_path(model, train_type)
             if os.path.exists(file_path):
                 df = pd.read_csv(file_path)
-                if benchmark in df.columns:
-                    data = df[benchmark].dropna()
+                # Column name format: try {MODEL}_{BENCHMARK}_eva first, then {BENCHMARK}
+                col_name = f"{model}_{benchmark}_eva"
+                if col_name not in df.columns:
+                    col_name = benchmark
+                if col_name in df.columns:
+                    data = df[col_name].dropna()
                     if len(data) > 0:
                         cdf_data[model][train_type] = data
     

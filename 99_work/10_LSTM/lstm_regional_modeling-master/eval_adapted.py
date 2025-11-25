@@ -37,7 +37,13 @@ GLOBAL_SETTINGS = {
 
 benchmark_list = ["NSE", "KGE", "E1", "VE", "d", "RMSE", "MAE"]
 
+syn_precip_cols = ['syn_no_precip', 'syn_p_pet',
+                   'syn_peak1_rate0', 'syn_peak1_rate10', 'syn_peak1_rate30', 'syn_peak1_rate50',
+                   'syn_peak3_rate0', 'syn_peak3_rate10', 'syn_peak3_rate30', 'syn_peak3_rate50',
+                   'syn_peak5_rate0', 'syn_peak5_rate10', 'syn_peak5_rate30', 'syn_peak5_rate50']
+
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+DEVICE = torch.device("cpu")  # Force CPU for debugging
 print(f"Using device: {DEVICE}")
 if torch.cuda.is_available():
     print(f"GPU: {torch.cuda.get_device_name(0)}")
@@ -45,7 +51,7 @@ if torch.cuda.is_available():
 
 
 if GLOBAL_SETTINGS['loc'] == "JP": file_tot_num = 87
-else: file_tot_num = 396
+else: file_tot_num = 424 # changed from 424 due to change of dataset from Caravan to CamelGB
 file_num_list = list(map(str, range(1, file_tot_num + 1)))
 
 # ####################### #
@@ -80,11 +86,14 @@ class Model(nn.Module):
 # Utility Functions       #
 # ####################### #
 
-def file_name(input_num, total_len): return str(input_num).zfill(total_len)
+def file_name(input_num, total_len):
+    return str(input_num).zfill(total_len)
 
 def load_data_for_basin(file_num):
     varssim_dir = "/data0/funato/hsp/2_MERV/varssim_HBV"
-    df = pd.read_csv(f"{varssim_dir}/varssim{file_name(file_num, 3)}.csv", index_col='Date', parse_dates=True)
+    df = pd.read_csv(f"{varssim_dir}/varssim{file_name(file_num, 3)}.csv")
+    df['Date'] = pd.to_datetime(df['Date'])
+    df.set_index('Date', inplace=True)
     return df
 
 def load_attributes(db_path, basins, drop_lat_lon=True):
@@ -203,6 +212,68 @@ class FineTuneDataset(Dataset):
         x, y, date = self.samples[idx]
         return torch.from_numpy(x), torch.tensor([y]), date
 
+class SyntheticFineTuneDataset(Dataset):
+    """Dataset for synthetic precipitation scenarios"""
+    def __init__(self, basin, scenario_col, dates, cfg, static_attrs, base_scalers):
+        self.samples = []
+        self.scalers = base_scalers
+        self._prepare_synthetic_data(basin, scenario_col, dates, cfg, static_attrs)
+
+    def _prepare_synthetic_data(self, basin, scenario_col, dates, cfg, static_attrs):
+        df = load_data_for_basin(int(basin))
+        warmup_start = dates[0] - pd.DateOffset(days=cfg['seq_length'] - 1)
+        df_period = df.loc[warmup_start:dates[1]]
+        
+        if scenario_col not in df_period.columns:
+            return
+        
+        df_syn = df_period.copy()
+        df_syn['Precip'] = df_syn[scenario_col]
+        
+        if 'peak' in scenario_col:
+            if 'Temp_at_peak' in df_syn.columns:
+                df_syn['Temp'] = df_syn['Temp_at_peak']
+            if 'PET_at_peak' in df_syn.columns:
+                df_syn['PET'] = df_syn['PET_at_peak']
+        
+        dyn_cols = ['Precip', 'PET', 'Temp']
+        dyn_scaled = (df_syn[dyn_cols].values - self.scalers['dynamic_means']) / self.scalers['dynamic_stds']
+        
+        static_scaled = None
+        if not cfg["no_static"]:
+            static_data = static_attrs.loc[int(basin)].values
+            static_scaled = static_data
+
+        is_nan = df_syn[dyn_cols].isnull().any(axis=1)
+        clean_blocks = [df_syn.iloc[s] for s in np.ma.clump_unmasked(np.ma.masked_array(is_nan, is_nan))]
+        
+        for block_df in clean_blocks:
+            if len(block_df) < cfg['seq_length']:
+                continue
+            start_loc = df_syn.index.get_loc(block_df.index[0])
+            end_loc = df_syn.index.get_loc(block_df.index[-1])
+            block_dyn = dyn_scaled[start_loc:end_loc+1]
+            
+            for i in range(len(block_df) - cfg['seq_length'] + 1):
+                target_idx = i + cfg['seq_length'] - 1
+                sample_date = block_df.index[i + cfg['seq_length'] - 1]
+                
+                if sample_date < dates[0]:
+                    continue
+                
+                dyn_seq = block_dyn[i:target_idx + 1]
+                final_features = dyn_seq
+                if not cfg["no_static"]:
+                    static_seq = np.tile(static_scaled, (cfg['seq_length'], 1))
+                    final_features = np.concatenate([dyn_seq, static_seq], axis=1)
+                
+                self.samples.append((final_features.astype(np.float32), sample_date))
+
+    def __len__(self): return len(self.samples)
+    def __getitem__(self, idx):
+        x, date = self.samples[idx]
+        return torch.from_numpy(x), str(date)
+
 # ####################### #
 # Main Logic              #
 # ####################### #
@@ -214,6 +285,78 @@ def custom_collate(batch):
     ys_batch = torch.stack([y for y in ys])
     # Keep dates as a list (don't try to stack/collate them)
     return xs_batch, ys_batch, list(dates)
+
+def fine_tune_basin_model(base_model, basin, cfg, static_attrs):
+    """Fine-tune the base model once for a basin using calibration period data."""
+    ft_dataset = FineTuneDataset(basin, (GLOBAL_SETTINGS['train_start'], GLOBAL_SETTINGS['train_end']), cfg, static_attrs)
+    if len(ft_dataset) == 0:
+        return None, None
+
+    ft_loader = DataLoader(ft_dataset, batch_size=256, shuffle=True, collate_fn=custom_collate)
+    
+    basin_model = copy.deepcopy(base_model).to(DEVICE).train()
+    optimizer = torch.optim.Adam(basin_model.parameters(), lr=1e-4)
+    loss_func = nn.MSELoss()
+    
+    for _ in range(5):  # 5 fine-tuning epochs
+        for x, y, _date in ft_loader:
+            x, y = x.to(DEVICE), y.to(DEVICE)
+            optimizer.zero_grad()
+            preds = basin_model(x)[0]  # Get first output from LSTM
+            loss = loss_func(preds, y)
+            loss.backward()
+            optimizer.step()
+            
+    basin_model.eval()
+    return basin_model, ft_dataset.scalers
+
+def evaluate_period(basin_model, basin, dates, cfg, static_attrs, scalers):
+    """Evaluate an already fine-tuned model on a specific period."""
+    eval_dataset = FineTuneDataset(basin, dates, cfg, static_attrs)
+    if len(eval_dataset) == 0:
+        return None, None, None
+
+    eval_loader = DataLoader(eval_dataset, batch_size=2048, shuffle=False, collate_fn=custom_collate)
+    
+    predictions, observations, eval_dates = [], [], []
+    with torch.no_grad():
+        for i, (x, y_scaled, dates_batch) in enumerate(eval_loader):
+            x = x.to(DEVICE)
+            preds_scaled = basin_model(x).cpu().numpy().flatten()
+
+            preds_rescaled = (preds_scaled * scalers['q_std']) + scalers['q_mean']
+            raw_obs = y_scaled.numpy().flatten()
+            raw_obs_rescaled = (raw_obs * scalers['q_std']) + scalers['q_mean']
+
+            predictions.extend(preds_rescaled)
+            observations.extend(raw_obs_rescaled)
+            eval_dates.extend(list(dates_batch))
+
+    if len(eval_dates) != len(predictions):
+        eval_dates = [eval_dataset.samples[i][2] for i in range(len(eval_dataset))]
+
+    return np.array(predictions), np.array(observations), eval_dates
+
+def evaluate_synthetic(basin_model, basin, scenario_col, dates, cfg, static_attrs, scalers):
+    """Evaluate an already fine-tuned model on synthetic scenario."""
+    syn_dataset = SyntheticFineTuneDataset(basin, scenario_col, dates, cfg, static_attrs, scalers)
+    if len(syn_dataset) == 0:
+        return None, None
+    
+    syn_loader = DataLoader(syn_dataset, batch_size=2048, shuffle=False)
+    
+    predictions, eval_dates = [], []
+    with torch.no_grad():
+        for batch in syn_loader:
+            if len(batch) == 2:
+                xs_batch, dates_batch = batch
+                xs_batch = xs_batch.to(DEVICE)
+                preds = basin_model(xs_batch)[0]
+                preds_rescaled = preds.cpu().numpy() * scalers['q_std'] + scalers['q_mean']
+                predictions.extend(preds_rescaled.flatten())
+                eval_dates.extend(dates_batch)
+    
+    return np.array(predictions) if predictions else None, eval_dates
 
 def fine_tune_and_evaluate(base_model, basin, dates, cfg, static_attrs):
     """Fine-tune a model for a specific basin and then evaluate it."""
@@ -313,16 +456,49 @@ def main():
 
     output_dir = Path(f"/data0/funato/hsp/0_out/LSTM/{GLOBAL_SETTINGS['loc']}/adapted")
     
+    # Store fine-tuned models and scalers for each basin (fine-tune once, use multiple times)
+    basin_models = {}
+    basin_scalers = {}
+    
+    print("\n" + "="*60)
+    print("Fine-tuning models for each basin...")
+    print("="*60)
+    for basin in tqdm(basins_to_process, desc="Fine-tuning basins"):
+        basin_model, scalers = fine_tune_basin_model(base_model, basin, cfg, static_attrs)
+        if basin_model is not None:
+            basin_models[basin] = basin_model
+            basin_scalers[basin] = scalers
+    
+    # Evaluate on cal and eva periods using the fine-tuned models
     for name, dates in {'cal': (GLOBAL_SETTINGS['train_start'], GLOBAL_SETTINGS['train_end']), 
                         'eva': (GLOBAL_SETTINGS['val_start'], GLOBAL_SETTINGS['val_end'])}.items():
         print(f"\nEvaluating {name.upper()} period...")
         
-        all_preds_df, all_metrics = pd.DataFrame(), []
+        pred_path = output_dir / "predict" / f"LSTM_predict_{name}.csv"
+        pred_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        all_metrics = []
+        first_basin = True
+        
         for basin in tqdm(basins_to_process, desc=f"Processing basins for {name}"):
-            preds, obs, eval_dates = fine_tune_and_evaluate(base_model, basin, dates, cfg, static_attrs)
+            if basin not in basin_models:
+                continue
+                
+            preds, obs, eval_dates = evaluate_period(basin_models[basin], basin, dates, cfg, static_attrs, basin_scalers[basin])
             if preds is not None:
+                # Create row with basin as index and dates as columns
                 preds_df = pd.DataFrame({'date': eval_dates, 'prediction': preds}).set_index('date')
-                all_preds_df[basin] = preds_df['prediction']
+                basin_row = preds_df['prediction'].to_frame().T
+                basin_row.index = [basin]
+                basin_row.index.name = 'basin'
+                
+                # Append to CSV incrementally
+                if first_basin:
+                    basin_row.to_csv(pred_path, mode='w', header=True)
+                    first_basin = False
+                else:
+                    basin_row.to_csv(pred_path, mode='a', header=False)
+                
                 metrics = {}
                 for benchmark in benchmark_list:
                     metrics[benchmark] = BMK(obs, preds, benchmark)
@@ -331,9 +507,10 @@ def main():
                 all_metrics.append(result_row)
 
         if all_metrics:
-            pred_path = output_dir / "predict" / f"LSTM_predict_{name}.csv"
-            pred_path.parent.mkdir(parents=True, exist_ok=True)
-            all_preds_df.sort_index().to_csv(pred_path)
+            # Sort CSV by basin ID numerically
+            temp_df = pd.read_csv(pred_path, index_col='basin')
+            temp_df.index = temp_df.index.astype(int)
+            temp_df.to_csv(pred_path)
             print(f"Predictions saved to {pred_path}")
 
             results_df = pd.DataFrame(all_metrics).set_index('basin')
@@ -342,6 +519,55 @@ def main():
             results_df.to_csv(results_path)
             print(f"Results saved to {results_path}")
             print(f"\n{name.upper()} Period Summary:\n{results_df.describe()}")
+    
+    # Evaluate on synthetic scenarios using the fine-tuned models
+    print("\n" + "="*60)
+    print("Starting Synthetic Scenario Evaluation...")
+    print("="*60)
+    
+    val_start = GLOBAL_SETTINGS["val_start"]
+    val_end = GLOBAL_SETTINGS["val_end"]
+    
+    for scenario_col in syn_precip_cols:
+        print(f"\nProcessing scenario: {scenario_col}")
+        syn_end = pd.to_datetime('2001-02-10') if 'peak' in scenario_col else val_end
+        dates = (val_start, syn_end)
+        
+        pred_path = output_dir / "predict" / "synthetic" / f"LSTM_predict_{scenario_col}_eva.csv"
+        pred_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        first_basin = True
+        
+        for basin in tqdm(basins_to_process, desc=f"Processing {scenario_col}"):
+            if basin not in basin_models:
+                continue
+            
+            predictions, eval_dates = evaluate_synthetic(basin_models[basin], basin, scenario_col, dates, cfg, static_attrs, basin_scalers[basin])
+            
+            if predictions is not None and len(predictions) > 0 and len(eval_dates) == len(predictions):
+                # Create row with basin as index and dates as columns
+                preds_df = pd.DataFrame({'date': eval_dates, 'prediction': predictions}).set_index('date')
+                preds_df['prediction'] = preds_df['prediction'].clip(lower=0)
+                basin_row = preds_df['prediction'].to_frame().T
+                basin_row.index = [basin]
+                basin_row.index.name = 'basin'
+                
+                # Append to CSV incrementally
+                if first_basin:
+                    basin_row.to_csv(pred_path, mode='w', header=True)
+                    first_basin = False
+                else:
+                    basin_row.to_csv(pred_path, mode='a', header=False)
+        
+        # Sort CSV by basin ID numerically if file exists
+        if pred_path.exists():
+            temp_df = pd.read_csv(pred_path, index_col='basin')
+            temp_df.index = temp_df.index.astype(int)
+            temp_df.to_csv(pred_path)
+            print(f"Synthetic predictions saved to {pred_path}")
+    
+    print("\nLSTM adapted evaluation completed!")
 
 if __name__ == "__main__":
     main()
+
