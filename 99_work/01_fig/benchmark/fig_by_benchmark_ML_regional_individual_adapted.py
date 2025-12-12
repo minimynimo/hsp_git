@@ -12,12 +12,16 @@ benchmark_list = ["KGE", "NSE", "E1", "VE", "RMSE", "MAE"]
 fs = 15
 
 ##LSTM_individual parameter
+##LSTM
 num_epochs = 100 # Number of training epochs
 hidden_size = 16 # Number of LSTM cells
 learning_rate = 0.005 # Learning rate used to update the weights
 window_size = 365 # Length of the meteorological record provided to the network
 batch_size = 256 # Number of samples in each batch
 dropout_rate = 0.4 # Dropout rate of the final fully connected Layer [0.0, 1.0]
+
+###RF
+
 
 color_list = {
     "RF":   "#FF7F00",   # Orange
@@ -70,18 +74,45 @@ os.makedirs(output_dir_box, exist_ok=True)
 os.makedirs(output_dir_cdf, exist_ok=True)
 
 def get_file_path(model, train_type):
-    if model == "LSTM" and train_type == "individual":
-        return f"/data0/funato/hsp/0_out/LSTM/GB/individual/results/LSTM_results_h{hidden_size}_lr{learning_rate}_e{num_epochs}_w{window_size}_b{batch_size}_d{dropout_rate}_eva.csv"
-    else:
-        if train_type == "adapted":
-            if os.path.exists(f"/data0/funato/hsp/0_out/{model}/GB/adapted_424/results/{model}_results_eva.csv"):
-                return f"/data0/funato/hsp/0_out/{model}/GB/adapted_424/results/{model}_results_eva.csv"
-            else:
-                return f"/data0/funato/hsp/0_out/{model}/GB/adapted_396/results/{model}_results_eva.csv"
-        elif train_type == "regional":
-            return f"/data0/funato/hsp/0_out/{model}/GB/shap/regional_424/results/{model}_results_eva.csv"
+    base_path = f"/data0/funato/hsp/0_out/{model}/GB/{train_type}/results"
+    
+    if train_type == "individual":
+        if model == "LSTM":
+            # LSTM individual has specific hyperparameter tag
+            model_tag = f"h{hidden_size}_lr{learning_rate}_e{num_epochs}_w{window_size}_b{batch_size}_d{dropout_rate}"
+            return f"{base_path}/LSTM_results_{model_tag}_eva.csv"
         else:
-            return f"/data0/funato/hsp/0_out/{model}/GB/{train_type}/results/{model}_results_eva.csv"
+            # RF, XGB, TCN individual files use simple naming
+            return f"{base_path}/{model}_results_eva.csv"
+    
+    elif train_type == "adapted":
+        if model == "TCN":
+            # TCN adapted has combined files
+            return f"{base_path}/TCN_results_eva_combined.csv"
+        elif model == "RF":
+            # RF adapted has specific parameters
+            return f"{base_path}/RF_results_n100_d5_s2_l1_mf0.7_ms0.5_w270_eva.csv"
+        else:
+            # XGB and LSTM adapted (if they exist)
+            return f"{base_path}/{model}_results_eva.csv"
+    
+    elif train_type == "regional":
+        if model == "RF":
+            # RF regional has specific parameters
+            return f"{base_path}/RF_results_n100_d5_s2_l1_mf0.7_ms0.5_w270_eva.csv"
+        elif model == "TCN":
+            # Check for specific TCN regional parameters
+            tcn_param_file = f"{base_path}/TCN_results_ch128-256-512_k7_d0.2_lr0.001_w270_eva.csv"
+            if os.path.exists(tcn_param_file):
+                return tcn_param_file
+            else:
+                return f"{base_path}/TCN_results_eva.csv"
+        else:
+            # XGB and LSTM regional
+            return f"{base_path}/{model}_results_eva.csv"
+    
+    else:
+        return f"{base_path}/{model}_results_eva.csv"
 
 for benchmark in benchmark_list:
     print(f"\n=== Processing {benchmark} ===")

@@ -7,7 +7,7 @@ import os
 input_data = "/data0/funato/hsp/0_out/analysis/mass_conservation/water_balance_data.csv"
 input_df = pd.read_csv(input_data)
 
-output_dir = "/data0/funato/hsp/0_out/1_fig/mass_conservation_use"
+output_dir = "/data0/funato/hsp/0_out/1_fig/mass_conservation"
 os.makedirs(output_dir, exist_ok=True)
 
 # Set plotting style

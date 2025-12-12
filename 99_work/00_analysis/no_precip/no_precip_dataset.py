@@ -27,7 +27,7 @@ for model in model_list:
         if file % 50 == 0 or file == 1:
             print(f"Processing model: {model}, file number: {file}")
         if model not in ["HBV", "BC"]:
-            input_file = f"/data0/funato/hsp/0_out/{model}/GB/shap/regional/varssim_{model}/varssim{file:03d}.csv"
+            input_file = f"/data0/funato/hsp/0_out/{model}/GB/regional/varssim_{model}/varssim{file:03d}.csv"
         else:
             input_file = f"/data0/funato/hsp/0_out/{model}/varssim_{model}/varssim{file:03d}.csv"
         if not os.path.exists(input_file):

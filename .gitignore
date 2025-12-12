@@ -4,3 +4,5 @@
 **/*.p
 **/__pycache__/
 **/bash_logs/
+
+**/*.pkl

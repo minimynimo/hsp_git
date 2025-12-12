@@ -68,7 +68,7 @@ box_data = [all_discharge_data[model] for model in valid_models]
 
 
 # 7. Focused view - Box plot with limited y-axis
-max_for_focus = np.percentile(np.concatenate(box_data), 90)  # 90th percentile
+max_for_focus = np.percentile(np.concatenate(box_data), 95)  # 95th percentile
 plt.figure(figsize=(8, 7))
 bp3 = plt.boxplot(box_data, labels=valid_models, patch_artist=True)
 for patch, model in zip(bp3['boxes'], valid_models):
@@ -81,7 +81,7 @@ plt.title('Daily Mean Discharge', fontsize=fs)
 plt.ylabel('Daily Mean Discharge [m³/s]', fontsize=fs)
 plt.xlabel('Model', fontsize=fs)
 plt.tick_params(labelsize=fs)
-plt.ylim(-0.2, max_for_focus)
+plt.ylim(-0.1, max_for_focus)
 plt.grid(True, alpha=0.3)
 plt.tight_layout()
 plt.savefig(f"{output_fig_dir}/no_precip_boxplot_focused.png", dpi=300, bbox_inches='tight')

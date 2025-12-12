@@ -115,7 +115,7 @@ for model in model_list:
         elif model == "BC":
             input_file = f"{input_dir_base}/{model}/varssim_{model}/varssim{file:03d}.csv"
         else:
-            input_file = f"{input_dir_base}/{model}/GB/shap/regional/varssim_{model}/varssim{file:03d}.csv"
+            input_file = f"{input_dir_base}/{model}/GB/regional/varssim_{model}/varssim{file:03d}.csv"
         
         if not os.path.exists(input_file):
             continue

@@ -7,10 +7,10 @@ import os
 
 file_tot_num = 424
 
-pred_discharge_cols = ['og', 'no_precip','peak1_rate0',
-                    'peak1_rate10', 'peak1_rate30', 'peak1_rate50',
-                    'peak3_rate10', 'peak3_rate30', 'peak3_rate50',
-                    'peak5_rate10', 'peak5_rate30', 'peak5_rate50']
+pred_discharge_cols = ['og', 'no_precip',
+                       'peak1_rate0','peak1_rate10', 'peak1_rate30', 'peak1_rate50',
+                       'peak3_rate0','peak3_rate10', 'peak3_rate30', 'peak3_rate50',
+                       'peak5_rate0', 'peak5_rate10', 'peak5_rate30', 'peak5_rate50']
 
 # Parameters for synthetic precipitation generation
 peak_length_list = [1, 3, 5]
@@ -78,8 +78,8 @@ def load_transposed_bc_data(sim_col, file_num):
     
     else:
         # Handle other scenarios with transposed files
-        cal_file = os.path.join(input_dir, f"BC_predict_{sim_col}_cal.csv")
-        eva_file = os.path.join(input_dir, f"BC_predict_{sim_col}_eva.csv")
+        cal_file = os.path.join(input_dir,'synthetic', f"BC_predict_{sim_col}_cal.csv")
+        eva_file = os.path.join(input_dir,'synthetic', f"BC_predict_{sim_col}_eva.csv")
         
         if not os.path.exists(cal_file) or not os.path.exists(eva_file):
             print(f"Warning: BC files for {sim_col} do not exist.")
@@ -142,10 +142,10 @@ for file_num in range(1, file_tot_num + 1):
     # Copy base columns from the original file
     base_df = base_df[['Date', 'Obs flow', 'Precip', 'Temp', 'PET', 
                 'syn_no_precip', 'syn_p_pet', 'Temp_at_peak', 
-                'PET_at_peak', 'Obs_flow_at_peak', 'syn_peak1_rate0',
-                'syn_peak1_rate10', 'syn_peak1_rate30', 'syn_peak1_rate50',
-                'syn_peak3_rate10', 'syn_peak3_rate30', 'syn_peak3_rate50',
-                'syn_peak5_rate10', 'syn_peak5_rate30', 'syn_peak5_rate50']].copy()
+                'PET_at_peak', 'Obs_flow_at_peak', 
+                'syn_peak1_rate0','syn_peak1_rate10', 'syn_peak1_rate30', 'syn_peak1_rate50',
+                'syn_peak3_rate0','syn_peak3_rate10', 'syn_peak3_rate30', 'syn_peak3_rate50',
+                'syn_peak5_rate0','syn_peak5_rate10', 'syn_peak5_rate30', 'syn_peak5_rate50']].copy()
     
     # Add synthetic columns for BC predictions
     for sim_col in pred_discharge_cols:
@@ -185,10 +185,7 @@ for file_num in range(1, file_tot_num + 1):
         # Generate synthetic precipitation columns
         new_precip_cols = []
         for peak_length in peak_length_list:
-            for rate in rate_list:
-                if rate == 0 and peak_length != 1:
-                    continue
-                
+            for rate in rate_list:                
                 column_name = f"syn_peak{peak_length}_rate{rate}"
                 new_precip_cols.append(column_name)
                 

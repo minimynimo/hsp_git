@@ -21,11 +21,9 @@ end_date_eva = "2006-12-31"
 # Paths
 input_dir_base = "/data0/funato/hsp/0_out"
 output_dir = "/data0/funato/hsp/0_out/analysis/mass_conservation"
-output_fig_dir = "/data0/funato/hsp/0_out/1_fig/mass_conservation"
 
 # Ensure output directories exist
 os.makedirs(output_dir, exist_ok=True)
-os.makedirs(output_fig_dir, exist_ok=True)
 
 # Load basin characteristics
 basin_char_dir = "/data0/funato/hsp/3_gis_data/GB/0_data/river_basin/dataset_GB/camelsgb_attribute_combined.csv"
@@ -55,7 +53,7 @@ for model in model_list:
         elif model == "BC":
             input_file = f"{input_dir_base}/{model}/varssim_{model}/varssim{file:03d}.csv"
         else:
-            input_file = f"{input_dir_base}/{model}/GB/shap/regional/varssim_{model}/varssim{file:03d}.csv"
+            input_file = f"{input_dir_base}/{model}/GB/regional/varssim_{model}/varssim{file:03d}.csv"
         
         if not os.path.exists(input_file):
             continue
@@ -153,4 +151,3 @@ for model in mass_bias_df['Model'].unique():
 
 print(f"\nDataset saved for visualization analysis.")
 print("Mass bias calculation: abs(sum_obs - sum_sim) / sum_obs")
-

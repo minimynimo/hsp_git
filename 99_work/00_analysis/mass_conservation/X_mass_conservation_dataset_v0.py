@@ -21,11 +21,9 @@ end_date_eva = "2006-12-31"
 # Paths
 input_dir_base = "/data0/funato/hsp/0_out"
 output_dir = "/data0/funato/hsp/0_out/analysis/mass_conservation"
-output_fig_dir = "/data0/funato/hsp/0_out/1_fig/mass_conservation"
 
 # Ensure output directories exist
 os.makedirs(output_dir, exist_ok=True)
-os.makedirs(output_fig_dir, exist_ok=True)
 
 # Load basin characteristics
 basin_char_dir = "/data0/funato/hsp/3_gis_data/GB/0_data/river_basin/dataset_GB/camelsgb_attribute_combined.csv"

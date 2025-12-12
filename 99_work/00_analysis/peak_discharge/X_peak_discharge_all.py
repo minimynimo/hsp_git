@@ -16,7 +16,7 @@ elif model_name == "HBV":
     input_dir = f"/data0/funato/hsp/0_out/HBV/varssim_HBV"
 else:
     input_dir = f"/data0/funato/hsp/0_out/{model_name}/GB/shap/regional/varssim_{model_name}"
-output_dir = f"/data0/funato/hsp/0_out/{model_name}/peak_discharge/"
+output_dir = f"/data0/funato/hsp/0_out/{model_name}/peak_discharge"
 
 os.makedirs(output_dir, exist_ok=True)
 
@@ -30,8 +30,7 @@ end_date_eva = "2001-02-10" # This short period will limit 'annual' analysis to 
 
 # Columns representing different simulated discharge scenarios
 # 'up_peak1_rate0' is now the baseline simulation, analogous to 'og' before.
-sim_discharge_cols = ['peak1_rate0',
-                    'peak1_rate10', 'peak1_rate30', 'peak1_rate50',
+sim_discharge_cols = ['peak1_rate0','peak1_rate10', 'peak1_rate30', 'peak1_rate50',
                     'peak3_rate10', 'peak3_rate30', 'peak3_rate50',
                     'peak5_rate10', 'peak5_rate30', 'peak5_rate50']
 

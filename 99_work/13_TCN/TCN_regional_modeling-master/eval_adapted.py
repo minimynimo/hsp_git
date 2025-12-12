@@ -22,6 +22,7 @@ from tqdm import tqdm
 import copy
 from sklearn.metrics import mean_squared_error
 import re
+import pickle
 
 # ####################### #
 # Global Definitions      #
@@ -316,6 +317,35 @@ class SyntheticFineTuneDataset(Dataset):
 # Main Logic              #
 # ####################### #
 
+def save_basin_model(basin, model, scalers, save_dir):
+    """Save fine-tuned model and scalers for a basin."""
+    save_dir = Path(save_dir)
+    save_dir.mkdir(parents=True, exist_ok=True)
+    
+    model_path = save_dir / f"basin_{basin}_model.pt"
+    scalers_path = save_dir / f"basin_{basin}_scalers.pkl"
+    
+    torch.save(model.state_dict(), model_path)
+    with open(scalers_path, 'wb') as f:
+        pickle.dump(scalers, f)
+
+def load_basin_model(basin, base_model, save_dir):
+    """Load fine-tuned model and scalers for a basin if they exist."""
+    save_dir = Path(save_dir)
+    model_path = save_dir / f"basin_{basin}_model.pt"
+    scalers_path = save_dir / f"basin_{basin}_scalers.pkl"
+    
+    if model_path.exists() and scalers_path.exists():
+        model = copy.deepcopy(base_model)
+        model.load_state_dict(torch.load(model_path, map_location=DEVICE))
+        model.eval()
+        
+        with open(scalers_path, 'rb') as f:
+            scalers = pickle.load(f)
+        
+        return model, scalers
+    return None, None
+
 def fine_tune_basin_model(base_model, basin, cfg, static_attrs):
     """Fine-tune the base model once for a basin using calibration period data."""
     ft_dataset = FineTuneDataset(basin, (GLOBAL_SETTINGS['train_start'], GLOBAL_SETTINGS['train_end']), cfg, static_attrs)
@@ -429,15 +459,28 @@ def main():
 
     output_dir = Path(f"/data0/funato/hsp/0_out/TCN/{GLOBAL_SETTINGS['loc']}/adapted")
     
+    # Directory for saving/loading fine-tuned models
+    adapted_models_dir = Path("/data0/funato/hsp/99_work/13_TCN/TCN_regional_modeling-master/runs_tcn_adapted")
+    adapted_models_dir.mkdir(parents=True, exist_ok=True)
+    
     # Store fine-tuned models and scalers for each basin (fine-tune once, use multiple times)
     basin_models = {}
     basin_scalers = {}
     
     print("\n" + "="*60)
-    print("Fine-tuning models for each basin...")
+    print("Loading or fine-tuning models for each basin...")
     print("="*60)
-    for basin in tqdm(basins_to_process, desc="Fine-tuning basins"):
-        basin_model, scalers = fine_tune_basin_model(base_model, basin, cfg, static_attrs)
+    for basin in tqdm(basins_to_process, desc="Processing basins"):
+        # Try to load existing fine-tuned model
+        basin_model, scalers = load_basin_model(basin, base_model, adapted_models_dir)
+        
+        if basin_model is None:
+            # Fine-tune if not found
+            basin_model, scalers = fine_tune_basin_model(base_model, basin, cfg, static_attrs)
+            if basin_model is not None:
+                # Save the fine-tuned model
+                save_basin_model(basin, basin_model, scalers, adapted_models_dir)
+        
         if basin_model is not None:
             basin_models[basin] = basin_model
             basin_scalers[basin] = scalers
