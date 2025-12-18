@@ -148,5 +148,4 @@ echo ""
 
 ###RUN USING####
 # chmod +x /data0/funato/hsp/99_work/11_RandomForest/RF_regional_modeling-master/run_eval.sh
-# /data0/funato/hsp/99_work/11_RandomForest/RF_regional_modeling-master/run_eval.sh --run_dir /data0/funato/hsp/99_work/11_RandomForest/RF_regional_modeling-master/runs_rf/rf_run_1016_1516_seed300 --n_basins 2  # For testing with 2 basins
 # nohup /data0/funato/hsp/99_work/11_RandomForest/RF_regional_modeling-master/run_eval.sh --run_dir /data0/funato/hsp/99_work/11_RandomForest/RF_regional_modeling-master/runs_rf/rf_run_1120_0000_seed300 > output_eval_rf.log 2>&1 &
