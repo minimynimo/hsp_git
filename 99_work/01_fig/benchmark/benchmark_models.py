@@ -18,8 +18,8 @@ fontsize = 20
 benchmark_list = ["KGE", "NSE", "E1", "VE", "d", "RMSE", "MAE"]
 
 benchmark_limits = {
-    'KGE': {'min': -1, 'max': 1},
-    'NSE': {'min': -1, 'max': 1},
+    'KGE': {'min': 0, 'max': 1},
+    'NSE': {'min': 0, 'max': 1},
     'logNSE': {'min': -150, 'max': 1},
     'E1': {'min': -1, 'max': 1},
     'VE': {'min': -2, 'max': 1},
@@ -29,8 +29,8 @@ benchmark_limits = {
 }
 
 benchmark_limits_cdf = {
-    'KGE': {'min': -1, 'max': 1},
-    'NSE': {'min': -1, 'max': 1},
+    'KGE': {'min': 0, 'max': 1},
+    'NSE': {'min': 0, 'max': 1},
     'logNSE': {'min': -150, 'max': 1},
     'E1': {'min': -1, 'max': 1},
     'VE': {'min': -2, 'max': 1},
@@ -58,17 +58,34 @@ for benchmark in benchmark_list:
     for model in model_list:
         print(f"Processing model: {model}")
 
+        base_path = f"/data0/funato/hsp/0_out/{model}/GB/regional/results"  
+
         if model == "HYPER":
             input_file_cal = f"/data0/funato/hsp/0_out/BC/results/BC_results_cal.csv"
             input_file_eva = f"/data0/funato/hsp/0_out/BC/results/BC_results_eva.csv"
             # Use BC for column names since that's what's in the files
             col_name_cal = f"BC_{benchmark}_cal"
             col_name_eva = f"BC_{benchmark}_eva"
+        elif model == "HBV":
+            input_file_cal = f"/data0/funato/hsp/0_out/HBV/GB/shap/regional/results/HBV_results_cal.csv"
+            input_file_eva = f"/data0/funato/hsp/0_out/HBV/GB/shap/regional/results/HBV_results_eva.csv"
+            col_name_cal = f"HBV_{benchmark}_cal"
+            col_name_eva = f"HBV_{benchmark}_eva"
+        elif model == "RF":
+            input_file_cal = f"/data0/funato/hsp/0_out/RF/GB/regional/results/RF_results_n100_d5_s2_l1_mf0.7_ms0.5_w270_cal.csv"
+            input_file_eva = f"/data0/funato/hsp/0_out/RF/GB/regional/results/RF_results_n100_d5_s2_l1_mf0.7_ms0.5_w270_eva.csv"
+            col_name_cal = benchmark
+            col_name_eva = benchmark
+        elif model == "TCN":
+            input_file_cal = f"/data0/funato/hsp/0_out/TCN/GB/regional/results/TCN_results_ch128-256-512_k7_d0.2_lr0.001_w270_cal.csv"
+            input_file_eva = f"/data0/funato/hsp/0_out/TCN/GB/regional/results/TCN_results_ch128-256-512_k7_d0.2_lr0.001_w270_eva.csv"
+            col_name_cal = benchmark
+            col_name_eva = benchmark
         else:
-            input_file_cal = f"/data0/funato/hsp/0_out/{model}/GB/shap/regional/results/{model}_results_cal.csv"
-            input_file_eva = f"/data0/funato/hsp/0_out/{model}/GB/shap/regional/results/{model}_results_eva.csv"
-            col_name_cal = f"{model}_{benchmark}_cal"
-            col_name_eva = f"{model}_{benchmark}_eva"
+            input_file_cal = f"{base_path}/{model}_results_cal.csv"
+            input_file_eva = f"{base_path}/{model}_results_eva.csv"
+            col_name_cal = benchmark
+            col_name_eva = benchmark
 
         if not os.path.exists(input_file_cal):
             print(f"Input file {input_file_cal} does not exist. Skipping model {model}.")
@@ -111,7 +128,7 @@ for benchmark in benchmark_list:
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(13, 7))
     
     # Calibration box plot
-    bp1 = ax1.boxplot(cal_data, labels=valid_models, patch_artist=True)
+    bp1 = ax1.boxplot(cal_data, tick_labels=valid_models, patch_artist=True)
     for i, (box, model) in enumerate(zip(bp1['boxes'], valid_models)):
         box.set_facecolor(color_list[model])
         box.set_edgecolor('black')
@@ -145,7 +162,7 @@ for benchmark in benchmark_list:
     ax1.grid(True)
 
     # Create box plot for evaluation data
-    bp2 = ax2.boxplot(eva_data, labels=valid_models, patch_artist=True)
+    bp2 = ax2.boxplot(eva_data, tick_labels=valid_models, patch_artist=True)
     for i, (box, model) in enumerate(zip(bp2['boxes'], valid_models)):
         box.set_facecolor(color_list[model])
         box.set_edgecolor('black')
