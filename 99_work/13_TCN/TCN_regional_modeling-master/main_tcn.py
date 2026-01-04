@@ -214,13 +214,15 @@ def get_args() -> Dict:
     parser.add_argument('--run_dir', type=str, help="For evaluation mode.")
     parser.add_argument('--num_workers', type=int, default=2)
     parser.add_argument('--no_static', type=str2bool, default=False)
+    parser.add_argument('--num_levels', type=int, default=8, help='Number of dilation levels (fixed at 8)')
     
     # TCN specific arguments
     parser.add_argument('--batch_size', type=int, default=256)
     parser.add_argument('--epochs', type=int, default=30)
     parser.add_argument('--learning_rate', type=float, default=1e-3)
-    parser.add_argument('--dropout', type=float, default=0.2)
-    parser.add_argument('--kernel_size', type=int, default=7)
+    parser.add_argument('--dropout', type=float, default=0.4)
+    parser.add_argument('--kernel_size', type=int, default=4)
+    parser.add_argument('--num_filters', type=int, default=64)
     parser.add_argument('--num_channels', type=int, nargs='+', default=[32, 64, 128])
 
     cfg = vars(parser.parse_args())
@@ -310,6 +312,8 @@ def train(cfg):
     input_size = len(dyn_cols)
     if not cfg["no_static"]:
         input_size += len(attributes.columns)
+
+    cfg['num_channels'] = [cfg['num_filters']] * cfg['num_levels']
 
     model = TCNModel(input_size=input_size, 
                      num_channels=cfg["num_channels"], 

@@ -32,20 +32,96 @@ color_list = {
     "LSTM": "#9808B2"    # Pink
 }
 
-def BMK(obs_data,sim_data,benchmark):    
-    if benchmark == "NSE":
-        obs_ave = np.mean(obs_data)
-        return 1 - (np.sum(np.square(obs_data - sim_data)) / np.sum(np.square(obs_data - obs_ave)))
-    
-    elif benchmark == "KGE":
-        r = np.corrcoef(obs_data, sim_data)[0, 1]
+
+def BMK(obs_data, sim_data, benchmark):
+    obs_data = np.array(obs_data).flatten()
+    sim_data = np.array(sim_data).flatten()
+
+    mask = ~np.isnan(obs_data) & ~np.isnan(sim_data)
+    obs_data = obs_data[mask]
+    sim_data = sim_data[mask]
+
+    # Not enough paired data to compute meaningful metrics
+    if obs_data.size < 2:
+        return np.nan
+
+    # Small epsilon to prevent division by zero
+    epsilon = 1e-6 
+
+    if benchmark == "KGE":
         obs_ave = np.mean(obs_data)
         sim_ave = np.mean(sim_data)
         obs_std = np.std(obs_data)
         sim_std = np.std(sim_data)
-        obs_std = np.where(obs_std == 0, 1e-6, obs_std)
-        obs_ave = np.where(obs_ave == 0, 1e-6, obs_ave) 
-        return 1 - np.sqrt((r - 1)**2 + ((sim_std / obs_std) - 1)**2 + ((sim_ave / obs_ave) - 1)**2)
+        
+        # 1. Handle Correlation (r)
+        # If standard deviation is effectively 0 for either series, correlation is undefined.
+        # We treat this as 0 correlation (unless both are identical flat lines, but generally 0 is safer).
+        if obs_std < epsilon or sim_std < epsilon:
+            r = 0.0
+        else:
+            r = np.corrcoef(obs_data, sim_data)[0, 1]
+            if np.isnan(r): r = 0.0 # Catch any other numerical instability
+            
+        # 2. Handle Division by Zero in Ratios
+        # Use max(value, epsilon) for denominators
+        denom_std = obs_std if obs_std > epsilon else epsilon
+        denom_ave = obs_ave if abs(obs_ave) > epsilon else epsilon
+        
+        # Calculate KGE
+        # KGE = 1 - sqrt((r-1)^2 + (alpha-1)^2 + (beta-1)^2)
+        term_r = (r - 1)**2
+        term_var = ((sim_std / denom_std) - 1)**2      # Alpha term (Variability)
+        term_bias = ((sim_ave / denom_ave) - 1)**2      # Beta term (Bias)
+        
+        return 1 - np.sqrt(term_r + term_var + term_bias)
+    
+    elif benchmark == "NSE":
+        obs_ave = np.mean(obs_data)
+        denom = np.sum(np.square(obs_data - obs_ave))
+        if denom == 0:
+            return np.nan
+        return 1 - (np.sum(np.square(obs_data - sim_data)) / denom)
+    
+    elif benchmark == "logNSE":
+        temp_obs_data = np.where((obs_data <= 0) | np.isnan(obs_data), 1e-6, obs_data)
+        temp_sim_data = np.where((sim_data <= 0) | np.isnan(sim_data), 1e-6, sim_data)
+        obs_ave = np.mean(temp_obs_data)
+        numer = np.sum((np.log(temp_sim_data) - np.log(temp_obs_data))**2)
+        denom = np.sum((np.log(temp_obs_data) - np.log(obs_ave))**2) + 1e-8
+        return 1 - numer / denom
+    
+    elif benchmark == "E1":
+        obs_ave = np.mean(obs_data)
+        denom = np.sum(np.abs(obs_data - obs_ave))
+        if denom == 0:
+            return np.nan
+        return 1 - (np.sum(np.abs(obs_data - sim_data)) / denom)
+    
+    elif benchmark == "Erel":
+        obs_ave = np.mean(obs_data)
+        temp_obs_data = np.where(obs_data == 0, 1e-6, obs_data)
+        numer = np.sum(np.square((temp_obs_data - sim_data) / temp_obs_data))
+        denom = np.sum(np.square((obs_data - obs_ave) / obs_ave)) + 1e-8
+        return 1 - numer / denom
+    
+    elif benchmark == "VE":
+        obs_sum = np.sum(obs_data)
+        if obs_sum == 0:
+            return np.nan
+        return 1 - np.sum(np.abs(obs_data - sim_data)) / obs_sum
+    
+    elif benchmark == "d":
+        obs_ave = np.mean(obs_data)
+        numer = np.sum(np.square(obs_data - sim_data))
+        denom = np.sum(np.square(np.abs(sim_data - obs_ave) + np.abs(obs_data - obs_ave))) + 1e-8
+        return 1 - numer / denom
+    
+    elif benchmark == "RMSE":
+        return np.sqrt(np.mean(np.square(obs_data - sim_data)))
+    
+    elif benchmark == "MAE":
+        return np.mean(np.abs(obs_data - sim_data))
     
 
 # Load data for each model
@@ -152,7 +228,7 @@ plt.close()
 
 ### FIGURE 5: Peak Days vs Mean Time Lag
 # This shows peak durations on x-axis and mean time lag between observed and simulated results
-fig, ax = plt.subplots(figsize=(11, 7))
+fig, ax = plt.subplots(figsize=(10, 6))
 #space between subplots
 fig.subplots_adjust(wspace=0.4)
 
@@ -179,12 +255,12 @@ for model in model_list:
     # compare the lag of the HBV with the others
     if model == "HBV":
         mean_lags_hbv = mean_lags
-        ax.plot([1, 3, 5], mean_lags_hbv, marker='o', linewidth=2, markersize=6,
+        ax.plot([1, 3, 5], mean_lags_hbv, marker='o', linewidth=2.5, markersize=7,
                 label=f"{model}", color=color_list[model])
     else:
         kge = BMK(mean_lags_hbv, mean_lags, 'KGE')    
         # Plot the line for this model
-        ax.plot([1, 3, 5], mean_lags, marker='o', linewidth=2, markersize=6, 
+        ax.plot([1, 3, 5], mean_lags, marker='o', linewidth=2.5, markersize=7, 
                     label=f"{model}\n(KGE: {kge:.2f})", color=color_list[model])
 
 ax.set_xlabel('Peak Duration [d]', fontsize=fs)
@@ -195,8 +271,8 @@ ax.set_ylim(0,8)
 ax.grid(True, alpha=0.3)
 
 # add the legend at the bottom of the figure
-plt.legend(fontsize=fs*0.8, loc='upper right', ncol=1, bbox_to_anchor=(1.5, 1))
-plt.title('Mean Time Lag by Peak Duration\n(Rate 30%)', fontsize=fs)
+plt.legend(fontsize=fs*0.9, loc='upper right', ncol=1, bbox_to_anchor=(1.5, 1))
+#plt.title('Mean Time Lag by Peak Duration\n(Rate 30%)', fontsize=fs)
 plt.tight_layout()
 plt.savefig(f"{output_dir}/peak_days_vs_mean_time_lag_rate30.png", dpi=300, bbox_inches='tight')
 plt.close()
@@ -323,15 +399,28 @@ for model in model_list:
         # Compare medians arrays directly
         valid_indices = ~(np.isnan(medians) | np.isnan(hbv_medians))
         if np.sum(valid_indices) > 1:  # Need at least 2 points for correlation
-            coeff = np.corrcoef(np.array(hbv_medians)[valid_indices], np.array(medians)[valid_indices])[0, 1]
-            kge = BMK(np.array(hbv_medians)[valid_indices], np.array(medians)[valid_indices], "KGE")
+            hbv_vals = np.array(hbv_medians)[valid_indices]
+            mod_vals = np.array(medians)[valid_indices]
+            # guard against zero variance which causes np.corrcoef warnings
+            if np.std(hbv_vals) == 0 or np.std(mod_vals) == 0:
+                coeff = np.nan
+            else:
+                coeff = np.corrcoef(hbv_vals, mod_vals)[0, 1]
+            kge = BMK(hbv_vals, mod_vals, "KGE")
         else:
             coeff = np.nan
             kge = np.nan
 
+    # Prepare KGE label safely
+    if model != "HBV":
+        kge_label = f"{kge:.2f}" if (not np.isnan(kge)) else "n/a"
+        label_text = f"{model} \n(KGE: {kge_label})"
+    else:
+        label_text = "HBV"
+
     # Plot clean median line
     ax3.plot(rate_labels, medians, 'o-', color=color_list[model], 
-             linewidth=3, markersize=8, label=f'{model} \n(KGE: {kge:.2f})' if model != "HBV" else "HBV", zorder=3)
+             linewidth=3, markersize=8, label=label_text, zorder=3)
 
 # Formatting
 ax3.set_xlabel('Precipitation Rate [%]', fontsize=fs)
@@ -360,11 +449,11 @@ plt.close()
 
 ### FIGURE 3: Peak Discharge vs Peak Duration - Rate Comparison Summary   
 # Create a summary comparison across all rates
-fig, axes = plt.subplots(1, 3, figsize=(18, 6))
+fig, axes = plt.subplots(1, 4, figsize=(24, 6))
 fig.suptitle('Peak Discharge vs Peak Duration', 
                      fontsize=fs)
 
-for rate_idx, rate in enumerate([10, 30, 50]):  # Skip rate 0
+for rate_idx, rate in enumerate([0, 10, 30, 50]):  # Skip rate 0
     ax = axes[rate_idx]
     
     for model in model_list:
@@ -412,7 +501,7 @@ plt.close()
 
 ### FIGURE 4: Peak Flow vs Precipitation Rate by Peak Duration
 # This shows precipitation rate on x-axis and mean peak flow per model for each peak length
-fig, axes = plt.subplots(1, 3, figsize=(19, 8))
+fig, axes = plt.subplots(1, 3, figsize=(17, 9))
 fig.subplots_adjust(wspace=0.4)
 
 for i, peak_duration in enumerate([1, 3, 5]):
@@ -428,8 +517,8 @@ for i, peak_duration in enumerate([1, 3, 5]):
             rates = [0, 10, 30, 50]
             x_values = [0, 10, 30, 50]
         else:
-            rates = [10, 30, 50]
-            x_values = [10, 30, 50]
+            rates = [0, 10, 30, 50]
+            x_values = [0, 10, 30, 50]
         
         # For each precipitation rate, get the peak flow for this peak duration
         for rate in rates:
@@ -456,25 +545,49 @@ for i, peak_duration in enumerate([1, 3, 5]):
     if peak_duration == 1:
         axes[i].set_xticks([0, 10, 30, 50])
     else:
-        axes[i].set_xticks([10, 30, 50])
+        axes[i].set_xticks([0,10, 30, 50])
     
     axes[i].grid(True, alpha=0.3)
-    axes[i].set_ylim(0, 135)  # Set a common y-limit for better comparison
+    axes[i].set_ylim(0, 100)  # Set a common y-limit for better comparison
 
 fig.legend(model_list, fontsize=fs*0.9, loc='lower center', ncol=6, bbox_to_anchor=(0.5, -0.1))
 
-plt.suptitle('Median Peak Discharge vs Precipitation Rate by Peak Duration', fontsize=fs)
+#plt.suptitle('Median Peak Discharge vs Precipitation Rate by Peak Duration', fontsize=fs)
 plt.tight_layout()
-plt.savefig(f"{output_dir}/peak_flow_vs_precip_rate_by_duration.png", dpi=300, bbox_inches='tight')
+plt.savefig(f"{output_dir}/f05_peak_flow_vs_precip_rate_by_duration.png", dpi=300, bbox_inches='tight')
 plt.close()
+
+# save the plotted values in f05_peak_flow_vs_precip_rate_by_duration as a csv file
+csv_output = os.path.join(output_dir, "f05_peak_flow_vs_precip_rate_by_duration_values.csv")
+with open(csv_output, 'w') as f:
+    f.write("Model,Peak Duration,Precipitation Rate,Median Peak Discharge\n")
+    for peak_duration in [1, 3, 5]:
+        for model in model_list:
+            if model not in all_model_data:
+                continue
+            
+            df = all_model_data[model]
+            for rate in [0, 10, 30, 50]:
+                col_name = f'sim_peak_flow_peak{peak_duration}_rate{rate}'
+                if col_name in df.columns:
+                    data = df[col_name].dropna().values
+                    if len(data) > 0:
+                        median_value = np.median(data)
+                    else:
+                        median_value = np.nan
+                else:
+                    median_value = np.nan
+                
+                f.write(f"{model},{peak_duration},{rate},{median_value}\n")
+
 
 ### FIGURE 5: Peak Days vs Mean Time Lag
 # This shows peak durations on x-axis and mean time lag between observed and simulated results
-fig, axes = plt.subplots(1, 3, figsize=(20, 7))
+fig, axes = plt.subplots(1, 4, figsize=(20, 6))
 #space between subplots
 fig.subplots_adjust(wspace=0.4)
 
-for i, rate in enumerate([10, 30, 50]):
+for i, rate in enumerate([0, 10, 30, 50]):
     for model in model_list:
         if model not in all_model_data:
             continue
@@ -495,7 +608,7 @@ for i, rate in enumerate([10, 30, 50]):
                 mean_lags.append(np.nan)
         
         # Plot the line for this model
-        axes[i].plot([1, 3, 5], mean_lags, marker='o', linewidth=2, markersize=6, 
+        axes[i].plot([1, 3, 5], mean_lags, marker='o', linewidth=2.5, markersize=7, 
                     label=model, color=color_list[model])
     
     axes[i].set_xlabel('Peak Duration [d]', fontsize=fs)
@@ -509,18 +622,41 @@ for i, rate in enumerate([10, 30, 50]):
 # add the legend at the bottom of the figure
 fig.legend(model_list, fontsize=fs*0.8, loc='lower center', ncol=6, bbox_to_anchor=(0.5, -0.1))
 
-plt.suptitle('Mean Time Lag vs Peak Duration by Rate', fontsize=fs)
+#plt.suptitle('Mean Time Lag vs Peak Duration by Rate', fontsize=fs)
 plt.tight_layout()
-plt.savefig(f"{output_dir}/peak_days_vs_mean_time_lag.png", dpi=300, bbox_inches='tight')
+plt.savefig(f"{output_dir}/f05_peak_days_vs_mean_time_lag.png", dpi=300, bbox_inches='tight')
 plt.close()
+
+# save the plotted values in f05_peak_days_vs_mean_time_lag as a csv file
+csv_output_lag = os.path.join(output_dir, "f05_peak_days_vs_mean_time_lag_values.csv")
+with open(csv_output_lag, 'w') as f:    
+    f.write("Model,Precipitation Rate,Peak Duration,Mean Time Lag\n")
+    for rate in [0, 10, 30, 50]:
+        for model in model_list:
+            if model not in all_model_data:
+                continue
+            
+            df = all_model_data[model]
+            for peak_duration in [1, 3, 5]:
+                lag_col = f'sim_peak_lag_peak{peak_duration}_rate{rate}'
+                if lag_col in df.columns:
+                    data = df[lag_col].dropna().values
+                    if len(data) > 0:
+                        mean_lag = np.mean(data)
+                    else:
+                        mean_lag = np.nan
+                else:
+                    mean_lag = np.nan
+                
+                f.write(f"{model},{rate},{peak_duration},{mean_lag}\n")
 
 ### FIGURE 5: Peak Days vs Median Time Lag
 # This shows peak durations on x-axis and median time lag between observed and simulated results
-fig, axes = plt.subplots(1, 3, figsize=(18, 6))
+fig, axes = plt.subplots(1, 4, figsize=(24, 6))
 #space between subplots
 fig.subplots_adjust(wspace=0.4)
 
-for i, rate in enumerate([10, 30, 50]):
+for i, rate in enumerate([0, 10, 30, 50]):
     for model in model_list:
         if model not in all_model_data:
             continue
@@ -578,8 +714,8 @@ for i, peak_duration in enumerate([1, 3, 5]):
         rates = [0, 10, 30, 50]
         x_values = [0, 10, 30, 50]
     else:
-        rates = [10, 30, 50]
-        x_values = [10, 30, 50]
+        rates = [0, 10, 30, 50]
+        x_values = [0, 10, 30, 50]
     
     for model in model_list:
         if model not in all_model_data:
@@ -621,7 +757,7 @@ for i, peak_duration in enumerate([1, 3, 5]):
     axes[i].grid(True, alpha=0.3)
 
 fig.legend(model_list, fontsize=fs*0.9, loc='lower center', ncol=6, bbox_to_anchor=(0.5, -0.1))
-plt.suptitle('Mean Time Lag vs Precipitation Rate by Peak Duration', fontsize=fs)
+#plt.suptitle('Mean Time Lag vs Precipitation Rate by Peak Duration', fontsize=fs)
 plt.tight_layout()
 plt.savefig(f"{output_dir}/peak_time_lag_vs_precip_rate_by_duration.png", dpi=300, bbox_inches='tight')
 plt.close()
@@ -637,8 +773,8 @@ for i, peak_duration in enumerate([1, 3, 5]):
         rates = [0, 10, 30, 50]
         x_values = [0, 10, 30, 50]
     else:
-        rates = [10, 30, 50]
-        x_values = [10, 30, 50]
+        rates = [0, 10, 30, 50]
+        x_values = [0, 10, 30, 50]
     
     for model in model_list:
         if model not in all_model_data:

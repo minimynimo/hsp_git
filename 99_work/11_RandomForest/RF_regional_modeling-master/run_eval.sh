@@ -11,7 +11,7 @@ RUN_DIR=""
 N_BASINS=""
 PYTHON_PATH="/data0/funato/hsp/.venv/bin/python"
 
-START_CORE=3 # 1 indexed
+START_CORE=8 # 1 indexed
 CORES=2
 END_CORE=$((START_CORE + CORES - 1))
 
@@ -116,10 +116,10 @@ if [[ -n "$N_BASINS" ]]; then
 fi
 
 # Run regional evaluation
-#run_evaluation "regional" "/data0/funato/hsp/99_work/11_RandomForest/RF_regional_modeling-master/eval_regional.py"
+run_evaluation "regional" "/data0/funato/hsp/99_work/11_RandomForest/RF_regional_modeling-master/eval_regional.py"
 
 # Run adapted evaluation
-run_evaluation "adapted" "/data0/funato/hsp/99_work/11_RandomForest/RF_regional_modeling-master/eval_adapted.py"
+#run_evaluation "adapted" "/data0/funato/hsp/99_work/11_RandomForest/RF_regional_modeling-master/eval_adapted.py"
 
 echo ""
 echo "========================================="
@@ -148,4 +148,4 @@ echo ""
 
 ###RUN USING####
 # chmod +x /data0/funato/hsp/99_work/11_RandomForest/RF_regional_modeling-master/run_eval.sh
-# nohup /data0/funato/hsp/99_work/11_RandomForest/RF_regional_modeling-master/run_eval.sh --run_dir /data0/funato/hsp/99_work/11_RandomForest/RF_regional_modeling-master/runs_rf/rf_run_1120_0000_seed300 > output_eval_rf.log 2>&1 &
+# nohup /data0/funato/hsp/99_work/11_RandomForest/RF_regional_modeling-master/run_eval.sh --run_dir /data0/funato/hsp/99_work/11_RandomForest/RF_regional_modeling-master/runs_rf/rf_run_1120_0000_seed300 > output_eval_rf_regional.log 2>&1 &

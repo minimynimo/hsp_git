@@ -191,7 +191,7 @@ else
         run_evaluation "${combinations[$i]}" $core $job_id &
         job_pids+=($!)
         
-        ((core_idx++))
+        ((++core_idx))
         
         # Wait if we've used all cores
         if [ $((core_idx % NUM_CORES)) -eq 0 ]; then
@@ -223,7 +223,7 @@ echo "  where hp_string = n<n_estimators>_l<min_samples_leaf>_f<max_features>"
 echo ""
 
 ###RUN USING####
-# chmod +x /data0/funato/hsp/99_work/11_RandomForest/RF_regional_modeling-master/run_eval.sh
-# /data0/funato/hsp/99_work/11_RandomForest/RF_regional_modeling-master/run_eval.sh --start_core 0 --num_cores 8
-# /data0/funato/hsp/99_work/11_RandomForest/RF_regional_modeling-master/run_eval.sh --start_core 0 --num_cores 2 --n_basins 5  # Testing
-# nohup /data0/funato/hsp/99_work/11_RandomForest/RF_regional_modeling-master/run_eval.sh --start_core 0 --num_cores 6 > eval_hp_rf.log 2>&1 &
+# chmod +x /data0/funato/hsp/hsp_git/99_work/11_RandomForest/RF_regional_modeling-master/run_eval_hp.sh
+# /data0/funato/hsp/hsp_git/99_work/11_RandomForest/RF_regional_modeling-master/run_eval_hp.sh --start_core 0 --num_cores 8
+# /data0/funato/hsp/hsp_git/99_work/11_RandomForest/RF_regional_modeling-master/run_eval_hp.sh --start_core 0 --num_cores 2 --n_basins 5  # Testing
+# /data0/funato/hsp/hsp_git/99_work/11_RandomForest/RF_regional_modeling-master/run_eval_hp.sh --start_core 0 --num_cores 6 > eval_hp_rf.log 2>&1 &

@@ -96,47 +96,68 @@ def load_data(data_name, file_num):
     return df
 
 
-def BMK(obs_data,sim_data,benchmark):    
-    if benchmark == "NSE":
-        obs_ave = np.mean(obs_data)
-        return 1 - (np.sum(np.square(obs_data - sim_data)) / np.sum(np.square(obs_data - obs_ave)))
-    
-    elif benchmark == "KGE":
+
+def BMK(obs_data, sim_data, benchmark):
+    obs_data = np.array(obs_data).flatten()
+    sim_data = np.array(sim_data).flatten()
+
+    mask = ~np.isnan(obs_data) & ~np.isnan(sim_data)
+    obs_data = obs_data[mask]
+    sim_data = sim_data[mask]
+
+    if benchmark == "KGE":
+        # Handle edge cases
+        if np.std(obs_data) == 0 or np.std(sim_data) == 0:
+            return np.nan
+        if np.mean(obs_data) == 0:
+            return np.nan
+            
         r = np.corrcoef(obs_data, sim_data)[0, 1]
         obs_ave = np.mean(obs_data)
         sim_ave = np.mean(sim_data)
         obs_std = np.std(obs_data)
         sim_std = np.std(sim_data)
-        obs_std = np.where(obs_std == 0, 1e-6, obs_std)
-        obs_ave = np.where(obs_ave == 0, 1e-6, obs_ave) 
-        return 1 - np.sqrt((r - 1)**2 + ((sim_std / obs_std) - 1)**2 + ((sim_ave / obs_ave) - 1)**2)
+        return 1 - np.sqrt((r - 1)**2 + ((sim_std / obs_std) - 1)**2 + ((sim_ave / obs_ave) - 1)**2) 
+    
+    elif benchmark == "NSE":
+        obs_ave = np.mean(obs_data)
+        denom = np.sum(np.square(obs_data - obs_ave))
+        if denom == 0:
+            return np.nan
+        return 1 - (np.sum(np.square(obs_data - sim_data)) / denom)
     
     elif benchmark == "logNSE":
         temp_obs_data = np.where((obs_data <= 0) | np.isnan(obs_data), 1e-6, obs_data)
         temp_sim_data = np.where((sim_data <= 0) | np.isnan(sim_data), 1e-6, sim_data)
         obs_ave = np.mean(temp_obs_data)
         numer = np.sum((np.log(temp_sim_data) - np.log(temp_obs_data))**2)
-        denom = np.sum((np.log(temp_obs_data) - np.log(obs_ave))**2)
+        denom = np.sum((np.log(temp_obs_data) - np.log(obs_ave))**2) + 1e-8
         return 1 - numer / denom
     
     elif benchmark == "E1":
         obs_ave = np.mean(obs_data)
-        return 1 - (np.sum(np.abs(obs_data - sim_data)) / np.sum(np.abs(obs_data - obs_ave)))
+        denom = np.sum(np.abs(obs_data - obs_ave))
+        if denom == 0:
+            return np.nan
+        return 1 - (np.sum(np.abs(obs_data - sim_data)) / denom)
     
     elif benchmark == "Erel":
         obs_ave = np.mean(obs_data)
         temp_obs_data = np.where(obs_data == 0, 1e-6, obs_data)
         numer = np.sum(np.square((temp_obs_data - sim_data) / temp_obs_data))
-        denom = np.sum(np.square((obs_data - obs_ave) / obs_ave))
+        denom = np.sum(np.square((obs_data - obs_ave) / obs_ave)) + 1e-8
         return 1 - numer / denom
     
     elif benchmark == "VE":
-        return 1 - np.sum(np.abs(obs_data - sim_data)) / np.sum(obs_data)
+        obs_sum = np.sum(obs_data)
+        if obs_sum == 0:
+            return np.nan
+        return 1 - np.sum(np.abs(obs_data - sim_data)) / obs_sum
     
     elif benchmark == "d":
         obs_ave = np.mean(obs_data)
         numer = np.sum(np.square(obs_data - sim_data))
-        denom = np.sum(np.square(np.abs(sim_data - obs_ave) + np.abs(obs_data - obs_ave)))
+        denom = np.sum(np.square(np.abs(sim_data - obs_ave) + np.abs(obs_data - obs_ave))) + 1e-8
         return 1 - numer / denom
     
     elif benchmark == "RMSE":

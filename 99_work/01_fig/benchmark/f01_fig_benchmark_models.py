@@ -45,7 +45,14 @@ color_list = {
     "RF":   "#FF7F00",   # Red
     "XGB":  "#9C4803",   # Bright Orange
     "TCN":  "#E41A1C",   # Reddish Purple / Magenta
-    "LSTM": "#9808B2"    # Pink
+    "LSTM": "#9808B2"    # Purple
+}
+
+param_tag_dict = {
+    "RF": "_n100_d5_s2_l1_mf0.7_ms0.5_w270",
+    "XGB": "",
+    "TCN": "_n64_k4_d0.4",
+    "LSTM": "_hs256_do0.2"
 }
 
 
@@ -71,19 +78,9 @@ for benchmark in benchmark_list:
             input_file_eva = f"/data0/funato/hsp/0_out/HBV/GB/shap/regional/results/HBV_results_eva.csv"
             col_name_cal = f"HBV_{benchmark}_cal"
             col_name_eva = f"HBV_{benchmark}_eva"
-        elif model == "RF":
-            input_file_cal = f"/data0/funato/hsp/0_out/RF/GB/regional/results/RF_results_n100_d5_s2_l1_mf0.7_ms0.5_w270_cal.csv"
-            input_file_eva = f"/data0/funato/hsp/0_out/RF/GB/regional/results/RF_results_n100_d5_s2_l1_mf0.7_ms0.5_w270_eva.csv"
-            col_name_cal = benchmark
-            col_name_eva = benchmark
-        elif model == "TCN":
-            input_file_cal = f"/data0/funato/hsp/0_out/TCN/GB/regional/results/TCN_results_ch128-256-512_k7_d0.2_lr0.001_w270_cal.csv"
-            input_file_eva = f"/data0/funato/hsp/0_out/TCN/GB/regional/results/TCN_results_ch128-256-512_k7_d0.2_lr0.001_w270_eva.csv"
-            col_name_cal = benchmark
-            col_name_eva = benchmark
         else:
-            input_file_cal = f"{base_path}/{model}_results_cal.csv"
-            input_file_eva = f"{base_path}/{model}_results_eva.csv"
+            input_file_cal = f"/data0/funato/hsp/0_out/{model}/GB/regional/results/{model}_results{param_tag_dict.get(model, '')}_cal.csv"
+            input_file_eva = f"/data0/funato/hsp/0_out/{model}/GB/regional/results/{model}_results{param_tag_dict.get(model, '')}_eva.csv"
             col_name_cal = benchmark
             col_name_eva = benchmark
 
@@ -125,7 +122,7 @@ for benchmark in benchmark_list:
     print(f"Valid models for {benchmark}: {valid_models}")
 
     # Create box plot for calibration and evaluation data
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(13, 7))
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
     
     # Calibration box plot
     bp1 = ax1.boxplot(cal_data, tick_labels=valid_models, patch_artist=True)
@@ -180,7 +177,7 @@ for benchmark in benchmark_list:
     ax2.tick_params(axis='y', labelsize=fontsize)
     ax2.grid(True)
     plt.tight_layout()
-    plt.savefig(os.path.join(output_dir_box, f"{benchmark}_box_plot.png"), dpi=300, bbox_inches='tight')
+    plt.savefig(os.path.join(output_dir_box, f"{benchmark}_box_plot.png"), dpi=400, bbox_inches='tight')
     plt.close()
 
     # Create CDF plot for calibration and evaluation data
@@ -216,7 +213,7 @@ for benchmark in benchmark_list:
     ax2.set_ylim(0,1)
     ax2.set_xlim(benchmark_limits_cdf[benchmark]['min'], benchmark_limits_cdf[benchmark]['max'])
     plt.tight_layout()
-    plt.savefig(os.path.join(output_dir_cdf, f"{benchmark}_cdf_plot.png"), dpi=300, bbox_inches='tight')
+    plt.savefig(os.path.join(output_dir_cdf, f"{benchmark}_cdf_plot.png"), dpi=400, bbox_inches='tight')
     plt.close() 
 
     

@@ -20,12 +20,18 @@ from sklearn.metrics import mean_squared_error
 from papercode.lstm import LSTM
 from papercode.ealstm import EALSTM
 
+
+
 # ####################### #
 # Global Definitions      #
 # ####################### #
 
-syn_precip_cols = ['syn_no_precip', 
+"""syn_precip_cols = ['syn_no_precip', 
                    'syn_peak1_rate0', 'syn_peak1_rate10', 'syn_peak1_rate30', 'syn_peak1_rate50',
+                   'syn_peak3_rate0', 'syn_peak3_rate10', 'syn_peak3_rate30', 'syn_peak3_rate50',
+                   'syn_peak5_rate0', 'syn_peak5_rate10', 'syn_peak5_rate30', 'syn_peak5_rate50']"""
+
+syn_precip_cols = ['syn_peak1_rate30', 'syn_peak1_rate50',
                    'syn_peak3_rate0', 'syn_peak3_rate10', 'syn_peak3_rate30', 'syn_peak3_rate50',
                    'syn_peak5_rate0', 'syn_peak5_rate10', 'syn_peak5_rate30', 'syn_peak5_rate50']
 
@@ -39,7 +45,7 @@ GLOBAL_SETTINGS = {'loc': 'GB',
 benchmark_list = ["NSE", "KGE", "E1", "VE", "d", "RMSE", "MAE"]
 
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-DEVICE = torch.device("cpu")  # Force CPU for debugging
+#DEVICE = torch.device("cpu")  # Force CPU for debugging
 
 # ####################### #
 # Model Definition        #
@@ -395,12 +401,16 @@ def main():
     val_end = pd.to_datetime(GLOBAL_SETTINGS['val_end'])
     
     output_base = Path(f"/data0/funato/hsp/0_out/LSTM/{GLOBAL_SETTINGS['loc']}/regional")
+
+
+
+    param_tag = f"hs{cfg['hidden_size']}_do{cfg.get('dropout', 0.0)}_e{args.model_epoch}"
     
     # Evaluate cal and eva periods with incremental saving
     for name, dates in {'cal': (train_start, train_end), 'eva': (val_start, val_end)}.items():
         print(f"\nEvaluating {name.upper()} period...")
         
-        pred_path = output_base / "predict" / f"LSTM_predict_{name}.csv"
+        pred_path = output_base / "predict" / f"LSTM_predict_{param_tag}_{name}.csv"
         pred_path.parent.mkdir(parents=True, exist_ok=True)
         
         all_metrics = []
@@ -442,7 +452,7 @@ def main():
             
             # Save metrics
             metrics_df = pd.DataFrame(all_metrics)
-            results_path = output_base / "results" / f"LSTM_results_{name}.csv"
+            results_path = output_base / "results" / f"LSTM_results_{param_tag}_{name}.csv"
             results_path.parent.mkdir(parents=True, exist_ok=True)
             metrics_df.to_csv(results_path, index=False)
             print(f"Metrics saved to {results_path}")
@@ -454,7 +464,7 @@ def main():
     for syn_col in syn_precip_cols:
         syn_dates = (val_start, pd.to_datetime('2001-02-10') if 'peak' in syn_col else val_end)
         
-        pred_path = output_base / "predict" / "synthetic" / f"LSTM_predict_{syn_col}_eva.csv"
+        pred_path = output_base / "predict" / "synthetic" / f"LSTM_predict_{param_tag}_{syn_col}_eva.csv"
         pred_path.parent.mkdir(parents=True, exist_ok=True)
         
         first_basin = True

@@ -5,13 +5,29 @@ matplotlib.use('Agg') # Use 'Agg' backend for non-interactive plotting
 
 import numpy as np
 import os
+
+# --- GPU CONFIGURATION CHANGES START ---
+# Move the fallback flag to XLA_FLAGS where it belongs
 os.environ["TF_XLA_FLAGS"] = "--tf_xla_enable_xla_devices=false"
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # 0 = all messages, 3 = only errors
-os.environ['CUDA_VISIBLE_DEVICES'] = ''  # Force CPU usage to avoid CUDA compilation issues
+os.environ["XLA_FLAGS"] = "--xla_gpu_unsafe_fallback_to_driver_on_ptxas_not_found=true"
+
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'  # 0 = all, 2 = warnings/errors, 3 = errors
+os.environ['CUDA_VISIBLE_DEVICES'] = '0'  # Select GPU 0
 
 import tensorflow as tf
-# Force TensorFlow to use CPU only
-tf.config.set_visible_devices([], 'GPU')
+
+# Check for GPUs and set memory growth to avoid allocating all memory at once
+gpus = tf.config.list_physical_devices('GPU')
+if gpus:
+    try:
+        for gpu in gpus:
+            tf.config.experimental.set_memory_growth(gpu, True)
+        print(f"✅ GPU detected and configured: {gpus}")
+    except RuntimeError as e:
+        print(f"❌ GPU Error: {e}")
+else:
+    print("⚠️ No GPU detected. Running on CPU.")
+# --- GPU CONFIGURATION CHANGES END ---
 
 from keras.layers import Dense
 from keras.layers import Input
@@ -42,12 +58,15 @@ file_list = list(range(1, file_tot_num+1))
 
 input_dim = 3
 
-timesteps = 365
-epochs = 50 # Changed from 5 to 50 for better training potential
-batch_size = 64
+timesteps = 270
+epochs = 50 
+batch_size = 32
 nb_filters = 128
 kernel_size = 4
 nb_stacks = 1
+dropout_rate = 0.2
+
+param_tag = f"f{nb_filters}_k{kernel_size}_d{dropout_rate}"
 
 
 start_date_cal = '1993-01-01'
@@ -59,7 +78,7 @@ output_dir = f"/data0/funato/hsp/0_out/TCN/{loc}/individual"
 os.makedirs(output_dir, exist_ok=True)
 os.makedirs(output_dir + "/predict", exist_ok=True)
 os.makedirs(output_dir + "/results", exist_ok=True)
-os.makedirs(output_dir + "/hydrographs", exist_ok=True) # New directory for hydrographs
+os.makedirs(output_dir + "/hydrographs", exist_ok=True) 
 
 early_stopping = EarlyStopping(
     monitor='val_loss', patience=5, restore_best_weights=True
@@ -99,15 +118,14 @@ def BMK(obs_data,sim_data,benchmark):
     sim_data = sim_data.flatten()
 
     # Handle cases where obs_data might be all zero or very close to zero
-    # This prevents division by zero or extremely large values in some metrics
     if np.sum(obs_data) == 0 and benchmark not in ["RMSE", "MAE"]:
-        return np.nan # Or some other indicator for undefined metric
+        return np.nan 
 
     if benchmark == "NSE":
         obs_ave = np.mean(obs_data)
         # Avoid division by zero if obs_data is constant
         if np.sum(np.square(obs_data - obs_ave)) == 0:
-            return 1.0 if np.all(obs_data == sim_data) else np.nan # Perfect match for constant series
+            return 1.0 if np.all(obs_data == sim_data) else np.nan 
         return 1 - (np.sum(np.square(obs_data - sim_data)) / np.sum(np.square(obs_data - obs_ave)))
     
     elif benchmark == "KGE":
@@ -132,7 +150,7 @@ def BMK(obs_data,sim_data,benchmark):
     
     elif benchmark == "VE":
         if np.sum(obs_data) == 0:
-             return 1.0 if np.all(obs_data == sim_data) else np.nan # If observed is zero, perfect if sim is also zero
+             return 1.0 if np.all(obs_data == sim_data) else np.nan 
         return 1 - np.sum(np.abs(obs_data - sim_data)) / np.sum(obs_data)
     
     elif benchmark == "d":
@@ -227,7 +245,8 @@ for file_num in file_list:
         nb_filters=nb_filters,
         kernel_size=kernel_size,
         nb_stacks=nb_stacks,
-        return_sequences=False
+        return_sequences=False,
+        dropout_rate=dropout_rate
     )(model_in)
 
     # Output layer
@@ -238,11 +257,11 @@ for file_num in file_list:
     TCN_model.compile(optimizer='adam', loss='mse')
 
     # Train the model on this basin's data
-    TCN_model.fit(input_cal_seq, target_cal_seq, epochs=epochs, validation_split=0.2, callbacks=[early_stopping], verbose=0)
+    TCN_model.fit(input_cal_seq, target_cal_seq, epochs=epochs, batch_size=batch_size, validation_split=0.2, callbacks=[early_stopping], verbose=0)
 
     ### MAKE PREDICTIONS ###
-    predict_cal_basin = TCN_model.predict(input_cal_seq, verbose=0).flatten()
-    predict_eva_basin = TCN_model.predict(input_eva_seq, verbose=0).flatten()
+    predict_cal_basin = TCN_model.predict(input_cal_seq, batch_size=batch_size, verbose=0).flatten()
+    predict_eva_basin = TCN_model.predict(input_eva_seq, batch_size=batch_size, verbose=0).flatten()
     
     predict_cal_basin[predict_cal_basin < 0] = 0
     predict_eva_basin[predict_eva_basin < 0] = 0
@@ -260,15 +279,15 @@ for file_num in file_list:
         date_row_cal = ['Date'] + [str(date.date()) for date in predict_cal_dates]
         date_row_eva = ['Date'] + [str(date.date()) for date in predict_eva_dates]
 
-        with open(output_dir + f"/predict/TCN_predict_cal.csv", 'w') as file:
+        with open(output_dir + f"/predict/TCN_predict_{param_tag}_cal.csv", 'w') as file:
             pd.DataFrame([date_row_cal]).to_csv(file, header=False, index=False)
-        with open(output_dir + f"/predict/TCN_predict_eva.csv", 'w') as file:
+        with open(output_dir + f"/predict/TCN_predict_{param_tag}_eva.csv", 'w') as file:
             pd.DataFrame([date_row_eva]).to_csv(file, header=False, index=False)
 
     # Append predictions
-    with open(output_dir + f"/predict/TCN_predict_cal.csv", 'a') as file:
+    with open(output_dir + f"/predict/TCN_predict_{param_tag}_cal.csv", 'a') as file:
         pd.DataFrame([file_row_cal]).to_csv(file, header=False, index=False)
-    with open(output_dir + f"/predict/TCN_predict_eva.csv", 'a') as file:
+    with open(output_dir + f"/predict/TCN_predict_{param_tag}_eva.csv", 'a') as file:
         pd.DataFrame([file_row_eva]).to_csv(file, header=False, index=False)
 
     ### CALCULATE BENCHMARKS ###
@@ -288,10 +307,10 @@ for file_num in file_list:
 
     # Save results incrementally
     df_results_cal = pd.DataFrame(results_cal)
-    df_results_cal.to_csv(output_dir + f'/results/TCN_results_cal.csv', index=False, header=True)
+    df_results_cal.to_csv(output_dir + f'/results/TCN_results_{param_tag}_cal.csv', index=False, header=True)
 
     df_results_eva = pd.DataFrame(results_eva)
-    df_results_eva.to_csv(output_dir + f'/results/TCN_results_eva.csv', index=False, header=True)
+    df_results_eva.to_csv(output_dir + f'/results/TCN_results_{param_tag}_eva.csv', index=False, header=True)
 
     print(f"file_num: {file_num}, NSE_cal: {BMK(target_cal_seq, predict_cal_basin, 'NSE'):.4f}, NSE_eva: {BMK(target_eva_seq, predict_eva_basin, 'NSE'):.4f}")
 
@@ -311,9 +330,9 @@ log_file.close()
 
 # Final save (redundant but ensures final state is saved)
 df_results_cal = pd.DataFrame(results_cal)
-df_results_cal.to_csv(output_dir + f'/results/TCN_results_cal.csv', index=False, header=True)
+df_results_cal.to_csv(output_dir + f'/results/TCN_results_{param_tag}_cal.csv', index=False, header=True)
 
 df_results_eva = pd.DataFrame(results_eva)
-df_results_eva.to_csv(output_dir + f'/results/TCN_results_eva.csv', index=False, header=True)
+df_results_eva.to_csv(output_dir + f'/results/TCN_results_{param_tag}_eva.csv', index=False, header=True)
 
 print("DONE")

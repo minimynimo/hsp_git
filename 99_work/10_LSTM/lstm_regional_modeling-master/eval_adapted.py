@@ -38,8 +38,12 @@ GLOBAL_SETTINGS = {
 
 benchmark_list = ["NSE", "KGE", "E1", "VE", "d", "RMSE", "MAE"]
 
-syn_precip_cols = ['syn_no_precip', 'syn_p_pet',
+"""syn_precip_cols = ['syn_no_precip', 'syn_p_pet',
                    'syn_peak1_rate0', 'syn_peak1_rate10', 'syn_peak1_rate30', 'syn_peak1_rate50',
+                   'syn_peak3_rate0', 'syn_peak3_rate10', 'syn_peak3_rate30', 'syn_peak3_rate50',
+                   'syn_peak5_rate0', 'syn_peak5_rate10', 'syn_peak5_rate30', 'syn_peak5_rate50']"""
+
+syn_precip_cols = ['syn_peak1_rate30', 'syn_peak1_rate50',
                    'syn_peak3_rate0', 'syn_peak3_rate10', 'syn_peak3_rate30', 'syn_peak3_rate50',
                    'syn_peak5_rate0', 'syn_peak5_rate10', 'syn_peak5_rate30', 'syn_peak5_rate50']
 
@@ -488,6 +492,9 @@ def main():
         static_attrs = load_attributes(db_path, basins=basins_to_process, drop_lat_lon=True)
 
     output_dir = Path(f"/data0/funato/hsp/0_out/LSTM/{GLOBAL_SETTINGS['loc']}/adapted")
+
+    param_tag = f"hs{cfg['hidden_size']}_do{cfg.get('dropout', 0.0)}_e{cfg['epochs']}"
+
     
     # Directory for saving/loading fine-tuned models
     adapted_models_dir = Path("/data0/funato/hsp/99_work/10_LSTM/lstm_regional_modeling-master/runs_lstm_adapted")
@@ -520,7 +527,7 @@ def main():
                         'eva': (GLOBAL_SETTINGS['val_start'], GLOBAL_SETTINGS['val_end'])}.items():
         print(f"\nEvaluating {name.upper()} period...")
         
-        pred_path = output_dir / "predict" / f"LSTM_predict_{name}.csv"
+        pred_path = output_dir / "predict" / f"LSTM_predict_{param_tag}_{name}.csv"
         pred_path.parent.mkdir(parents=True, exist_ok=True)
         
         all_metrics = []
@@ -560,7 +567,7 @@ def main():
             print(f"Predictions saved to {pred_path}")
 
             results_df = pd.DataFrame(all_metrics).set_index('basin')
-            results_path = output_dir / "results" / f"LSTM_results_{name}.csv"
+            results_path = output_dir / "results" / f"LSTM_results_{param_tag}_{name}.csv"
             results_path.parent.mkdir(parents=True, exist_ok=True)
             results_df.to_csv(results_path)
             print(f"Results saved to {results_path}")
@@ -579,7 +586,7 @@ def main():
         syn_end = pd.to_datetime('2001-02-10') if 'peak' in scenario_col else val_end
         dates = (val_start, syn_end)
         
-        pred_path = output_dir / "predict" / "synthetic" / f"LSTM_predict_{scenario_col}_eva.csv"
+        pred_path = output_dir / "predict" / "synthetic" / f"LSTM_predict_{param_tag}_{scenario_col}_eva.csv"
         pred_path.parent.mkdir(parents=True, exist_ok=True)
         
         first_basin = True

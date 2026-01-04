@@ -2,6 +2,8 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import os
+import seaborn as sns
+
 
 fs = 20
 input_data = "/data0/funato/hsp/0_out/analysis/mass_conservation/mass_bias_data.csv"
@@ -32,9 +34,8 @@ input_df['Model'] = input_df['Model'].replace('BC', 'HYPER')
 
 # 1. Box plot of mass bias by model
 plt.figure(figsize=(7, 7))
-import seaborn as sns
 sns.boxplot(data=input_df, x='Model', y='Mass_Bias', hue='Model', order=model_list, palette=color_list, legend=False)
-plt.title('Mass Bias Distribution by Model', fontsize=fs)
+#plt.title('Mass Bias Distribution by Model', fontsize=fs)
 plt.xlabel('Model', fontsize=fs)
 plt.ylabel('Mass Bias', fontsize=fs)
 plt.tick_params(labelsize=fs)
@@ -42,7 +43,7 @@ plt.xticks(rotation=45)
 plt.ylim(-0.1,2)
 plt.grid(True, alpha=0.3)
 plt.tight_layout()
-plt.savefig(f"{output_dir}/mass_bias_boxplot.png", dpi=300, bbox_inches='tight')
+plt.savefig(f"{output_dir}/f03_mass_bias_boxplot.png", dpi=300, bbox_inches='tight')
 plt.close()
 
 # 2, CDF plot of mass bias by model
@@ -65,7 +66,7 @@ plt.ylim(0, 1)
 plt.legend(fontsize=fs*0.6)
 plt.grid(True, alpha=0.3)
 plt.tight_layout()
-plt.savefig(f"{output_dir}/mass_bias_cdf.png", dpi=300, bbox_inches='tight')
+plt.savefig(f"{output_dir}/f03_mass_bias_cdf.png", dpi=300, bbox_inches='tight')
 plt.close()
 
 
@@ -82,8 +83,4 @@ summary_stats.to_csv(f"{output_dir}/mass_bias_summary_stats.csv")
 print(f"\nVisualizations saved to: {output_dir}")
 print("Files created:")
 print("- mass_bias_boxplot.png")
-print("- mass_bias_violin.png") 
-print("- mass_bias_mean_bar.png")
-print("- mass_bias_histograms.png")
-print("- mass_bias_ranking.png")
 print("- mass_bias_summary_stats.csv")

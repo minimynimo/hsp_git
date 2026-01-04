@@ -29,12 +29,8 @@ color_list = {
 fs = 24 # Font size for plots
 
 # --- Input Data: Plausibility Ranks ---
-plausibility_ranks = pd.DataFrame({
-    'Model': model_list,
-    'Mass_Rank':    [4, 2, 6, 1, 3, 5],
-    'Drought_Rank': [1, 3, 6, 5, 2, 4],
-    'Flood_Rank':   [1, 1, 6, 6, 1, 1]
-}).set_index('Model')
+rank_df = pd.read_csv("/data0/funato/hsp/0_out/analysis/summary_ranking_multi/automated_ranks/automated_plausibility_ranks.csv")
+plausibility_ranks = rank_df.set_index('Model')[['Mass_Rank', 'Drought_Rank', 'Flood_Rank']]
 
 print("--- Input Plausibility Ranks (Lower is better) ---")
 print(plausibility_ranks)
@@ -130,8 +126,10 @@ from matplotlib.colors import ListedColormap
 print(f"Data sample: {list(data.items())[:5]}")
 print(f"Data values range: {min(data.values())} to {max(data.values())}")
 cmap = ListedColormap(color_map_array)
+# Convert defaultdict to regular dict to avoid RuntimeError during iteration
+data_dict = dict(data)
 # Ensure the colormap covers the right range of values
-tax.heatmap(data, cmap=cmap, colorbar=False, vmin=0, vmax=len(active_models)-1)
+tax.heatmap(data_dict, cmap=cmap, colorbar=False, vmin=0, vmax=len(active_models)-1)
 
 # Enhanced axis labels and title with better interpretability
 tax.set_title("Model Ranking Sensitivity Analysis", fontsize=fs * 0.7, pad=15)

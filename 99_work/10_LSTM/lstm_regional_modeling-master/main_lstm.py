@@ -201,7 +201,7 @@ def get_args() -> Dict:
     # Model specific
     parser.add_argument('--batch_size', type=int, default=256)
     parser.add_argument('--hidden_size', type=int, default=256)
-    parser.add_argument('--dropout', type=float, default=0.4)
+    parser.add_argument('--dropout', type=float, default=0.2)
     # Training specific
     parser.add_argument('--epochs', type=int, default=30)
     parser.add_argument('--learning_rate', type=float, default=1e-3)

@@ -12,8 +12,8 @@ MODEL_EPOCH=30
 N_BASINS=""
 PYTHON_PATH="/data0/funato/hsp/.venv/bin/python"
 
-START_CORE=10 # 1 indexed
-CORES=2
+START_CORE=7 # 1 indexed
+CORES=1
 END_CORE=$((START_CORE + CORES - 1))
 
 # Parse command line arguments
@@ -124,10 +124,10 @@ if [[ -n "$N_BASINS" ]]; then
 fi
 
 # Run regional evaluation
-#run_evaluation "regional" "/data0/funato/hsp/99_work/10_LSTM/lstm_regional_modeling-master/eval_regional.py"
+run_evaluation "regional" "/data0/funato/hsp/99_work/10_LSTM/lstm_regional_modeling-master/eval_regional.py"
 
 # Run adapted evaluation
-run_evaluation "adapted" "/data0/funato/hsp/99_work/10_LSTM/lstm_regional_modeling-master/eval_adapted.py"
+#run_evaluation "adapted" "/data0/funato/hsp/99_work/10_LSTM/lstm_regional_modeling-master/eval_adapted.py"
 
 echo ""
 echo "========================================="
@@ -157,4 +157,4 @@ echo ""
 # run using 
 # chmod +x /data0/funato/hsp/99_work/10_LSTM/lstm_regional_modeling-master/run_eval.sh
 # regional
-# nohup /data0/funato/hsp/99_work/10_LSTM/lstm_regional_modeling-master/run_eval.sh --run_dir /data0/funato/hsp/99_work/10_LSTM/lstm_regional_modeling-master/runs/run_1911_1458_seed926134 --model_epoch 30 > output_eval_lstm_adapted.log 2>&1 &
+# nohup /data0/funato/hsp/99_work/10_LSTM/lstm_regional_modeling-master/run_eval.sh --run_dir /data0/funato/hsp/99_work/10_LSTM/lstm_regional_modeling-master/runs/run_2012_0342_seed566531> output_eval_lstm_regional.log 2>&1 &

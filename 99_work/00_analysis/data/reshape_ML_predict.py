@@ -4,10 +4,10 @@ import pandas as pd
 import numpy as np  
 import os   
 
-model_list = ["TCN"] #["RF", "XGB", "TCN", "LSTM"]
+model_list = ["RF", "XGB", "TCN", "LSTM"]
 #model_list = ["RF"]
 #model_list = ["TCN"]
-#model_list = ["LSTM"]
+#model_list = ["XGB"]
 
 file_tot_num = 424
 
@@ -20,11 +20,22 @@ pred_discharge_cols = ['og', 'no_precip',
 peak_length_list = [1, 3, 5]
 rate_list = [0, 10, 30, 50]
 
+param_tag_dict = {
+    "RF": "",
+    "XGB": "",
+    "TCN": "",
+    "LSTM": "_hs256_do0.2"
+}
+
+
 base_input_dir = "/data0/funato/hsp/2_MERV/varssim_HBV"
 for model_name in model_list:
     input_dir = f"/data0/funato/hsp/0_out/{model_name}/GB/regional/predict/synthetic"
     output_dir = f"/data0/funato/hsp/0_out/{model_name}/GB/regional/varssim_{model_name}"
     os.makedirs(output_dir, exist_ok=True)
+
+    print(f"Processing model: {model_name}")
+    param_tag = param_tag_dict.get(model_name, "")
 
     for file_num in range(1, file_tot_num + 1):
         print(f"Processing file {file_num} for model {model_name}")
@@ -32,12 +43,12 @@ for model_name in model_list:
         base_df = pd.read_csv(base_file, parse_dates=['Date'])
 
         #from base_df, copy the following columns to the new dataframe
-        # Date,Obs flow,Precip,Temp,PET,syn_no_precip,syn_p_pet,Temp_at_peak,PET_at_peak,Obs_flow_at_peak,syn_peak1_rate0,syn_peak1_rate10,syn_peak1_rate30,syn_peak1_rate50,syn_peak3_rate10,syn_peak3_rate30,syn_peak3_rate50,syn_peak5_rate10,syn_peak5_rate30,syn_peak5_rate50
+        # Date,Obs flow,Precip,Temp,PET,syn_no_precip,Temp_at_peak,PET_at_peak,Obs_flow_at_peak,syn_peak1_rate0,syn_peak1_rate10,syn_peak1_rate30,syn_peak1_rate50,syn_peak3_rate10,syn_peak3_rate30,syn_peak3_rate50,syn_peak5_rate10,syn_peak5_rate30,syn_peak5_rate50
         # for the following columns, copy the values from the input file
-        # og,no_precip,p_pet,peak1_rate0,peak1_rate10,peak1_rate30,peak1_rate50,peak3_rate10,peak3_rate30,peak3_rate50,peak5_rate10,peak5_rate30,peak5_rate50
+        # og,no_precip,peak1_rate0,peak1_rate10,peak1_rate30,peak1_rate50,peak3_rate10,peak3_rate30,peak3_rate50,peak5_rate10,peak5_rate30,peak5_rate50
         # select only the first column if there are duplicate columns
         base_df = base_df[['Date', 'Obs flow', 'Precip', 'Temp', 'PET', 
-                 'syn_no_precip', 'syn_p_pet', 'Temp_at_peak', 
+                 'syn_no_precip', 'Temp_at_peak', 
                  'PET_at_peak', 'Obs_flow_at_peak', 
                  'syn_peak1_rate0','syn_peak1_rate10', 'syn_peak1_rate30', 'syn_peak1_rate50',
                  'syn_peak3_rate0','syn_peak3_rate10', 'syn_peak3_rate30', 'syn_peak3_rate50',
@@ -124,8 +135,8 @@ for model_name in model_list:
             #print(f"Processing synthetic column: {sim_col}")
             if sim_col == 'og':
                 # Read combined files for original predictions (cal and eva)
-                input_file_cal = f"/data0/funato/hsp/0_out/{model_name}/GB/regional/predict/{model_name}_predict_cal.csv"
-                input_file_eva = f"/data0/funato/hsp/0_out/{model_name}/GB/regional/predict/{model_name}_predict_eva.csv"
+                input_file_cal = f"/data0/funato/hsp/0_out/{model_name}/GB/regional/predict/{model_name}_predict{param_tag}_cal.csv"
+                input_file_eva = f"/data0/funato/hsp/0_out/{model_name}/GB/regional/predict/{model_name}_predict{param_tag}_eva.csv"
                 
                 # Read combined files - basins are rows, dates are columns
                 input_df_cal = pd.read_csv(input_file_cal, index_col=0)  # Basin number as index
@@ -165,7 +176,7 @@ for model_name in model_list:
                 
             else:
                 # Read synthetic prediction files
-                input_file = f"{input_dir}/{model_name}_predict_syn_{sim_col}_eva.csv"
+                input_file = f"{input_dir}/{model_name}_predict{param_tag}_syn_{sim_col}_eva.csv"
                 
                 if os.path.exists(input_file):
                     # Read combined synthetic file - basins are rows, dates are columns

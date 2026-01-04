@@ -16,7 +16,7 @@ all_model_data = {}
 
 # Peak length labels and rates to analyze
 peak_labels = [1, 3, 5]
-rate_list = [10, 30, 50]  # Different precipitation rates to analyze
+rate_list = [0, 10, 30, 50]  # Different precipitation rates to analyze
 
 # Generate column names for all combinations
 rate_peak_cols = {}

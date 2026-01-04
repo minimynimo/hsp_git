@@ -11,7 +11,7 @@ RUN_DIR="/data0/funato/hsp/99_work/12_XGBoost/XGB_regional_modeling-master"
 N_BASINS=""
 PYTHON_PATH="/data0/funato/hsp/.venv/bin/python"
 
-START_CORE=1 # 1 indexed
+START_CORE=3 # 1 indexed
 CORES=2
 END_CORE=$((START_CORE + CORES - 1))
 

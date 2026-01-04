@@ -5,7 +5,7 @@ import os
 
 model_name = "HBV"
 
-input_data = "/data0/funato/hsp/0_out/10_HBV/peak_discharge/peak_discharge_comparison_HBV.csv"
+input_data = "/data0/funato/hsp/0_out/HBV/peak_discharge/peak_discharge_comparison_HBV.csv"
 
 output_dir = "/data0/funato/hsp/0_out/1_fig/peak_discharge/time_lag/"
 os.makedirs(output_dir, exist_ok=True)
@@ -16,6 +16,8 @@ comparison_df = pd.read_csv(input_data, header=0, index_col=None)
 # We need to gather the lag columns into a 'long' format
 lag_cols = {
     'Original': 'flow_lag_peak1_rate0',
+    'Peak3_rate0': 'flow_lag_peak3_rate0',
+    'Peak5_rate0': 'flow_lag_peak5_rate0',
     'Peak1_rate10': 'flow_lag_peak1_rate10',
     'Peak3_rate10': 'flow_lag_peak3_rate10',
     'Peak5_rate10': 'flow_lag_peak5_rate10',

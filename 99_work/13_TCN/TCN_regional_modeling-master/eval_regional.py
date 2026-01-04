@@ -36,7 +36,7 @@ from papercode.utils import create_h5_files, get_basin_list
 GLOBAL_SETTINGS = {
     'loc': 'GB',
     'ver': 2,
-    'seq_length': 30,  # TCN uses shorter sequences
+    'seq_length': 270,  # TCN uses shorter sequences
     'train_start': pd.to_datetime('1993-01-01', format='%Y-%m-%d'),
     'train_end': pd.to_datetime('2000-12-31', format='%Y-%m-%d'),
     'val_start': pd.to_datetime('2001-01-01', format='%Y-%m-%d'),
@@ -499,19 +499,19 @@ def get_param_string(run_cfg):
     """Create parameter string for file naming"""
     # Check if the config uses the new format (nb_filters, nb_stacks) or old format (num_channels)
     if 'nb_filters' in run_cfg and 'nb_stacks' in run_cfg:
-        nb_filters = run_cfg.get("nb_filters", 128)
         nb_stacks = run_cfg.get("nb_stacks", 3)
         param_channels = f"f{nb_filters}_s{nb_stacks}"
     else:
         num_channels = run_cfg.get("num_channels", [25, 50, 100])
         param_channels = f"ch{'-'.join(map(str, num_channels))}"
     
-    kernel_size = run_cfg.get("kernel_size", 2)
-    dropout = run_cfg.get("dropout", 0.2)
+    nb_filters = run_cfg.get("nb_filters", 64)
+    kernel_size = run_cfg.get("kernel_size", 4)
+    dropout = run_cfg.get("dropout", 0.4)
     learning_rate = run_cfg.get("learning_rate", 0.001)
     seq_length = run_cfg.get("seq_length", 30)
     
-    return f"{param_channels}_k{kernel_size}_d{dropout}_lr{learning_rate}_w{seq_length}"
+    return f"n{nb_filters}_k{kernel_size}_d{dropout}"
 
 def BMK(obs_data, sim_data, benchmark):    
     """Calculate benchmark metrics"""
@@ -606,14 +606,25 @@ def main():
     input_size_dyn = 3 if (run_cfg["no_static"]) else 3
     
     # Handle different parameter formats
-    if 'nb_filters' in run_cfg and 'nb_stacks' in run_cfg:
-        # New format: nb_filters and nb_stacks
+    # Check if num_levels and num_filters exist (training script creates num_channels from these)
+    if 'num_levels' in run_cfg and 'num_filters' in run_cfg:
+        # main_tcn.py style: num_channels = [num_filters] * num_levels
+        num_filters = run_cfg['num_filters']
+        num_levels = run_cfg['num_levels']
+        num_channels = [num_filters] * num_levels
+        print(f"Using num_channels from num_filters={num_filters} * num_levels={num_levels}: {num_channels}")
+    elif 'nb_filters' in run_cfg and 'nb_stacks' in run_cfg:
+        # Alternative format: nb_filters and nb_stacks
         nb_filters = run_cfg.get("nb_filters", 128)
         nb_stacks = run_cfg.get("nb_stacks", 3)
         num_channels = [nb_filters] * nb_stacks
+        print(f"Using num_channels from nb_filters={nb_filters} * nb_stacks={nb_stacks}: {num_channels}")
     else:
-        # Old format: num_channels list
+        # Old format: num_channels list - use exactly what was saved in config
         num_channels = run_cfg.get("num_channels", [25, 50, 100])
+        print(f"Using num_channels from config: {num_channels}")
+
+
     
     model = TCNModel(input_size_dyn=input_size_dyn,
                      input_size_stat=input_size_stat,
@@ -649,7 +660,7 @@ def main():
             run_cfg["no_static"] = True
     
     # Evaluate on original data
-    #evaluate_original_data(model, run_cfg, file_num_list, static_attrs)
+    evaluate_original_data(model, run_cfg, file_num_list, static_attrs)
     
     # Evaluate on synthetic scenarios
     if evaluate_syn_data:

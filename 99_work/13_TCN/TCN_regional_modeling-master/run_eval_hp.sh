@@ -13,7 +13,7 @@ OUTPUT_DIR="/data0/funato/hsp/0_out/TCN/GB/regional/hp"
 MODEL_EPOCH=30
 
 # Core assignment for parallel execution
-START_CORE=8
+START_CORE=5
 CORES_PER_JOB=3
 
 # Hyperparameter grid
@@ -113,16 +113,7 @@ echo "  - Results: /data0/funato/hsp/0_out/TCN/GB/regional/results/"
 echo "    - TCN_results_${PARAM_STRING}_cal.csv (calibration period)"
 echo "    - TCN_results_${PARAM_STRING}_eva.csv (evaluation period)"
 echo ""
-echo "Adapted evaluation:"
-echo "  - Predictions: /data0/funato/hsp/0_out/TCN/GB/adapted/predict/"
-echo "    - TCN_predict_${PARAM_STRING}_cal.csv (calibration period)"
-echo "    - TCN_predict_${PARAM_STRING}_eva.csv (evaluation period)"
-echo "  - Results: /data0/funato/hsp/0_out/TCN/GB/adapted/results/"
-echo "    - TCN_results_${PARAM_STRING}_cal.csv (calibration period)"
-echo "    - TCN_results_${PARAM_STRING}_eva.csv (evaluation period)"
-echo ""
+
 
 ###RUN USING####
 # chmod +x /data0/funato/hsp/99_work/13_TCN/TCN_regional_modeling-master/run_eval.sh
-# /data0/funato/hsp/99_work/13_TCN/TCN_regional_modeling-master/run_eval.sh --run_dir /data0/funato/hsp/99_work/13_TCN/TCN_regional_modeling-master/runs_tcn/tcn_run_1015_1800_seed300 --n_basins 2  # For testing with 2 basins
-# nohup /data0/funato/hsp/99_work/13_TCN/TCN_regional_modeling-master/run_eval.sh --run_dir /data0/funato/hsp/99_work/13_TCN/TCN_regional_modeling-master/runs_tcn/tcn_run_1119_1504_seed309 > output_eval_tcn_adapt.log 2>&1 &

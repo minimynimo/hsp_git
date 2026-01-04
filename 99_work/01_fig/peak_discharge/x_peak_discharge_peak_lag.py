@@ -71,9 +71,9 @@ peak_rate_df = pd.DataFrame(peak_rate_data)
 peak_rate_df = peak_rate_df.dropna()
 
 # Create Figure 1: Peak Rate vs Time Lag
-fig, axes = plt.subplots(1, 3, figsize=(18, 6))
+fig, axes = plt.subplots(1, 4, figsize=(24, 6))
 
-for i, rate in enumerate([10, 30, 50]):
+for i, rate in enumerate([0, 10, 30, 50]):
     rate_data = peak_rate_df[peak_rate_df['Rate'] == rate]
     
     # Calculate mean time lag for each model at this rate
@@ -114,7 +114,7 @@ ax.set_ylabel('Mean Time Lag (days)', fontsize=12)
 ax.set_title('Mean Time Lag vs Peak Rate by Model', fontsize=14, fontweight='bold')
 ax.grid(True, alpha=0.3)
 ax.legend()
-ax.set_xticks([10, 30, 50])
+ax.set_xticks([0, 10, 30, 50])
 
 plt.tight_layout()
 plt.savefig(f"{output_dir}/peak_rate_vs_time_lag_combined.png", dpi=300, bbox_inches='tight')
@@ -129,9 +129,9 @@ peak_days_data = []
 
 for model, df in all_model_data.items():
     for _, row in df.iterrows():
-        # For each peak duration (1, 3, 5 days) and rate (10, 30, 50%)
+        # For each peak duration (1, 3, 5 days) and rate (0, 10, 30, 50%)
         for peak_days in [1, 3, 5]:
-            for rate in [10, 30, 50]:
+            for rate in [0, 10, 30, 50]:
                 flow_col = f'sim_peak_flow_peak{peak_days}_rate{rate}'
                 lag_col = f'sim_peak_lag_peak{peak_days}_rate{rate}'
                 
@@ -150,9 +150,9 @@ peak_days_df = pd.DataFrame(peak_days_data)
 peak_days_df = peak_days_df.dropna()
 
 # Create Figure 2: Peak Days vs Time Lag
-fig, axes = plt.subplots(1, 3, figsize=(18, 6))
+fig, axes = plt.subplots(1, 4, figsize=(24, 6))
 
-for i, rate in enumerate([10, 30, 50]):
+for i, rate in enumerate([0, 10, 30, 50]):
     rate_data = peak_days_df[peak_days_df['Rate'] == rate]
     
     for model in model_list:
@@ -180,9 +180,9 @@ plt.close()
 # Figure 3: Peak Flow vs Peak Days comparison
 # =============================================================================
 
-fig, axes = plt.subplots(1, 3, figsize=(18, 6))
+fig, axes = plt.subplots(1, 4, figsize=(24, 6))
 
-for i, rate in enumerate([10, 30, 50]):
+for i, rate in enumerate([0, 10, 30, 50]):
     rate_data = peak_days_df[peak_days_df['Rate'] == rate]
     
     # Calculate mean peak flow for each model and peak days combination

@@ -26,7 +26,7 @@ Grid Search
 - Padding: Causal (Crucial: prevents future data leakage).
 - Dilations: [1, 2, 4, 8, 16, 32, 64, 128] (Ensures coverage > 270 days).
 - Stride: 1
-- Learning Rate: RI 1e-3, A 1e-4
+- Learning Rate: RI 1e-3, -A 1e-4-
 - Loss Function: MSE
 
 Grid Search
@@ -43,7 +43,7 @@ Grid Search
 - Batch size: R 256, I Unknown/all
 - Epochs: R 30 ~ 50, I 20 
 - Input sequence length: 270
-- Learning Rate: RI[1e-3], A[1e-4]
+- Learning Rate: RI[1e-3], -A[1e-4]-
 
 Grid Search
 - Hidden size: R [128,256], I[16,32]

@@ -34,12 +34,13 @@ end_date_cal = '2000-12-31'
 start_date_eva = '2001-01-01'
 end_date_eva = '2006-12-31'
 
-max_depth = 15
-max_features = 0.7
+max_depth = 20
+max_features = "sqrt"
 n_estimators = 100
+min_samples_leaf = 10
 max_samples = 0.5
 min_samples_split = 2
-
+param_tag = f"n{n_estimators}_d{max_depth}_l{min_samples_leaf}_fsqrt"
 output_dir = f"/data0/funato/hsp/0_out/RF/{loc}/individual/"
 os.makedirs(output_dir, exist_ok=True)
 os.makedirs(output_dir + "/predict", exist_ok=True)
@@ -156,7 +157,7 @@ for file_num in file_list:
     target_eva = df_eva['Obs flow'].values[1:] #1089
 
 
-    rf = RandomForestRegressor(max_depth=max_depth, max_features = max_features, n_estimators=n_estimators, min_samples_split=min_samples_split, oob_score=True, random_state=42, n_jobs=-1)
+    rf = RandomForestRegressor(max_depth=max_depth, max_features = max_features, n_estimators=n_estimators, min_samples_split=min_samples_split,min_samples_leaf=min_samples_leaf, oob_score=True, random_state=42, n_jobs=-1)
     
     rf.fit(input_cal, target_cal)
     
@@ -180,12 +181,12 @@ for file_num in file_list:
         predict_cal_df = pd.DataFrame([date_row_cal])
         predict_eva_df = pd.DataFrame([date_row_eva])
 
-        predict_cal_df.to_csv(output_dir + f"/predict/RF_predict_cal.csv", mode='w', index=False, header=False)
-        predict_eva_df.to_csv(output_dir + f"/predict/RF_predict_eva.csv", mode='w', index=False, header=False)
+        predict_cal_df.to_csv(output_dir + f"/predict/RF_predict_{param_tag}_cal.csv", mode='w', index=False, header=False)
+        predict_eva_df.to_csv(output_dir + f"/predict/RF_predict_{param_tag}_eva.csv", mode='w', index=False, header=False)
 
-    with open(output_dir + f"/predict/RF_predict_cal.csv", 'a') as file:
+    with open(output_dir + f"/predict/RF_predict_{param_tag}_cal.csv", 'a') as file:
         pd.DataFrame([file_row_cal]).to_csv(file, header=False, index=False)
-    with open(output_dir + f"/predict/RF_predict_eva.csv", 'a') as file:
+    with open(output_dir + f"/predict/RF_predict_{param_tag}_eva.csv", 'a') as file:
         pd.DataFrame([file_row_eva]).to_csv(file, header=False, index=False)
 
     file_results_cal = {'file_num': file_num}
@@ -205,10 +206,10 @@ for file_num in file_list:
 
     # Save results to CSV after each file
     df_results_cal = pd.DataFrame(results_cal)
-    df_results_cal.to_csv(output_dir + f'/results/RF_results_cal.csv', index=False, header=True)
+    df_results_cal.to_csv(output_dir + f'/results/RF_results_{param_tag}_cal.csv', index=False, header=True)
 
     df_results_eva = pd.DataFrame(results_eva)
-    df_results_eva.to_csv(output_dir + f'/results/RF_results_eva.csv', index=False, header=True)
+    df_results_eva.to_csv(output_dir + f'/results/RF_results_{param_tag}_eva.csv', index=False, header=True)
 
     end_time = datetime.now()
     end_time_st = end_time.strftime("%a %b %d %I:%M:%S %p JST %Y")
@@ -222,10 +223,9 @@ log_file.close()
 
 # Final save (redundant but ensures final state is saved)
 df_results_cal = pd.DataFrame(results_cal)
-df_results_cal.to_csv(output_dir + f'/results/RF_results_cal.csv', index=False, header=True)
+df_results_cal.to_csv(output_dir + f'/results/RF_results_{param_tag}_cal.csv', index=False, header=True)
 
 df_results_eva = pd.DataFrame(results_eva)
-df_results_eva.to_csv(output_dir + f'/results/RF_results_eva.csv', index=False, header=True)
-
+df_results_eva.to_csv(output_dir + f'/results/RF_results_{param_tag}_eva.csv', index=False, header=True)
 
 print("DONE")

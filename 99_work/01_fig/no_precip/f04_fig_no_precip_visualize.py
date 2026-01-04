@@ -69,23 +69,37 @@ box_data = [all_discharge_data[model] for model in valid_models]
 
 # 7. Focused view - Box plot with limited y-axis
 max_for_focus = np.percentile(np.concatenate(box_data), 95)  # 95th percentile
-plt.figure(figsize=(8, 7))
-bp3 = plt.boxplot(box_data, labels=valid_models, patch_artist=True)
+plt.figure(figsize=(8, 6))
+# showmeans=True will plot the mean; style it as a '+'
+bp3 = plt.boxplot(
+    box_data,
+    tick_labels=valid_models,
+    patch_artist=True,
+    showmeans=True,
+    meanprops={
+        'marker': 'x',
+        'markeredgecolor': 'green',
+        'markeredgewidth': 2.5,
+        'markersize': 15,
+    }
+)
 for patch, model in zip(bp3['boxes'], valid_models):
     patch.set_facecolor(color_list[model])
 # Set median line colors to black
 for median in bp3['medians']:
     median.set_color('black')
     median.set_linewidth(2)
-plt.title('Daily Mean Discharge', fontsize=fs)
+#plt.title('Daily Mean Discharge', fontsize=fs)
 plt.ylabel('Daily Mean Discharge [m³/s]', fontsize=fs)
 plt.xlabel('Model', fontsize=fs)
 plt.tick_params(labelsize=fs)
 plt.ylim(-0.1, max_for_focus)
 plt.grid(True, alpha=0.3)
 plt.tight_layout()
-plt.savefig(f"{output_fig_dir}/no_precip_boxplot_focused.png", dpi=300, bbox_inches='tight')
+plt.savefig(f"{output_fig_dir}/f04_no_precip_boxplot_focused.png", dpi=300, bbox_inches='tight')
 plt.close()
+
+print("saved to", f"{output_fig_dir}/f04_no_precip_boxplot_focused.png")
 
 # 9. Focused CDF
 plt.figure(figsize=(9, 8))
@@ -105,6 +119,8 @@ plt.grid(True, alpha=0.3)
 plt.tight_layout()
 plt.savefig(f"{output_fig_dir}/no_precip_cdf_focused.png", dpi=300, bbox_inches='tight')
 plt.close()
+
+print("saved to", f"{output_fig_dir}/no_precip_cdf_focused.png")
 
 # 10. Statistical summary
 model_stats = []
@@ -128,8 +144,7 @@ stats_df.to_csv(f"{output_fig_dir}/no_precip_statistics_summary.csv", index=Fals
 
 print("All plots saved successfully!")
 print("Generated files:")
-print("- no_precip_boxplot_linear.png")
-print("- no_precip_boxplot_focused.png")
+print("- f04_no_precip_boxplot_focused.png")
 print("- no_precip_cdf_focused.png")
 print("- no_precip_statistics_summary.csv")
 

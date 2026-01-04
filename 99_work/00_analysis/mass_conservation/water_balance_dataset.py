@@ -71,7 +71,7 @@ for file in range(1, file_tot_num + 1):
         
         # Calculate water balance components using observed data
         # P - Q = ΔS + ET (assuming ΔS ≈ 0 for long-term averages)
-        # Therefore: ET = P - Q
+        # Therefore: ET = P - Q where Q is observed discharge
         daily_mean_precip = input_df['Precip'].mean()  # mm/day
         daily_mean_discharge = input_df['Obs flow'].mean()  # mm/day
         daily_mean_et = daily_mean_precip - daily_mean_discharge  # mm/day

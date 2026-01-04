@@ -98,50 +98,5 @@ echo "========================================="
 echo "All hyperparameter evaluations complete!"
 echo "Results saved to: $OUTPUT_DIR"
 echo "========================================="
-    if [[ -n "$N_BASINS" ]]; then
-        cmd="$cmd --n_basins $N_BASINS"
-    fi
-    
-    echo "Command: $cmd"
-    echo "Using CPU cores: $START_CORE-$END_CORE"
-    
-    # Run the evaluation
-    if ! $cmd; then
-        echo "Error: $eval_type evaluation failed"
-        exit 1
-    fi
-    
-    echo "$eval_type evaluation completed successfully"
-}
 
-# Main execution
-echo "Starting LSTM evaluation pipeline..."
-echo "Run directory: $RUN_DIR"
-echo "Model epoch: $MODEL_EPOCH"
-if [[ -n "$N_BASINS" ]]; then
-    echo "Processing $N_BASINS basins (testing mode)"
-fi
-
-# Run regional evaluation
-run_evaluation "regional" "/data0/funato/hsp/99_work/10_LSTM/lstm_regional_modeling-master/eval_regional_hp.py"
-
-echo ""
-echo "========================================="
-echo "All evaluations completed successfully!"
-echo "========================================="
-echo ""
-echo "Output files created with parameter string: $PARAM_STRING"
-echo ""
-echo "Regional evaluation:"
-echo "  - Predictions: /data0/funato/hsp/0_out/LSTM/GB/regional/predict/"
-echo "    - LSTM_predict_${PARAM_STRING}_cal.csv (calibration period)"
-echo "    - LSTM_predict_${PARAM_STRING}_eva.csv (evaluation period)"
-echo "    - synthetic/LSTM_predict_${PARAM_STRING}_*_eva.csv (synthetic scenarios)"
-echo "  - Results: /data0/funato/hsp/0_out/LSTM/GB/regional/results/"
-echo "    - LSTM_results_${PARAM_STRING}_cal.csv (calibration period)"
-echo "    - LSTM_results_${PARAM_STRING}_eva.csv (evaluation period)"
-echo ""
-
-
-# chmod +x /data0/funato/hsp/99_work/10_LSTM/lstm_regional_modeling-master/run_eval_hp.sh
 # nohup /data0/funato/hsp/99_work/10_LSTM/lstm_regional_modeling-master/run_eval_hp.sh > output_eval_lstm_hp_regional.log 2>&1 &

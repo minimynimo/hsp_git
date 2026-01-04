@@ -66,7 +66,7 @@ print(f"ET difference dataset shape: {et_diff_df.shape}")
 # 1. Box plot of ET differences by model
 plt.figure(figsize=(8, 8))
 sns.boxplot(data=et_diff_df, x='Model', y='ET_Difference', hue='Model', order=model_list, palette=color_list, legend=False)
-plt.title('Daily Mean ET Differences: Model - Observed', fontsize=fs)
+#plt.title('Daily Mean ET Differences: Model - Observed', fontsize=fs)
 plt.xlabel('Model', fontsize=fs)
 plt.ylabel('ET Difference [mm/d]', fontsize=fs)
 plt.tick_params(axis='both', which='major', labelsize=fs)
@@ -75,7 +75,7 @@ plt.xticks(rotation=45)
 plt.ylim(-5, 15)
 plt.grid(True, alpha=0.3)
 plt.tight_layout()
-plt.savefig(f"{output_dir}/et_difference_boxplot.png", dpi=300, bbox_inches='tight')
+plt.savefig(f"{output_dir}/f03_et_difference_boxplot.png", dpi=300, bbox_inches='tight')
 plt.close()
 
 
@@ -97,14 +97,14 @@ for i, model in enumerate(model_list):
     # Calculate correlation
     correlation = model_data['Observed_ET'].corr(model_data['Model_ET'])
 
-    axes[i].set_title(f'{model} (r={correlation:.3f}, n={len(model_data)})', fontsize=fs)
+    axes[i].set_title(f'{model} (r={correlation:.3f})', fontsize=fs)
     axes[i].set_xlabel('Observed ET [mm/d]', fontsize=fs)
     axes[i].set_ylabel('Model ET [mm/d]', fontsize=fs)
     axes[i].grid(True, alpha=0.3)
 
-plt.suptitle('Observed vs Model Daily Mean ET', fontsize=fs)
+#plt.suptitle('Observed vs Model Daily Mean ET', fontsize=fs)
 plt.tight_layout()
-plt.savefig(f"{output_dir}/et_observed_vs_model_scatter.png", dpi=300, bbox_inches='tight')
+plt.savefig(f"{output_dir}/f03_et_observed_vs_model_scatter.png", dpi=300, bbox_inches='tight')
 plt.close()
 
 
@@ -122,10 +122,8 @@ et_diff_df.to_csv(f"{output_dir}/et_differences_dataset.csv", index=False)
 
 print(f"\nVisualizations saved to: {output_dir}")
 print("Files created:")
-print("- et_difference_boxplot.png")
-print("- et_difference_violin.png") 
-print("- et_observed_vs_model_scatter.png")
-print("- et_mean_absolute_difference.png")
+print("- f03_et_observed_vs_model_scatter.png")
+print("- f03_et_mean_absolute_difference.png")
 print("- et_difference_summary_stats.csv")
 print("- et_differences_dataset.csv")
 

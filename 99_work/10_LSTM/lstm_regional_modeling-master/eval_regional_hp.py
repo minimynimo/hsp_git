@@ -366,6 +366,11 @@ def main():
     is_no_static = cfg.get('no_static', False)
     is_concat_static = cfg.get('concat_static', False)
     
+    if GLOBAL_SETTINGS['loc'] == "JP": file_tot_num = 87
+    else: file_tot_num = 424
+    # Use zero-padded basin IDs to match scalers.json format
+    basins = [str(i).zfill(3) for i in range(1, file_tot_num + 1)]
+    
     # Load attributes to get correct input_size_stat
     input_size_stat = 0
     if not is_no_static:
@@ -389,18 +394,13 @@ def main():
                   initial_forget_bias=cfg.get('initial_forget_bias', 5)).to(DEVICE)
                   
     model.load_state_dict(torch.load(model_file, map_location=DEVICE))
-    
-    if GLOBAL_SETTINGS['loc'] == "JP": file_tot_num = 87
-    else: file_tot_num = 424
-    # Use zero-padded basin IDs to match scalers.json format
-    basins = [str(i).zfill(3) for i in range(1, file_tot_num + 1)]
     if args.n_basins:
         basins = basins[:args.n_basins]
         
     attributes = None
     if not is_no_static:
-        db_path = str(run_dir / 'attributes.db')
-        attributes = load_attributes(db_path, basins, drop_lat_lon=True)
+        db_path = run_dir / 'attributes.db'
+        attributes = load_attributes(db_path, basins=[int(b) for b in basins], loc='GB')
     
     train_start = pd.to_datetime(cfg['train_start'])
     train_end = pd.to_datetime(cfg['train_end'])

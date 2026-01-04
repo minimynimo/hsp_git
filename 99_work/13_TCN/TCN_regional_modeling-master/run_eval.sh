@@ -12,7 +12,7 @@ MODEL_EPOCH=50
 N_BASINS=""
 PYTHON_PATH="/data0/funato/hsp/.venv/bin/python"
 
-START_CORE=8 # 1 indexed
+START_CORE=15 # 1 indexed
 CORES=3
 END_CORE=$((START_CORE + CORES - 1))
 
@@ -168,4 +168,4 @@ echo ""
 ###RUN USING####
 # chmod +x /data0/funato/hsp/99_work/13_TCN/TCN_regional_modeling-master/run_eval.sh
 # /data0/funato/hsp/99_work/13_TCN/TCN_regional_modeling-master/run_eval.sh --run_dir /data0/funato/hsp/99_work/13_TCN/TCN_regional_modeling-master/runs_tcn/tcn_run_1015_1800_seed300 --n_basins 2  # For testing with 2 basins
-# nohup /data0/funato/hsp/99_work/13_TCN/TCN_regional_modeling-master/run_eval.sh --run_dir /data0/funato/hsp/99_work/13_TCN/TCN_regional_modeling-master/runs_tcn/tcn_run_1119_1504_seed309 > output_eval_tcn_adapt.log 2>&1 &
+# nohup /data0/funato/hsp/99_work/13_TCN/TCN_regional_modeling-master/run_eval.sh --run_dir /data0/funato/hsp/99_work/13_TCN/TCN_regional_modeling-master/runs_tcn/tcn_run_1220_0357_seed309 > output_eval_tcn_adapted.log 2>&1 &

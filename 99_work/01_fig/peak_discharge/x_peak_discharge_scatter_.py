@@ -6,17 +6,16 @@ import os
 
 model_name = "HBV"
 
-input_data = "/data0/funato/hsp/0_out/10_HBV/peak_discharge/peak_discharge_comparison_HBV.csv"
+input_data = "/data0/funato/hsp/0_out/HBV/peak_discharge/peak_discharge_comparison_HBV.csv"
 
 output_dir = "/data0/funato/hsp/0_out/1_fig/peak_discharge/scatter/"
 os.makedirs(output_dir, exist_ok=True)
 
 comparison_df = pd.read_csv(input_data, header=0, index_col=None)
 
-sim_discharge_cols = ['peak1_rate0',
-                    'peak1_rate10', 'peak1_rate30', 'peak1_rate50',
-                    'peak3_rate10', 'peak3_rate30', 'peak3_rate50',
-                    'peak5_rate10', 'peak5_rate30', 'peak5_rate50']
+sim_discharge_cols = ['peak1_rate0','peak1_rate10', 'peak1_rate30', 'peak1_rate50',
+                    'peak3_rate0','peak3_rate10', 'peak3_rate30', 'peak3_rate50',
+                    'peak5_rate0','peak5_rate10', 'peak5_rate30', 'peak5_rate50']
 
 # Make sure comparison_df exists and is not empty before attempting to plot
 if not comparison_df.empty:
@@ -27,9 +26,11 @@ if not comparison_df.empty:
         'Simulated Flow (Up-Peak1_rate10)': 'sim_peak1_rate10_peak_flow',
         'Simulated Flow (Up-Peak1_rate30)': 'sim_peak1_rate30_peak_flow',
         'Simulated Flow (Up-Peak1_rate50)': 'sim_peak1_rate50_peak_flow',
+        'Simulated Flow (Up-Peak3_rate0)': 'sim_peak3_rate0_peak_flow',
         'Simulated Flow (Up-Peak3_rate10)': 'sim_peak3_rate10_peak_flow',
         'Simulated Flow (Up-Peak3_rate30)': 'sim_peak3_rate30_peak_flow',
         'Simulated Flow (Up-Peak3_rate50)': 'sim_peak3_rate50_peak_flow',
+        'Simulated Flow (Up-Peak5_rate0)': 'sim_peak5_rate0_peak_flow',
         'Simulated Flow (Up-Peak5_rate10)': 'sim_peak5_rate10_peak_flow',
         'Simulated Flow (Up-Peak5_rate30)': 'sim_peak5_rate30_peak_flow',
         'Simulated Flow (Up-Peak5_rate50)': 'sim_peak5_rate50_peak_flow',
@@ -70,9 +71,11 @@ if not comparison_df.empty:
         'Up-Peak1_rate10': 'sim_peak1_rate10_peak_lag_to_obs_precip',
         'Up-Peak1_rate30': 'sim_peak1_rate30_peak_lag_to_obs_precip',
         'Up-Peak1_rate50': 'sim_peak1_rate50_peak_lag_to_obs_precip',
+        'Up-Peak3_rate0': 'sim_peak3_rate0_peak_lag_to_obs_precip',
         'Up-Peak3_rate10': 'sim_peak3_rate10_peak_lag_to_obs_precip',
         'Up-Peak3_rate30': 'sim_peak3_rate30_peak_lag_to_obs_precip',
         'Up-Peak3_rate50': 'sim_peak3_rate50_peak_lag_to_obs_precip',
+        'Up-Peak5_rate0': 'sim_peak5_rate0_peak_lag_to_obs_precip',
         'Up-Peak5_rate10': 'sim_peak5_rate10_peak_lag_to_obs_precip',
         'Up-Peak5_rate30': 'sim_peak5_rate30_peak_lag_to_obs_precip',
         'Up-Peak5_rate50': 'sim_peak5_rate50_peak_lag_to_obs_precip',

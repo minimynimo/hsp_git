@@ -1,7 +1,7 @@
 #!/bin/bash
 
 cores=1
-start_core=13 # Start core (1-indexed)
+start_core=5 # Start core (1-indexed)
 ###
 
 static_bool=false
@@ -53,7 +53,7 @@ for (( seed = $firstseed ; seed < $((nseeds+$firstseed)) ; seed++ )); do
         # --- MODIFICATION START ---
         TCN_PARAMS="--num_channels 128 256 512" 
         # Added --num_workers=2 to prevent performance warnings and issues
-        OTHER_PARAMS="--batch_size=32 --epochs=50 --kernel_size=7 --seed=$seed --num_workers=2"
+        OTHER_PARAMS="--batch_size=32 --epochs=50 --kernel_size=4 --seed=$seed --num_workers=2"
         # --- MODIFICATION END ---
 
 

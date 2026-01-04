@@ -65,7 +65,7 @@ class Chomp1d(nn.Module):
         return x[:, :, :-self.chomp_size].contiguous()
 
 class TemporalBlock(nn.Module):
-    def __init__(self, n_inputs, n_outputs, kernel_size, stride, dilation, padding, dropout=0.2):
+    def __init__(self, n_inputs, n_outputs, kernel_size, stride, dilation, padding, dropout=0.4):
         super(TemporalBlock, self).__init__()
         self.conv1 = nn.Conv1d(n_inputs, n_outputs, kernel_size, stride=stride, padding=padding, dilation=dilation)
         self.chomp1 = Chomp1d(padding)
@@ -85,7 +85,7 @@ class TemporalBlock(nn.Module):
         return self.relu(out + res)
 
 class TemporalConvNet(nn.Module):
-    def __init__(self, num_inputs, num_channels, kernel_size=2, dropout=0.2):
+    def __init__(self, num_inputs, num_channels, kernel_size=2, dropout=0.4):
         super(TemporalConvNet, self).__init__()
         layers = []
         for i, out_channels in enumerate(num_channels):
@@ -121,6 +121,25 @@ def load_data_for_basin(file_num):
 def load_attributes(db_path, basins, drop_lat_lon=True):
     from papercode.datautils import load_attributes as load_attributes_from_lib
     return load_attributes_from_lib(db_path, basins, drop_lat_lon)
+
+
+def get_param_string(run_cfg):
+    """Create parameter string for file naming"""
+    # Check if the config uses the new format (nb_filters, nb_stacks) or old format (num_channels)
+    if 'nb_filters' in run_cfg and 'nb_stacks' in run_cfg:
+        nb_stacks = run_cfg.get("nb_stacks", 3)
+        param_channels = f"f{nb_filters}_s{nb_stacks}"
+    else:
+        num_channels = run_cfg.get("num_channels", [25, 50, 100])
+        param_channels = f"ch{'-'.join(map(str, num_channels))}"
+    
+    nb_filters = run_cfg.get("nb_filters", 64)
+    kernel_size = run_cfg.get("kernel_size", 4)
+    dropout = run_cfg.get("dropout", 0.4)
+    learning_rate = run_cfg.get("learning_rate", 0.001)
+    seq_length = run_cfg.get("seq_length", 30)
+    
+    return f"n{nb_filters}_k{kernel_size}_d{dropout}"
 
 def BMK(obs_data, sim_data, benchmark):    
     """Calculate benchmark metrics"""
@@ -446,8 +465,29 @@ def main():
         # For now, we hardcode a common value for GB attributes
         input_size += 27 
 
+        
+    # Handle different parameter formats
+    # Check if num_levels and num_filters exist (training script creates num_channels from these)
+    if 'num_levels' in cfg and 'num_filters' in cfg:
+        # main_tcn.py style: num_channels = [num_filters] * num_levels
+        num_filters = cfg['num_filters']
+        num_levels = cfg['num_levels']
+        num_channels = [num_filters] * num_levels
+        print(f"Using num_channels from num_filters={num_filters} * num_levels={num_levels}: {num_channels}")
+    elif 'nb_filters' in cfg and 'nb_stacks' in cfg:
+        # Alternative format: nb_filters and nb_stacks
+        nb_filters = cfg.get("nb_filters", 128)
+        nb_stacks = cfg.get("nb_stacks", 3)
+        num_channels = [nb_filters] * nb_stacks
+        print(f"Using num_channels from nb_filters={nb_filters} * nb_stacks={nb_stacks}: {num_channels}")
+    else:
+        # Old format: num_channels list - use exactly what was saved in config
+        num_channels = cfg.get("num_channels", [25, 50, 100])
+        print(f"Using num_channels from config: {num_channels}")
+
+
     base_model = TCNModel(input_size=input_size, 
-                          num_channels=cfg["num_channels"], 
+                          num_channels=num_channels, 
                           kernel_size=cfg["kernel_size"], 
                           dropout=cfg["dropout"]).to(DEVICE)
     base_model.load_state_dict(torch.load(model_file, map_location=DEVICE))
@@ -459,9 +499,12 @@ def main():
 
     output_dir = Path(f"/data0/funato/hsp/0_out/TCN/{GLOBAL_SETTINGS['loc']}/adapted")
     
-    # Directory for saving/loading fine-tuned models
-    adapted_models_dir = Path("/data0/funato/hsp/99_work/13_TCN/TCN_regional_modeling-master/runs_tcn_adapted")
+    # Directory for saving/loading fine-tuned models - specific to this run
+    # Use the run directory name to keep adapted models separate for each training run
+    run_name = run_dir.name  # e.g., "tcn_run_1220_0357_seed309"
+    adapted_models_dir = Path("/data0/funato/hsp/99_work/13_TCN/TCN_regional_modeling-master/runs_tcn_adapted") / run_name
     adapted_models_dir.mkdir(parents=True, exist_ok=True)
+    print(f"Adapted models will be saved to: {adapted_models_dir}")
     
     # Store fine-tuned models and scalers for each basin (fine-tune once, use multiple times)
     basin_models = {}
@@ -484,13 +527,15 @@ def main():
         if basin_model is not None:
             basin_models[basin] = basin_model
             basin_scalers[basin] = scalers
+
+    param_tag = get_param_string(cfg)
     
     # Evaluate on cal and eva periods using the fine-tuned models
     for name, dates in {'cal': (GLOBAL_SETTINGS['train_start'], GLOBAL_SETTINGS['train_end']), 
                         'eva': (GLOBAL_SETTINGS['val_start'], GLOBAL_SETTINGS['val_end'])}.items():
         print(f"\nEvaluating {name.upper()} period...")
         
-        pred_path = output_dir / "predict" / f"TCN_predict_{name}.csv"
+        pred_path = output_dir / "predict" / f"TCN_predict_{param_tag}_{name}.csv"
         pred_path.parent.mkdir(parents=True, exist_ok=True)
         
         all_results = []
@@ -532,7 +577,7 @@ def main():
             print(f"Predictions saved to {pred_path}")
 
             results_df = pd.DataFrame(all_results).set_index('basin')
-            results_path = output_dir / "results" / f"TCN_results_{name}.csv"
+            results_path = output_dir / "results" / f"TCN_results_{param_tag}_{name}.csv"
             results_path.parent.mkdir(parents=True, exist_ok=True)
             results_df.to_csv(results_path)
             print(f"Results saved to {results_path}")
@@ -551,7 +596,7 @@ def main():
         syn_end = pd.to_datetime('2001-02-10') if 'peak' in scenario_col else val_end
         dates = (val_start, syn_end)
         
-        pred_path = output_dir / "predict" / "synthetic" / f"TCN_predict_{scenario_col}_eva.csv"
+        pred_path = output_dir / "predict" / "synthetic" / f"TCN_predict_{param_tag}_{scenario_col}_eva.csv"
         pred_path.parent.mkdir(parents=True, exist_ok=True)
         
         first_basin = True

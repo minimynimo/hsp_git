@@ -36,7 +36,7 @@ from papercode.utils import create_h5_files, get_basin_list
 GLOBAL_SETTINGS = {
     'loc': 'GB',
     'ver': 2,
-    'seq_length': 30,  # TCN uses shorter sequences
+    'seq_length': 270,  # TCN uses shorter sequences
     'train_start': pd.to_datetime('1993-01-01', format='%Y-%m-%d'),
     'train_end': pd.to_datetime('2000-12-31', format='%Y-%m-%d'),
     'val_start': pd.to_datetime('2001-01-01', format='%Y-%m-%d'),

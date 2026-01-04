@@ -115,6 +115,7 @@ for model_name in model_list:
 
             # Add scaled peak precipitation values (these are just derived values for comparison)
             # These reflect the *input* peak precip values for the synthetic scenarios
+            year_result['sim_peak_precip_0'] = peak_precip_obs if pd.notnull(peak_precip_obs) else np.nan
             year_result['sim_peak_precip_10'] = peak_precip_obs * 1.1 if pd.notnull(peak_precip_obs) else np.nan
             year_result['sim_peak_precip_30'] = peak_precip_obs * 1.3 if pd.notnull(peak_precip_obs) else np.nan
             year_result['sim_peak_precip_50'] = peak_precip_obs * 1.5 if pd.notnull(peak_precip_obs) else np.nan

@@ -515,13 +515,15 @@ def main():
     if not run_cfg.get("no_static", False):
         try:
             db_path = run_dir / "attributes.db"
-            attrs = load_attributes(db_path, basins=file_num_list, 
-                                  drop_na=True, loc=GLOBAL_SETTINGS['loc'])
+            attrs = load_attributes(db_path, basins=[int(b) for b in file_num_list], 
+                                  loc=GLOBAL_SETTINGS['loc'])
+            print(f"Loaded {len(attrs)} basin attributes with {attrs.shape[1]} features each")
             # Convert to dictionary for easier access
             static_attrs = {}
             for basin in file_num_list:
-                if basin in attrs.index:
-                    static_attrs[basin] = attrs.loc[basin].values
+                basin_int = int(basin)
+                if basin_int in attrs.index:
+                    static_attrs[basin] = attrs.loc[basin_int].values
         except Exception as e:
             print(f"Warning: Could not load static attributes: {e}")
             run_cfg["no_static"] = True

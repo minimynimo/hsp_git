@@ -41,24 +41,46 @@ color_list = {
     "LSTM": "#9808B2"    # Purple
 }
 
+param_tag_dict = {
+    "RF": "_n100_d5_s2_l1_mf0.7_ms0.5_w270",
+    "XGB": "",
+    "TCN": "_n64_k4_d0.4",
+    "LSTM": "_hs256_do0.2"
+}
+
 print("Loading and processing model performance data...")
 
 # Step 1: Load KGE performance data (predictive accuracy)
 kge_scores = {}
+benchmark = "KGE"
 
 for model in model_list:
+    base_path = f"/data0/funato/hsp/0_out/{model}/GB/regional/results"  
+
     if model == "HYPER":
-        input_file = "/data0/funato/hsp/0_out/BC/results/BC_results_eva.csv"
-        kge_col = "BC_KGE_eva"
+        input_file_cal = f"/data0/funato/hsp/0_out/BC/results/BC_results_cal.csv"
+        input_file_eva = f"/data0/funato/hsp/0_out/BC/results/BC_results_eva.csv"
+        # Use BC for column names since that's what's in the files
+        col_name_cal = f"BC_{benchmark}_cal"
+        col_name_eva = f"BC_{benchmark}_eva"
+    elif model == "HBV":
+        input_file_cal = f"/data0/funato/hsp/0_out/HBV/GB/shap/regional/results/HBV_results_cal.csv"
+        input_file_eva = f"/data0/funato/hsp/0_out/HBV/GB/shap/regional/results/HBV_results_eva.csv"
+        col_name_cal = f"HBV_{benchmark}_cal"
+        col_name_eva = f"HBV_{benchmark}_eva"
     else:
-        input_file = f"/data0/funato/hsp/0_out/{model}/GB/shap/regional/results/{model}_results_eva.csv"
-        kge_col = f"{model}_KGE_eva"
+        input_file_cal = f"/data0/funato/hsp/0_out/{model}/GB/regional/results/{model}_results{param_tag_dict.get(model, '')}_cal.csv"
+        input_file_eva = f"/data0/funato/hsp/0_out/{model}/GB/regional/results/{model}_results{param_tag_dict.get(model, '')}_eva.csv"
+        col_name_cal = benchmark
+        col_name_eva = benchmark
     
     try:
-        df = pd.read_csv(input_file)
-        if kge_col in df.columns:
-            kge_values = df[kge_col].dropna().values
-            kge_scores[model] = np.median(kge_values)
+        df_cal = pd.read_csv(input_file_cal)
+        df_eva = pd.read_csv(input_file_eva)
+        if col_name_cal in df_cal.columns and col_name_eva in df_eva.columns:
+            kge_values_cal = df_cal[col_name_cal].dropna().values
+            kge_values_eva = df_eva[col_name_eva].dropna().values
+            kge_scores[model] = np.median(np.concatenate([kge_values_cal, kge_values_eva]))
             print(f"{model} median KGE: {kge_scores[model]:.3f}")
         else:
             print(f"Warning: KGE column not found for {model}")
@@ -106,16 +128,9 @@ for model in model_list:
     else:
         print(f"Warning: No drought discharge data found for {model}")
         drought_scores[model] = np.nan
-# Step 4: Define Flood Condition ranks (simplified assessment)
-# Based on user specification: 1 for all models except RF and XGB (which get 5)
-flood_ranks = {
-    "HBV": 1,
-    "HYPER": 1, 
-    "TCN": 1,
-    "LSTM": 1,
-    "RF": 6,     # Poor response
-    "XGB":6     # Poor response
-}
+# Step 4: Load Flood Condition ranks from automated ranking
+rank_df = pd.read_csv("/data0/funato/hsp/0_out/analysis/summary_ranking_multi/automated_ranks/automated_plausibility_ranks.csv")
+flood_ranks = rank_df.set_index('Model')['Flood_Rank'].to_dict()
 
 print("\nCalculating ranks...")
 
@@ -158,7 +173,7 @@ for model in model_list:
     print(f"{model}: {composite_scores[model]}")
 
 # Step 7: Create the summary ranking plot
-fig, ax = plt.subplots(1, 1, figsize=(12, 7))
+fig, ax = plt.subplots(1, 1, figsize=(11, 7))
 
 # Plot each model
 for model in model_list:
@@ -175,7 +190,7 @@ for model in model_list:
 # Formatting
 ax.set_xlabel('Composite Plausibility Rank Score (Max 216)', fontsize=fs)
 ax.set_ylabel('Median KGE', fontsize=fs)
-ax.set_title('Model Performance', fontsize=fs)
+#ax.set_title('Model Performance', fontsize=fs)
 ax.tick_params(labelsize=fs*0.8)
 ax.grid(True, alpha=0.3)
 
@@ -183,7 +198,7 @@ ax.grid(True, alpha=0.3)
 x_min, x_max = min(composite_scores.values()) - 0.5, max(composite_scores.values()) + 0.5
 y_min, y_max = min([v for v in kge_scores.values() if not np.isnan(v)]) - 0.05, \
                max([v for v in kge_scores.values() if not np.isnan(v)]) + 0.05
-ax.set_xlim(0,216)
+ax.set_xlim(0,60)
 ax.set_ylim(y_min -0.1, 1.0)
 
 # Add quadrant labels
@@ -204,7 +219,7 @@ ax.text(0.98, 0.02, 'Low Accuracy\nLow Plausibility',
         bbox=dict(boxstyle="round,pad=0.3", facecolor='white', alpha=0.7))
 
 plt.tight_layout()
-plt.savefig(f"{output_dir}/model_ranking_matrix.png", dpi=300, bbox_inches='tight')
+plt.savefig(f"{output_dir}/f06_model_ranking_matrix.png", dpi=300, bbox_inches='tight')
 plt.close()
 
 # Step 8: Create detailed ranking table

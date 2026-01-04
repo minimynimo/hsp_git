@@ -12,10 +12,9 @@ os.makedirs(output_dir, exist_ok=True)
 
 comparison_df = pd.read_csv(input_data, header=0, index_col=None)
 
-sim_discharge_cols = ['peak1_rate0',
-                    'peak1_rate10', 'peak1_rate30', 'peak1_rate50',
-                    'peak3_rate10', 'peak3_rate30', 'peak3_rate50',
-                    'peak5_rate10', 'peak5_rate30', 'peak5_rate50']
+sim_discharge_cols = ['peak1_rate0','peak1_rate10', 'peak1_rate30', 'peak1_rate50',
+                    'peak3_rate0','peak3_rate10', 'peak3_rate30', 'peak3_rate50',
+                    'peak5_rate0','peak5_rate10', 'peak5_rate30', 'peak5_rate50']
 
 start_date_eva = "2001-01-01"
 end_date_eva = "2001-02-10"
@@ -31,6 +30,7 @@ if not example_df.empty:
     # Plotting Peak Flows
     plt.scatter(example_df['peak_precip_obs'].values, example_df['peak_flow_obs'].values, marker='o', color='blue', label='Observed Peak Flow')
     plt.scatter(example_df['peak_precip_obs'].values, example_df['sim_peak_flow_peak1_rate0'].values, marker='x', color='green', label='Sim (Original Precip)')
+    plt.scatter(example_df['sim_peak_precip_0'].values, example_df['sim_peak_flow_peak1_rate0'].values, marker='+', color='cyan', label='Sim (Peak1_rate0 Precip)')
     plt.scatter(example_df['sim_peak_precip_10'].values, example_df['sim_peak_flow_peak1_rate10'].values, marker='^',  color='orange', label='Sim (Peak1_rate10 Precip)')
     plt.scatter(example_df['sim_peak_precip_30'].values, example_df['sim_peak_flow_peak1_rate30'].values, marker='s', color='red', label='Sim (Peak1_rate30 Precip)')
     plt.scatter(example_df['sim_peak_precip_50'].values, example_df['sim_peak_flow_peak1_rate50'].values, marker='d', color='purple', label='Sim (Peak1_rate50 Precip)')
@@ -56,9 +56,11 @@ if not example_df.empty:
         example_df['sim_peak_lag_peak1_rate10'].values,
         example_df['sim_peak_lag_peak1_rate30'].values,
         example_df['sim_peak_lag_peak1_rate50'].values,
+        example_df['sim_peak_lag_peak3_rate0'].values,
         example_df['sim_peak_lag_peak3_rate10'].values,
         example_df['sim_peak_lag_peak3_rate30'].values,
         example_df['sim_peak_lag_peak3_rate50'].values,
+        example_df['sim_peak_lag_peak5_rate0'].values,
         example_df['sim_peak_lag_peak5_rate10'].values,
         example_df['sim_peak_lag_peak5_rate30'].values,
         example_df['sim_peak_lag_peak5_rate50'].values
@@ -66,8 +68,8 @@ if not example_df.empty:
     ]
     label_list = [
         'Peak1_rate0', 'Peak1_rate10', 'Peak1_rate30', 'Peak1_rate50',
-        'Peak3_rate10', 'Peak3_rate30', 'Peak3_rate50',
-        'Peak5_rate10', 'Peak5_rate30', 'Peak5_rate50'
+        'Peak3_rate0', 'Peak3_rate10', 'Peak3_rate30', 'Peak3_rate50',
+        'Peak5_rate0', 'Peak5_rate10', 'Peak5_rate30', 'Peak5_rate50'
     ]
 
     plt.boxplot(lag_data, labels=label_list)

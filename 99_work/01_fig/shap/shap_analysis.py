@@ -272,10 +272,10 @@ for model in model_list:
         if len(shap_values) > 0:
             # Select representative samples
             #sample_indices = [0, len(shap_values)//4, len(shap_values)//2, 3*len(shap_values)//4, -1]
-            sample_indices = [100,200]
+            sample_indices = [100]
             
-            fig, axes = plt.subplots(2, 3, figsize=(20, 14))
-            axes = axes.flatten()
+            fig, axes = plt.subplots(1, 1, figsize=(7, 6))
+            axes = [axes]
             
             for i, idx in enumerate(sample_indices[:6]):
                 if i < len(axes) and idx < len(shap_values):
@@ -314,17 +314,25 @@ for model in model_list:
                             ax.bar(j, abs(shap_val), bottom=cumulative[j+1], color='#d62728', alpha=0.8, width=0.8)  # Red for negative
                     
                     # Add base value and prediction lines
-                    ax.axhline(y=base_value, color='black', linestyle='--', alpha=0.5, label=f'Base: {base_value:.3f}')
-                    ax.axhline(y=cumulative[-1], color='blue', linestyle='-', alpha=0.7, label=f'Prediction: {cumulative[-1]:.3f}')
+                    ax.axhline(y=base_value, color='black', linestyle='--', alpha=0.8, label=f'Base: {base_value:.3f}')
+                    ax.axhline(y=cumulative[-1], color='blue', linestyle='-', alpha=0.8, label=f'Prediction: {cumulative[-1]:.3f}')
                     
                     # Customize the plot
                     ax.set_xticks(x_pos)
                     ax.set_xticklabels(top_features, rotation=45, ha='right', fontsize=fs)
                     ax.tick_params(axis='y', labelsize=fs)
                     ax.set_ylabel('SHAP Value', fontsize=fs)
-                    ax.set_title(f'Sample {int(idx/100)} - Top 10 Features', fontsize=fs, fontweight='bold')
+                    #ax.set_title(f'Sample {int(idx/100)} - Top 10 Features', fontsize=fs, fontweight='bold')
                     ax.grid(True, alpha=0.3)
-                    ax.legend(fontsize=fs*0.6, loc="upper right")
+                    if model == "RF":
+                        ax.legend(fontsize=fs*0.9, loc="lower right")
+                    else:
+                        ax.legend(fontsize=fs*0.9, loc="upper right")
+
+                    # set the ylim at least to include base and prediction lines + some margin and the maximum and minimum SHAP contributions
+                    #y_min = min(base_value, cumulative[-1], np.min(top_shap)) - abs(cumulative[-1] - base_value) * 0.1
+                    #y_max = max(base_value, cumulative[-1], np.max(top_shap)) + abs(cumulative[-1] - base_value) * 0.1
+                    #ax.set_ylim(y_min, y_max)
 
                     # Add value labels on bars (only for significant values)
                     for j, (feat, shap_val) in enumerate(zip(top_features, top_shap)):
@@ -339,7 +347,7 @@ for model in model_list:
             
             #plt.suptitle(f'{model} - Individual Prediction Breakdowns (Top 10 Features)', fontsize=16, fontweight='bold')
             plt.tight_layout()
-            plt.savefig(f"{output_dir}/{model}_waterfall_plots.png", dpi=300, bbox_inches='tight')
+            plt.savefig(f"{output_dir}/f02_{model}_waterfall_plots.png", dpi=300, bbox_inches='tight')
             plt.close()
         
         # Enhanced Summary Statistics with category breakdown
@@ -396,7 +404,7 @@ for model in model_list:
         print(f"  - Category distribution: {output_dir}/{model}_category_distribution.png")
         print(f"  - Dynamic vs static: {output_dir}/{model}_dynamic_vs_static.png")
         print(f"  - Dependence plots: {output_dir}/{model}_dependence_plots.png")
-        print(f"  - Waterfall plots: {output_dir}/{model}_waterfall_plots.png")
+        print(f"  - Waterfall plots: {output_dir}/f02_{model}_waterfall_plots.png")
         print(f"  - Enhanced summary CSV: {output_dir}/{model}_enhanced_shap_summary.csv")
         print(f"  - Category details CSV: {output_dir}/{model}_category_details.csv")
         
