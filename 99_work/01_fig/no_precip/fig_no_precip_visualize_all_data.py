@@ -66,11 +66,16 @@ print("Creating comprehensive visualizations...")
 valid_models = [model for model in model_list if len(all_discharge_data[model]) > 0]
 box_data = [all_discharge_data[model] for model in valid_models]
 
+# print the dimension of each model's data
+for model in valid_models:
+    print(f"{model}: {len(all_discharge_data[model])} data points")
+
 
 # 7. Focused view - Box plot with limited y-axis
 max_for_focus = np.percentile(np.concatenate(box_data), 95)  # 95th percentile
 plt.figure(figsize=(8, 6))
 # showmeans=True will plot the mean; style it as a '+'
+
 bp3 = plt.boxplot(
     box_data,
     tick_labels=valid_models,
@@ -81,7 +86,7 @@ bp3 = plt.boxplot(
         'markeredgecolor': 'green',
         'markeredgewidth': 2.5,
         'markersize': 15,
-    }
+    },
 )
 for patch, model in zip(bp3['boxes'], valid_models):
     patch.set_facecolor(color_list[model])
