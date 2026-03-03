@@ -22,11 +22,11 @@ if gpus:
     try:
         for gpu in gpus:
             tf.config.experimental.set_memory_growth(gpu, True)
-        print(f"✅ GPU detected and configured: {gpus}")
+        print(f"GPU detected and configured: {gpus}")
     except RuntimeError as e:
-        print(f"❌ GPU Error: {e}")
+        print(f"GPU Error: {e}")
 else:
-    print("⚠️ No GPU detected. Running on CPU.")
+    print("No GPU detected. Running on CPU.")
 # --- GPU CONFIGURATION CHANGES END ---
 
 from keras.layers import Dense
@@ -42,7 +42,8 @@ benchmark_list = ["KGE","NSE","E1", "VE", "d","RMSE","MAE"]
 
 
 #loc, ver = "JP", 2
-loc, ver = "GB", 2
+#loc, ver = "GB", 2
+loc, ver = "US", 2
 
 ver_name = "ver1_1" if ver == 1 else "ver2_0"   
 
@@ -52,29 +53,31 @@ if loc == "JP" and ver == 2:
     varssim_dir = f"/data0/funato/2_MERV/{loc}/varssim_nocal/{ver_name}"
 elif loc == "GB" and ver == 2:
     file_tot_num = 424
-    varssim_dir = f"/data0/funato/hsp/2_MERV/varssim_HBV"
+    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim_GB"
+elif loc == "US" and ver == 2:
+    file_tot_num = 614
+    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim_US"
 
 file_list = list(range(1, file_tot_num+1))
 
 input_dim = 3
 
-timesteps = 270
-epochs = 50 
+timesteps = 30
+epochs = 100 
 batch_size = 32
-nb_filters = 128
+nb_filters = 64
 kernel_size = 4
 nb_stacks = 1
 dropout_rate = 0.2
 
-param_tag = f"f{nb_filters}_k{kernel_size}_d{dropout_rate}"
-
+param_tag = f"f{nb_filters}_k{kernel_size}_d{dropout_rate}_w{timesteps}"
 
 start_date_cal = '1993-01-01'
 end_date_cal = '2000-12-31'
 start_date_eva = '2001-01-01'
 end_date_eva = '2006-12-31'
 
-output_dir = f"/data0/funato/hsp/0_out/TCN/{loc}/individual"
+output_dir = f"/data0/funato/hsp2/0_out/TCN/{loc}/individual/hp/{param_tag}"
 os.makedirs(output_dir, exist_ok=True)
 os.makedirs(output_dir + "/predict", exist_ok=True)
 os.makedirs(output_dir + "/results", exist_ok=True)
@@ -219,14 +222,23 @@ for file_num in file_list:
     input_cal = input_cal_dyn[mask_cal]
     input_eva = input_eva_dyn[mask_eva]
 
-    # Targets
-    target_cal = df_cal['Obs flow'].values[mask_cal]
-    target_eva = df_eva['Obs flow'].values[mask_eva]
+    # Targets (raw discharge values)
+    target_cal_raw = df_cal['Obs flow'].values[mask_cal]
+    target_eva_raw = df_eva['Obs flow'].values[mask_eva]
 
-    # Normalize dynamic features using this basin's data only
-    scaler = StandardScaler()
-    input_cal = scaler.fit_transform(input_cal)
-    input_eva = scaler.transform(input_eva)
+    # Normalize dynamic features SEPARATELY
+    scaler_dyn = StandardScaler()
+    input_cal = scaler_dyn.fit_transform(input_cal)
+    input_eva = scaler_dyn.transform(input_eva)
+
+    # Normalize discharge SEPARATELY (CRITICAL for deep learning models)
+    scaler_q = StandardScaler()
+    target_cal = scaler_q.fit_transform(target_cal_raw.reshape(-1, 1)).flatten()
+    target_eva = scaler_q.transform(target_eva_raw.reshape(-1, 1)).flatten()
+
+    # Store discharge statistics for denormalization
+    discharge_mean = scaler_q.mean_[0]
+    discharge_std = scaler_q.scale_[0]
 
     # Create sequences
     input_cal_seq, target_cal_seq = create_sequences(input_cal, target_cal, timesteps)
@@ -263,8 +275,16 @@ for file_num in file_list:
     predict_cal_basin = TCN_model.predict(input_cal_seq, batch_size=batch_size, verbose=0).flatten()
     predict_eva_basin = TCN_model.predict(input_eva_seq, batch_size=batch_size, verbose=0).flatten()
     
+    # Denormalize predictions back to original scale
+    predict_cal_basin = predict_cal_basin * discharge_std + discharge_mean
+    predict_eva_basin = predict_eva_basin * discharge_std + discharge_mean
+    
     predict_cal_basin[predict_cal_basin < 0] = 0
     predict_eva_basin[predict_eva_basin < 0] = 0
+    
+    # Denormalize targets for benchmark calculation
+    target_cal_denorm = target_cal_seq * discharge_std + discharge_mean
+    target_eva_denorm = target_eva_seq * discharge_std + discharge_mean
 
     ### SAVE PREDICTIONS ###
     # Prepare CSV data
@@ -296,10 +316,10 @@ for file_num in file_list:
 
     for benchmark in benchmark_list:
         file_results_cal.update({
-            f'TCN_{benchmark}_cal': BMK(target_cal_seq, predict_cal_basin, benchmark)
+            f'TCN_{benchmark}_cal': BMK(target_cal_denorm, predict_cal_basin, benchmark)
         })
         file_results_eva.update({
-            f'TCN_{benchmark}_eva': BMK(target_eva_seq, predict_eva_basin, benchmark)
+            f'TCN_{benchmark}_eva': BMK(target_eva_denorm, predict_eva_basin, benchmark)
         })  
 
     results_cal.append(file_results_cal)
@@ -312,7 +332,7 @@ for file_num in file_list:
     df_results_eva = pd.DataFrame(results_eva)
     df_results_eva.to_csv(output_dir + f'/results/TCN_results_{param_tag}_eva.csv', index=False, header=True)
 
-    print(f"file_num: {file_num}, NSE_cal: {BMK(target_cal_seq, predict_cal_basin, 'NSE'):.4f}, NSE_eva: {BMK(target_eva_seq, predict_eva_basin, 'NSE'):.4f}")
+    print(f"file_num: {file_num}, NSE_cal: {BMK(target_cal_denorm, predict_cal_basin, 'NSE'):.4f}, NSE_eva: {BMK(target_eva_denorm, predict_eva_basin, 'NSE'):.4f}")
 
     end_time_basin = datetime.now()
     log_file.write(f"end: {end_time_basin}\n")

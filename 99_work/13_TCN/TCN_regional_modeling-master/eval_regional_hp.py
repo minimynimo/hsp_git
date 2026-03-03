@@ -34,7 +34,7 @@ from papercode.utils import create_h5_files, get_basin_list
 
 # Global Settings (matching main.py)
 GLOBAL_SETTINGS = {
-    'loc': 'GB',
+    'loc': 'US',
     'ver': 2,
     'seq_length': 270,  # TCN uses shorter sequences
     'train_start': pd.to_datetime('1993-01-01', format='%Y-%m-%d'),
@@ -66,7 +66,10 @@ elif GLOBAL_SETTINGS['loc'] == "GB":
     file_tot_num = 424
     attribute_size = 209
     output_mean = np.array([1.838397528976445])
-
+elif GLOBAL_SETTINGS['loc'] == "US":
+    file_tot_num = 614
+    attribute_size = 215
+    output_mean = np.array([1.6033382557458762])  # Placeholder mean for US basins
 file_num_list = list(map(str, range(1, file_tot_num + 1)))
 
 def file_name(input_num, total_len):
@@ -77,7 +80,7 @@ def file_name(input_num, total_len):
 
 def load_data_for_basin(file_num):
     """Load data for a specific basin"""
-    varssim_dir = "/data0/funato/hsp/2_MERV/varssim_HBV"
+    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim_{GLOBAL_SETTINGS['loc']}"
     df = pd.read_csv(f"{varssim_dir}/varssim{file_name(file_num, 3)}.csv")
     df['Date'] = pd.to_datetime(df['Date'])
     df.set_index('Date', inplace=True)
@@ -350,7 +353,7 @@ def evaluate_original_data(model, run_cfg, basins, static_attrs=None, args=None)
         'eva': (GLOBAL_SETTINGS["val_start"], GLOBAL_SETTINGS["val_end"])
     }
     
-    output_dir = Path(args.output_dir) if args and args.output_dir else Path("/data0/funato/hsp/0_out/TCN/GB/regional/hp")
+    output_dir = Path(args.output_dir) if args and args.output_dir else Path(f"/data0/funato/hsp2/0_out/TCN/{GLOBAL_SETTINGS['loc']}/regional/hp")
     os.makedirs(output_dir, exist_ok=True)
     
     for period_name, (start_date, end_date) in periods.items():
@@ -446,7 +449,7 @@ def evaluate_synthetic_data(model, run_cfg, basins, static_attrs=None, args=None
     
     print("\n--- Evaluating Synthetic Scenarios ---")
     
-    output_dir = Path(args.output_dir) if args and args.output_dir else Path("/data0/funato/hsp/0_out/TCN/GB/regional")
+    output_dir = Path(args.output_dir) if args and args.output_dir else Path(f"/data0/funato/hsp2/0_out/TCN/{GLOBAL_SETTINGS['loc']}/regional/hp")
     start_date = GLOBAL_SETTINGS["val_start"]
     end_date = GLOBAL_SETTINGS["val_end"]
     
@@ -588,7 +591,7 @@ def main():
                         help='Which epoch model to use for evaluation')
     parser.add_argument('--n_basins', type=int, default=None,
                         help='Number of basins to process (for testing)')
-    parser.add_argument('--output_dir', type=str, default="/data0/funato/hsp/0_out/TCN/GB/regional/hp",
+    parser.add_argument('--output_dir', type=str, default=f"/data0/funato/hsp2/0_out/TCN/{GLOBAL_SETTINGS['loc']}/regional/hp",
                         help='Output directory for predictions and results')
     parser.add_argument('--hp_string', type=str, default=None,
                         help='Hyperparameter string for output filenames')

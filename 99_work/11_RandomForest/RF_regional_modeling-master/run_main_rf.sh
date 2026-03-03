@@ -1,14 +1,31 @@
 #!/bin/bash
 
+# ============================================
+# CONFIGURATION SECTION - Edit parameters here
+# ============================================
+
+# Core assignment
 cores=1
 start_core=10 # Start core (1-indexed)
-###
 
+# Seeds
 nseeds=1
 firstseed=300
 
+# Static data
 static_bool=false
 # if static_bool is true, use static data; if false, do not use static data
+
+# Random Forest Hyperparameters
+N_ESTIMATORS=100
+MAX_DEPTH=5
+MAX_FEATURES=0.7
+MAX_SAMPLES=0.5
+MIN_SAMPLES_SPLIT=2
+
+# ============================================
+# END CONFIGURATION SECTION
+# ============================================
 
 if [ "$static_bool" = true ]; then
     log_name="master_log_RF_static.log"
@@ -25,7 +42,7 @@ gpucount=-1
 # Set default model to "rf" if not provided
 model=${1:-rf}
 
-output_dir="/data0/funato/hsp/bash_logs"
+output_dir="/data0/funato/hsp2/bash_logs"
 
 mkdir -p "$output_dir" # Create logs directory if it doesn't exist
 
@@ -42,9 +59,9 @@ for (( seed = $firstseed ; seed < $((nseeds+$firstseed)) ; seed++ )); do
 
     if [ "$model" = "rf" ]; then
         if [ "$static_bool" = true ]; then
-            outfile="/data0/funato/hsp/0_out/RF/GB/reports_static/rf.$seed.$(date +%Y-%m-%d_%H-%M-%S).out"
+            outfile="/data0/funato/hsp2/0_out/RF/GB/reports_static/rf.$seed.$(date +%Y-%m-%d_%H-%M-%S).out"
         else
-            outfile="/data0/funato/hsp/0_out/RF/GB/reports_nostatic/rf.$seed.$(date +%Y-%m-%d_%H-%M-%S).out"
+            outfile="/data0/funato/hsp2/0_out/RF/GB/reports_nostatic/rf.$seed.$(date +%Y-%m-%d_%H-%M-%S).out"
         fi
         
         mkdir -p "$(dirname "$outfile")" # Create output directory if it doesn't exist
@@ -52,11 +69,11 @@ for (( seed = $firstseed ; seed < $((nseeds+$firstseed)) ; seed++ )); do
         echo "Start Time: $start_time | Seed: $seed" >> "$output_dir/$log_name"
 
         if [ "$static_bool" = true ]; then
-            echo "Running: taskset -c $core python3 /data0/funato/hsp/99_work/11_RandomForest/RF_regional_modeling-master/main_rf.py train --no_static=False --n_estimators=100 --max_depth=5 --max_features=0.7 --max_samples=0.5 --min_samples_split=2 --seed=$seed" >> "$output_dir/$log_name"
-            taskset -c $core python3 /data0/funato/hsp/99_work/11_RandomForest/RF_regional_modeling-master/main_rf.py train --no_static=False --n_estimators=100 --max_depth=5 --max_features=0.7 --max_samples=0.5 --min_samples_split=2 --seed=$seed > $outfile 2>> "$output_dir/$log_name" &
+            echo "Running: taskset -c $core python3 /data0/funato/hsp2/99_work/11_RandomForest/RF_regional_modeling-master/main_rf.py train --no_static=False --n_estimators=$N_ESTIMATORS --max_depth=$MAX_DEPTH --max_features=$MAX_FEATURES --max_samples=$MAX_SAMPLES --min_samples_split=$MIN_SAMPLES_SPLIT --seed=$seed" >> "$output_dir/$log_name"
+            taskset -c $core python3 /data0/funato/hsp2/99_work/11_RandomForest/RF_regional_modeling-master/main_rf.py train --no_static=False --n_estimators=$N_ESTIMATORS --max_depth=$MAX_DEPTH --max_features=$MAX_FEATURES --max_samples=$MAX_SAMPLES --min_samples_split=$MIN_SAMPLES_SPLIT --seed=$seed > $outfile 2>> "$output_dir/$log_name" &
         else
-            echo "Running: taskset -c $core python3 /data0/funato/hsp/99_work/11_RandomForest/RF_regional_modeling-master/main_rf.py train --no_static=True --n_estimators=100 --max_depth=5 --max_features=0.7 --max_samples=0.5 --min_samples_split=2 --seed=$seed" >> "$output_dir/$log_name"
-            taskset -c $core python3 /data0/funato/hsp/99_work/11_RandomForest/RF_regional_modeling-master/main_rf.py train --no_static=True --n_estimators=100 --max_depth=5 --max_features=0.7 --max_samples=0.5 --min_samples_split=2 --seed=$seed > $outfile 2>> "$output_dir/$log_name" &
+            echo "Running: taskset -c $core python3 /data0/funato/hsp2/99_work/11_RandomForest/RF_regional_modeling-master/main_rf.py train --no_static=True --n_estimators=$N_ESTIMATORS --max_depth=$MAX_DEPTH --max_features=$MAX_FEATURES --max_samples=$MAX_SAMPLES --min_samples_split=$MIN_SAMPLES_SPLIT --seed=$seed" >> "$output_dir/$log_name"
+            taskset -c $core python3 /data0/funato/hsp2/99_work/11_RandomForest/RF_regional_modeling-master/main_rf.py train --no_static=True --n_estimators=$N_ESTIMATORS --max_depth=$MAX_DEPTH --max_features=$MAX_FEATURES --max_samples=$MAX_SAMPLES --min_samples_split=$MIN_SAMPLES_SPLIT --seed=$seed > $outfile 2>> "$output_dir/$log_name" &
         fi
         wait # Ensure the process completes before logging end time
         end_time=$(date '+%Y-%m-%d %H:%M:%S') # Log end time
@@ -72,5 +89,5 @@ for (( seed = $firstseed ; seed < $((nseeds+$firstseed)) ; seed++ )); do
 done
 
 ###RUN USING####
-# chmod +x /data0/funato/hsp/99_work/11_RandomForest/RF_regional_modeling-master/run_main_rf.sh
-# nohup /data0/funato/hsp/99_work/11_RandomForest/RF_regional_modeling-master/run_main_rf.sh > /dev/null 2>&1 &
+# chmod +x /data0/funato/hsp2/99_work/11_RandomForest/RF_regional_modeling-master/run_main_rf.sh
+# nohup /data0/funato/hsp2/99_work/11_RandomForest/RF_regional_modeling-master/run_main_rf.sh > /dev/null 2>&1 &

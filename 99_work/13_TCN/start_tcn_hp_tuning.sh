@@ -2,8 +2,8 @@
 
 # Wrapper script to run TCN hyperparameter tuning in background
 # Usage: ./start_tcn_hp_tuning.sh <StartCore> <NumCores> <ModelType>
-#/data0/funato/hsp/99_work/13_TCN/start_tcn_hp_tuning.sh 0 8 regional
-#/data0/funato/hsp/99_work/13_TCN/start_tcn_hp_tuning.sh 8 4 individual
+#/data0/funato/hsp2/99_work/13_TCN/start_tcn_hp_tuning.sh 26 2 regional
+#/data0/funato/hsp2/99_work/13_TCN/start_tcn_hp_tuning.sh 12 4 individual
 
 if [ "$#" -ne 3 ]; then
     echo "Usage: $0 <StartCore> <NumCores> <ModelType>"
@@ -17,7 +17,7 @@ START_CORE=$1
 NUM_CORES=$2
 MODEL_TYPE=$3
 
-SCRIPT_DIR="/data0/funato/hsp/99_work/13_TCN"
+SCRIPT_DIR="/data0/funato/hsp2/99_work/13_TCN"
 LOG_FILE="${SCRIPT_DIR}/hp_tuning_${MODEL_TYPE}_${START_CORE}_${NUM_CORES}_$(date +%Y%m%d_%H%M%S).log"
 
 echo "Starting TCN hyperparameter tuning in background..."

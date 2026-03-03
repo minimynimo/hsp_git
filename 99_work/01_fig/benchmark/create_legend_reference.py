@@ -51,7 +51,7 @@ ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
 ax.grid(alpha=0.3)
 
 plt.tight_layout()
-plt.savefig('/data0/funato/hsp/0_out/1_fig/benchmark/ML_training_comparison/legend_reference.png', 
+plt.savefig('/data0/funato/hsp2/0_out/1_fig/benchmark/ML_training_comparison/legend_reference.png', 
            dpi=300, bbox_inches='tight')
 plt.close()
 

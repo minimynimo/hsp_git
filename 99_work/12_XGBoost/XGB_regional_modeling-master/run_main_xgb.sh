@@ -1,14 +1,29 @@
 #!/bin/bash
 
+# ============================================
+# CONFIGURATION SECTION - Edit parameters here
+# ============================================
+
+# Core assignment
 cores=1
 start_core=1 # Start core (1-indexed)
-###
 
+# Seeds
 nseeds=1
 firstseed=300
 
+# Static data
 static_bool=false
 # if static_bool is true, use static data; if false, do not use static data , change the log_name and the outfile name accordingly.
+
+# XGBoost Hyperparameters
+N_ESTIMATORS=1000
+MAX_DEPTH=7
+LEARNING_RATE=0.05
+
+# ============================================
+# END CONFIGURATION SECTION
+# ============================================
 
 if [ "$static_bool" = true ]; then
     log_name="master_log_XGB_static.log"
@@ -25,7 +40,7 @@ gpucount=-1
 # Set default model to "xgb" if not provided
 model=${1:-xgb}
 
-output_dir="/data0/funato/hsp/bash_logs"
+output_dir="/data0/funato/hsp2/bash_logs"
 
 mkdir -p "$output_dir" # Create logs directory if it doesn't exist
 
@@ -42,20 +57,20 @@ for (( seed = $firstseed ; seed < $((nseeds+$firstseed)) ; seed++ )); do
 
     if [ "$model" = "xgb" ]; then
         if [ "$static_bool" = true ]; then
-            outfile="/data0/funato/hsp/0_out/XGB/GB/reports_static/xgb.$seed.$(date +%Y-%m-%d_%H-%M-%S).out"
+            outfile="/data0/funato/hsp2/0_out/XGB/GB/reports_static/xgb.$seed.$(date +%Y-%m-%d_%H-%M-%S).out"
         else
-            outfile="/data0/funato/hsp/0_out/XGB/GB/reports_nostatic/xgb.$seed.$(date +%Y-%m-%d_%H-%M-%S).out"
+            outfile="/data0/funato/hsp2/0_out/XGB/GB/reports_nostatic/xgb.$seed.$(date +%Y-%m-%d_%H-%M-%S).out"
         fi
         mkdir -p "$(dirname "$outfile")" # Create output directory if it doesn't exist
         start_time=$(date '+%Y-%m-%d %H:%M:%S') # Log start time
         echo "Start Time: $start_time | Seed: $seed" >> "$output_dir/$log_name"
 
         if [ "$static_bool" = true ]; then  ## static data is used
-            echo "Running: taskset -c $core python3 /data0/funato/hsp/99_work/12_XGBoost/XGB_regional_modeling-master/main_xgb.py train --no_static=False --n_estimators=500 --max_depth=4 --learning_rate=0.1 --seed=$seed" >> "$output_dir/$log_name"
-            taskset -c $core python3 /data0/funato/hsp/99_work/12_XGBoost/XGB_regional_modeling-master/main_xgb.py train --no_static=False --n_estimators=500 --max_depth=4 --learning_rate=0.1 --seed=$seed > $outfile 2>> "$output_dir/$log_name" &
+            echo "Running: taskset -c $core python3 /data0/funato/hsp2/99_work/12_XGBoost/XGB_regional_modeling-master/main_xgb.py train --no_static=False --n_estimators=$N_ESTIMATORS --max_depth=$MAX_DEPTH --learning_rate=$LEARNING_RATE --seed=$seed" >> "$output_dir/$log_name"
+            taskset -c $core python3 /data0/funato/hsp2/99_work/12_XGBoost/XGB_regional_modeling-master/main_xgb.py train --no_static=False --n_estimators=$N_ESTIMATORS --max_depth=$MAX_DEPTH --learning_rate=$LEARNING_RATE --seed=$seed > $outfile 2>> "$output_dir/$log_name" &
         else ## no static data is used
-            echo "Running: taskset -c $core python3 /data0/funato/hsp/99_work/12_XGBoost/XGB_regional_modeling-master/main_xgb.py train --no_static=True --n_estimators=500 --max_depth=4 --learning_rate=0.1 --seed=$seed" >> "$output_dir/$log_name"
-            taskset -c $core python3 /data0/funato/hsp/99_work/12_XGBoost/XGB_regional_modeling-master/main_xgb.py train --no_static=True --n_estimators=500 --max_depth=4 --learning_rate=0.1 --seed=$seed > $outfile 2>> "$output_dir/$log_name" &
+            echo "Running: taskset -c $core python3 /data0/funato/hsp2/99_work/12_XGBoost/XGB_regional_modeling-master/main_xgb.py train --no_static=True --n_estimators=$N_ESTIMATORS --max_depth=$MAX_DEPTH --learning_rate=$LEARNING_RATE --seed=$seed" >> "$output_dir/$log_name"
+            taskset -c $core python3 /data0/funato/hsp2/99_work/12_XGBoost/XGB_regional_modeling-master/main_xgb.py train --no_static=True --n_estimators=$N_ESTIMATORS --max_depth=$MAX_DEPTH --learning_rate=$LEARNING_RATE --seed=$seed > $outfile 2>> "$output_dir/$log_name" &
         fi
         wait
         end_time=$(date '+%Y-%m-%d %H:%M:%S') # Log end time
@@ -71,6 +86,6 @@ for (( seed = $firstseed ; seed < $((nseeds+$firstseed)) ; seed++ )); do
 done
 
 ###RUN USING####
-# chmod +x /data0/funato/hsp/99_work/12_XGBoost/XGB_regional_modeling-master/run_main_xgb.sh
-# nohup /data0/funato/hsp/99_work/12_XGBoost/XGB_regional_modeling-master/run_main_xgb.sh xgb > /dev/null 2>&1 &
+# chmod +x /data0/funato/hsp2/99_work/12_XGBoost/XGB_regional_modeling-master/run_main_xgb.sh
+# nohup /data0/funato/hsp2/99_work/12_XGBoost/XGB_regional_modeling-master/run_main_xgb.sh xgb > /dev/null 2>&1 &
 

@@ -34,7 +34,7 @@ from papercode.utils import get_basin_list
 # ####################### #
 
 GLOBAL_SETTINGS = {
-    'loc': 'GB',
+    'loc': 'US',
     'ver': 2,
     'seq_length': 270,
     'train_start': pd.to_datetime('1993-01-01', format='%Y-%m-%d'),
@@ -96,7 +96,7 @@ def file_name(input_num, total_len):
     return str(input_num).zfill(total_len)
 
 def load_data_for_basin(file_num):
-    varssim_dir = "/data0/funato/hsp/2_MERV/varssim_HBV"
+    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim_{GLOBAL_SETTINGS['loc']}"
     df = pd.read_csv(f"{varssim_dir}/varssim{file_name(file_num, 3)}.csv")
     df['Date'] = pd.to_datetime(df['Date'])
     df.set_index('Date', inplace=True)
@@ -216,9 +216,9 @@ def get_args() -> Dict:
 def _setup_run(cfg: Dict) -> Dict:
     """Create folder structure for this run"""
     now = datetime.now()
-    hp_str = f"h{cfg['hidden_size']}_d{cfg['dropout']}"
+    hp_str = f"h{cfg['hidden_size']}_d{cfg['dropout']}_lr{cfg['learning_rate']}"
     run_name = f'{hp_str}/run_{now.strftime("%d%m_%H%M")}_seed{cfg["seed"]}'
-    cfg['run_dir'] = Path(__file__).parent / "runs" / run_name
+    cfg['run_dir'] = Path(__file__).parent / "runs" / "hp"/ GLOBAL_SETTINGS['loc'] / run_name
     cfg['run_dir'].mkdir(parents=True, exist_ok=True)
     
     with (cfg["run_dir"] / 'cfg.json').open('w') as fp:
@@ -311,7 +311,12 @@ def train(cfg):
         # Convert string basins to integers for attributes DataFrame
         attributes = load_attributes(db_path=db_path, basins=[int(b) for b in basins], drop_lat_lon=True)
         scalers['static_means'] = attributes.mean().values
-        scalers['static_stds'] = attributes.std().values
+        static_stds = attributes.std().values
+        # Replace zero stds with 1 to avoid division by zero for constant features
+        static_stds[static_stds == 0] = 1.0
+        # Also handle NaN stds (in case of missing data)
+        static_stds[np.isnan(static_stds)] = 1.0
+        scalers['static_stds'] = static_stds
 
     def convert_for_json(obj):
         if isinstance(obj, dict): return {k: convert_for_json(v) for k, v in obj.items()}

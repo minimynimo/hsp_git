@@ -25,24 +25,25 @@ echo "Using cores: $START_CORE to $END_CORE"
 echo "Total cores: $NUM_CORES"
 
 # Python executable (use virtual environment if available)
-PYTHON_CMD="/data0/funato/hsp/.venv/bin/python"
+PYTHON_CMD="/data0/funato/hsp2/.venv/bin/python"
 if [ ! -f "$PYTHON_CMD" ]; then
     PYTHON_CMD="python3"
 fi
 
 # Hyperparameter grids based on model type
 if [ "$MODEL_TYPE" == "regional" ]; then
-    NUM_FILTERS=(32 64)
-    KERNEL_SIZE=(2 4)
+    NUM_FILTERS=(64 128) #32 
+    KERNEL_SIZE=(3 5)
     DROPOUT=(0.2 0.4)
-    SCRIPT_PATH="/data0/funato/hsp/99_work/13_TCN/TCN_regional_modeling-master/main_tcn_hp.py"
-    LOG_DIR="/data0/funato/hsp/99_work/13_TCN/TCN_regional_modeling-master/logs"
+    NUM_LAYERS=(6 8)
+    SCRIPT_PATH="/data0/funato/hsp2/99_work/13_TCN/TCN_regional_modeling-master/main_tcn_hp.py"
+    LOG_DIR="/data0/funato/hsp2/99_work/13_TCN/TCN_regional_modeling-master/logs"
 elif [ "$MODEL_TYPE" == "individual" ]; then
     NUM_FILTERS=(16 32)
     KERNEL_SIZE=(2 4)
     DROPOUT=(0.2 0.4)
-    SCRIPT_PATH="/data0/funato/hsp/99_work/13_TCN/main_TCN_indiv_hp.py"
-    LOG_DIR="/data0/funato/hsp/99_work/13_TCN/logs"
+    SCRIPT_PATH="/data0/funato/hsp2/99_work/13_TCN/main_TCN_indiv_hp.py"
+    LOG_DIR="/data0/funato/hsp2/99_work/13_TCN/logs"
 else
     echo "Error: ModelType must be 'regional' or 'individual'"
     exit 1

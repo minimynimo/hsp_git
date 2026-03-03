@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 MODEL_TYPES = ["regional", "individual"]
 
 # Updated output directory for LSTM
-output_dir = "/data0/funato/hsp/0_out/1_fig/benchmark/hyperparameter_analysis/LSTM/GB/"
+output_dir = "/data0/funato/hsp2/0_out/1_fig/benchmark/hyperparameter_analysis/LSTM/GB/"
 os.makedirs(output_dir, exist_ok=True)
 
 benchmark_list = ["KGE", "NSE", "RMSE", "MAE"]
@@ -29,15 +29,15 @@ for MODEL_TYPE in MODEL_TYPES:
             
             # --- 3. Construct File Paths ---
             if MODEL_TYPE == "regional":
-                # Pattern: /data0/funato/hsp/0_out/LSTM/GB/regional/hp/results/LSTM_results_h128_d0.4_cal.csv
+                # Pattern: /data0/funato/hsp2/0_out/LSTM/GB/regional/hp/results/LSTM_results_h128_d0.4_cal.csv
                 # Note: User specified _cal.csv for regional
-                input_path = f"/data0/funato/hsp/0_out/LSTM/GB/{MODEL_TYPE}/hp/results/LSTM_results_h{HIDDEN_SIZE}_d{DROPOUT}_cal.csv"
+                input_path = f"/data0/funato/hsp2/0_out/LSTM/GB/{MODEL_TYPE}/hp/results/LSTM_results_h{HIDDEN_SIZE}_d{DROPOUT}_cal.csv"
             
             elif MODEL_TYPE == "individual":
-                # Pattern: /data0/funato/hsp/0_out/LSTM/GB/individual/hp/h32_d0.2/results/LSTM_results_h32_lr0.001_e20_w270_b256_d0.2_eva.csv
+                # Pattern: /data0/funato/hsp2/0_out/LSTM/GB/individual/hp/h32_d0.2/results/LSTM_results_h32_lr0.001_e20_w270_b256_d0.2_eva.csv
                 # Fixed params: lr0.001, e20, w270, b256
                 input_path = (
-                    f"/data0/funato/hsp/0_out/LSTM/GB/{MODEL_TYPE}/hp/"
+                    f"/data0/funato/hsp2/0_out/LSTM/GB/{MODEL_TYPE}/hp/"
                     f"h{HIDDEN_SIZE}_d{DROPOUT}/results/"
                     f"LSTM_results_h{HIDDEN_SIZE}_lr0.001_e20_w270_b256_d{DROPOUT}_eva.csv"
                 )

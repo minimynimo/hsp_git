@@ -46,7 +46,7 @@ syn_precip_cols = ['syn_no_precip', 'syn_p_pet',
                    'syn_peak5_rate0', 'syn_peak5_rate10', 'syn_peak5_rate30', 'syn_peak5_rate50']
 
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-DEVICE = torch.device("cpu")  # Force CPU for debugging
+#DEVICE = torch.device("cpu")  # Force CPU for debugging
 
 
 if GLOBAL_SETTINGS['loc'] == "JP": file_tot_num = 87
@@ -114,7 +114,7 @@ class TCNModel(nn.Module):
 def file_name(input_num, total_len): return str(input_num).zfill(total_len)
 
 def load_data_for_basin(file_num):
-    varssim_dir = "/data0/funato/hsp/2_MERV/varssim_HBV"
+    varssim_dir = "/data0/funato/hsp2/2_MERV/varssim"
     df = pd.read_csv(f"{varssim_dir}/varssim{file_name(file_num, 3)}.csv", index_col='Date', parse_dates=True)
     return df
 
@@ -136,7 +136,6 @@ def get_param_string(run_cfg):
     nb_filters = run_cfg.get("nb_filters", 64)
     kernel_size = run_cfg.get("kernel_size", 4)
     dropout = run_cfg.get("dropout", 0.4)
-    learning_rate = run_cfg.get("learning_rate", 0.001)
     seq_length = run_cfg.get("seq_length", 30)
     
     return f"n{nb_filters}_k{kernel_size}_d{dropout}"
@@ -497,12 +496,12 @@ def main():
         db_path = run_dir / "attributes.db"
         static_attrs = load_attributes(db_path, basins=basins_to_process, drop_lat_lon=True)
 
-    output_dir = Path(f"/data0/funato/hsp/0_out/TCN/{GLOBAL_SETTINGS['loc']}/adapted")
+    output_dir = Path(f"/data0/funato/hsp2/0_out/TCN/{GLOBAL_SETTINGS['loc']}/adapted")
     
     # Directory for saving/loading fine-tuned models - specific to this run
     # Use the run directory name to keep adapted models separate for each training run
     run_name = run_dir.name  # e.g., "tcn_run_1220_0357_seed309"
-    adapted_models_dir = Path("/data0/funato/hsp/99_work/13_TCN/TCN_regional_modeling-master/runs_tcn_adapted") / run_name
+    adapted_models_dir = Path("/data0/funato/hsp2/99_work/13_TCN/TCN_regional_modeling-master/runs_tcn_adapted") / run_name
     adapted_models_dir.mkdir(parents=True, exist_ok=True)
     print(f"Adapted models will be saved to: {adapted_models_dir}")
     

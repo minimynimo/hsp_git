@@ -21,7 +21,7 @@ if loc == "JP" and ver == 2:
     varssim_dir = f"/data0/funato/2_MERV/{loc}/varssim_nocal/{ver_name}"
 elif loc == "GB" and ver == 2:
     file_tot_num = 424
-    varssim_dir = f"/data0/funato/hsp/2_MERV/varssim_HBV"
+    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim"
 
 file_list = list(range(1, file_tot_num+1))
 #file_list = list(range(20,30))
@@ -48,7 +48,7 @@ colsample_bytree = 0.8
 min_child_weight = 1
 
 hp_str = f"n{n_estimators}_d{max_depth}_lr{learning_rate}"
-output_dir = f"/data0/funato/hsp/0_out/XGB/{loc}/individual/hp/{hp_str}"
+output_dir = f"/data0/funato/hsp2/0_out/XGB/{loc}/individual/hp/{hp_str}"
 os.makedirs(output_dir, exist_ok=True)
 os.makedirs(output_dir + "/predict", exist_ok=True)
 os.makedirs(output_dir + "/results", exist_ok=True)

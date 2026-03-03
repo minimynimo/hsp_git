@@ -1,14 +1,31 @@
 #!/bin/bash
 
+# ============================================
+# CONFIGURATION SECTION - Edit parameters here
+# ============================================
+
+# Core assignment
 cores=1
 start_core=5 # Start core (1-indexed)
-###
 
+# Seeds
+nseeds=1
+firstseed=309
+
+# Static data
 static_bool=false
 # if static_bool is true, use static data; if false, do not use static data
 
-nseeds=1
-firstseed=309
+# TCN Hyperparameters
+NUM_CHANNELS="128 256 512"  # Space-separated list of channel sizes
+BATCH_SIZE=32
+EPOCHS=50
+KERNEL_SIZE=4
+NUM_WORKERS=2
+
+# ============================================
+# END CONFIGURATION SECTION
+# ============================================
 
 if [ "$static_bool" = true ]; then
     log_name="master_log_TCN_static.log"
@@ -25,7 +42,7 @@ gpucount=-1
 # Set default model to "tcn" if not provided
 model=${1:-tcn}
 
-output_dir="/data0/funato/hsp/bash_logs"
+output_dir="/data0/funato/hsp2/bash_logs"
 
 mkdir -p "$output_dir" # Create logs directory if it doesn't exist
 
@@ -42,29 +59,27 @@ for (( seed = $firstseed ; seed < $((nseeds+$firstseed)) ; seed++ )); do
 
     if [ "$model" = "tcn" ]; then
         if [ "$static_bool" = true ]; then
-            outfile="/data0/funato/hsp/0_out/TCN/GB/reports_static/tcn.$seed.$(date +%Y-%m-%d_%H-%M-%S).out"
+            outfile="/data0/funato/hsp2/0_out/TCN/GB/reports_static/tcn.$seed.$(date +%Y-%m-%d_%H-%M-%S).out"
         else
-            outfile="/data0/funato/hsp/0_out/TCN/GB/reports_nostatic/tcn.$seed.$(date +%Y-%m-%d_%H-%M-%S).out"
+            outfile="/data0/funato/hsp2/0_out/TCN/GB/reports_nostatic/tcn.$seed.$(date +%Y-%m-%d_%H-%M-%S).out"
         fi
         mkdir -p "$(dirname "$outfile")" # Create output directory if it doesn't exist
         start_time=$(date '+%Y-%m-%d %H:%M:%S') # Log start time
         echo "Start Time: $start_time | Seed: $seed" >> "$output_dir/$log_name"
 
-        # --- MODIFICATION START ---
-        TCN_PARAMS="--num_channels 128 256 512" 
-        # Added --num_workers=2 to prevent performance warnings and issues
-        OTHER_PARAMS="--batch_size=32 --epochs=50 --kernel_size=4 --seed=$seed --num_workers=2"
-        # --- MODIFICATION END ---
+        # Build parameter strings from configuration
+        TCN_PARAMS="--num_channels $NUM_CHANNELS"
+        OTHER_PARAMS="--batch_size=$BATCH_SIZE --epochs=$EPOCHS --kernel_size=$KERNEL_SIZE --seed=$seed --num_workers=$NUM_WORKERS"
 
 
         if [ "$static_bool" = true ]; then ## static data is used
-            echo "Running: taskset -c $core python3 /data0/funato/hsp/99_work/13_TCN/TCN_regional_modeling-master/main_tcn.py train --no_static=False $OTHER_PARAMS $TCN_PARAMS" >> "$output_dir/$log_name"
+            echo "Running: taskset -c $core python3 /data0/funato/hsp2/99_work/13_TCN/TCN_regional_modeling-master/main_tcn.py train --no_static=False $OTHER_PARAMS $TCN_PARAMS" >> "$output_dir/$log_name"
 
-            taskset -c $core python3 /data0/funato/hsp/99_work/13_TCN/TCN_regional_modeling-master/main_tcn.py train --no_static=False $OTHER_PARAMS $TCN_PARAMS > $outfile 2>> "$output_dir/$log_name" &
+            taskset -c $core python3 /data0/funato/hsp2/99_work/13_TCN/TCN_regional_modeling-master/main_tcn.py train --no_static=False $OTHER_PARAMS $TCN_PARAMS > $outfile 2>> "$output_dir/$log_name" &
         else #  no static data is used
-            echo "Running: taskset -c $core python3 /data0/funato/hsp/99_work/13_TCN/TCN_regional_modeling-master/main_tcn.py train --no_static=True $OTHER_PARAMS $TCN_PARAMS" >> "$output_dir/$log_name"
+            echo "Running: taskset -c $core python3 /data0/funato/hsp2/99_work/13_TCN/TCN_regional_modeling-master/main_tcn.py train --no_static=True $OTHER_PARAMS $TCN_PARAMS" >> "$output_dir/$log_name"
 
-            taskset -c $core python3 /data0/funato/hsp/99_work/13_TCN/TCN_regional_modeling-master/main_tcn.py train --no_static=True $OTHER_PARAMS $TCN_PARAMS > $outfile 2>> "$output_dir/$log_name" &
+            taskset -c $core python3 /data0/funato/hsp2/99_work/13_TCN/TCN_regional_modeling-master/main_tcn.py train --no_static=True $OTHER_PARAMS $TCN_PARAMS > $outfile 2>> "$output_dir/$log_name" &
         fi
 
         wait # Ensure the process completes before logging end time
@@ -83,5 +98,5 @@ done
 
 
 ###RUN USING####
-# chmod +x /data0/funato/hsp/99_work/13_TCN/TCN_regional_modeling-master/run_main_tcn.sh
-# nohup /data0/funato/hsp/99_work/13_TCN/TCN_regional_modeling-master/run_main_tcn.sh tcn > /dev/null 2>&1 &
+# chmod +x /data0/funato/hsp2/99_work/13_TCN/TCN_regional_modeling-master/run_main_tcn.sh
+# nohup /data0/funato/hsp2/99_work/13_TCN/TCN_regional_modeling-master/run_main_tcn.sh tcn > /dev/null 2>&1 &

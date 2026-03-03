@@ -11,10 +11,10 @@ START_CORE=0
 NUM_CORES=8
 N_BASINS=""
 PYTHON_PATH="/data0/funato/hsp/.venv/bin/python"
-RUNS_BASE_DIR="/data0/funato/hsp/99_work/11_RandomForest/RF_regional_modeling-master/runs_rf"
-EVAL_SCRIPT="/data0/funato/hsp/99_work/11_RandomForest/RF_regional_modeling-master/eval_regional_hp.py"
-OUTPUT_BASE="/data0/funato/hsp/0_out/RF/GB/regional/hp"
-LOG_DIR="/data0/funato/hsp/99_work/11_RandomForest/RF_regional_modeling-master/logs"
+RUNS_BASE_DIR="/data0/funato/hsp2/99_work/11_RandomForest/RF_regional_modeling-master/runs_rf"
+EVAL_SCRIPT="/data0/funato/hsp2/99_work/11_RandomForest/RF_regional_modeling-master/eval_regional_hp.py"
+OUTPUT_BASE="/data0/funato/hsp2/0_out/RF/GB/regional/hp"
+LOG_DIR="/data0/funato/hsp2/99_work/11_RandomForest/RF_regional_modeling-master/logs"
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -223,7 +223,6 @@ echo "  where hp_string = n<n_estimators>_l<min_samples_leaf>_f<max_features>"
 echo ""
 
 ###RUN USING####
-# chmod +x /data0/funato/hsp/hsp_git/99_work/11_RandomForest/RF_regional_modeling-master/run_eval_hp.sh
-# /data0/funato/hsp/hsp_git/99_work/11_RandomForest/RF_regional_modeling-master/run_eval_hp.sh --start_core 0 --num_cores 8
-# /data0/funato/hsp/hsp_git/99_work/11_RandomForest/RF_regional_modeling-master/run_eval_hp.sh --start_core 0 --num_cores 2 --n_basins 5  # Testing
-# /data0/funato/hsp/hsp_git/99_work/11_RandomForest/RF_regional_modeling-master/run_eval_hp.sh --start_core 0 --num_cores 6 > eval_hp_rf.log 2>&1 &
+# chmod +x /data0/funato/hsp2/hsp_git/99_work/11_RandomForest/RF_regional_modeling-master/run_eval_hp.sh
+# /data0/funato/hsp2/hsp_git/99_work/11_RandomForest/RF_regional_modeling-master/run_eval_hp.sh --start_core 0 --num_cores 8
+# /data0/funato/hsp2/hsp_git/99_work/11_RandomForest/RF_regional_modeling-master/run_eval_hp.sh --start_core 30 --num_cores 2 > output_eval_rf_hp_regional.log 2>&1 &

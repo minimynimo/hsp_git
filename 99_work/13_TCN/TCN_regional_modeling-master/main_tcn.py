@@ -19,6 +19,10 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
+
+# Force matplotlib to use non-interactive backend for headless operation
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 from papercode.datautils import add_basin_attributes, load_attributes
@@ -28,7 +32,7 @@ from papercode.datautils import add_basin_attributes, load_attributes
 # ####################### #
 
 GLOBAL_SETTINGS = {
-    'loc': 'GB',
+    'loc': 'US',
     'ver': 2,
     'seq_length': 270,
     'train_start': pd.to_datetime('1993-01-01', format='%Y-%m-%d'),
@@ -43,7 +47,8 @@ if GLOBAL_SETTINGS['loc'] == "JP":
     file_tot_num = 87
 elif GLOBAL_SETTINGS['loc'] == "GB":
     file_tot_num = 424
-
+elif GLOBAL_SETTINGS['loc'] == "US":
+    file_tot_num = 614
 file_num_list = list(map(str, range(1, file_tot_num + 1)))
 
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -56,7 +61,7 @@ def file_name(input_num, total_len):
     return str(input_num).zfill(total_len)
 
 def load_data_for_basin(file_num):
-    varssim_dir = "/data0/funato/hsp/2_MERV/varssim_HBV"
+    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim_{GLOBAL_SETTINGS['loc']}"
     df = pd.read_csv(f"{varssim_dir}/varssim{file_name(file_num, 3)}.csv")
     df['Date'] = pd.to_datetime(df['Date'])
     df.set_index('Date', inplace=True)
@@ -218,7 +223,7 @@ def get_args() -> Dict:
     
     # TCN specific arguments
     parser.add_argument('--batch_size', type=int, default=256)
-    parser.add_argument('--epochs', type=int, default=30)
+    parser.add_argument('--epochs', type=int, default=50)
     parser.add_argument('--learning_rate', type=float, default=1e-3)
     parser.add_argument('--dropout', type=float, default=0.4)
     parser.add_argument('--kernel_size', type=int, default=4)
@@ -312,8 +317,6 @@ def train(cfg):
     input_size = len(dyn_cols)
     if not cfg["no_static"]:
         input_size += len(attributes.columns)
-
-    cfg['num_channels'] = [cfg['num_filters']] * cfg['num_levels']
 
     model = TCNModel(input_size=input_size, 
                      num_channels=cfg["num_channels"], 

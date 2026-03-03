@@ -4,10 +4,10 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import os
 
-input_data = "/data0/funato/hsp/0_out/analysis/mass_conservation/water_balance_data.csv"
+input_data = "/data0/funato/hsp2/0_out/analysis/mass_conservation/water_balance_data.csv"
 input_df = pd.read_csv(input_data)
 
-output_dir = "/data0/funato/hsp/0_out/1_fig/mass_conservation"
+output_dir = "/data0/funato/hsp2/0_out/1_fig/mass_conservation"
 os.makedirs(output_dir, exist_ok=True)
 
 # Set plotting style
@@ -26,11 +26,11 @@ input_df['Model'] = input_df['Model'].replace('BC', 'HYPER')
 observed_df = input_df[input_df['Model'] == 'Observed'].set_index('File_num')['Daily_Mean_ET']
 
 # Calculate ET differences for each model compared to observed
-model_list = ["HBV", "HYPER", "RF", "XGB", "TCN", "LSTM"]
+model_list = ["SACSMA", "HYPER", "RF", "XGB", "TCN", "LSTM"]
 et_differences = []
 
 color_list = {
-    "HBV": "#7B7B7B",    # Kept as requested (Medium Grey)
+    "SACSMA": "#7B7B7B",    # Kept as requested (Medium Grey)
     "HYPER": "#628AE8",     # Kept as requested (Steel Blue)
     "RF":   "#FF7F00",   # Red
     "XGB":  "#9C4803",   # Bright Orange
@@ -72,7 +72,7 @@ plt.ylabel('ET Difference [mm/d]', fontsize=fs)
 plt.tick_params(axis='both', which='major', labelsize=fs)
 plt.axhline(y=0, color='red', linestyle='--', alpha=0.7)
 plt.xticks(rotation=45)
-plt.ylim(-5, 15)
+plt.ylim(-1, 1)
 plt.grid(True, alpha=0.3)
 plt.tight_layout()
 plt.savefig(f"{output_dir}/f03_et_difference_boxplot.png", dpi=300, bbox_inches='tight')

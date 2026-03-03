@@ -7,7 +7,7 @@ import seaborn as sns
 fs = 24
 
 # Configuration
-output_dir = "/data0/funato/hsp/0_out/1_fig/peak_discharge_use"
+output_dir = "/data0/funato/hsp2/0_out/1_fig/peak_discharge_use"
 os.makedirs(output_dir, exist_ok=True)
 
 model_list = ["HBV", "HYPER", "RF", "XGB", "TCN", "LSTM"]
@@ -127,11 +127,11 @@ def BMK(obs_data, sim_data, benchmark):
 # Load data for each model
 for model in model_list:
     if model == "HBV":
-        input_file = "/data0/funato/hsp/0_out/HBV/peak_discharge/peak_discharge_comparison_HBV.csv"
+        input_file = "/data0/funato/hsp2/0_out/HBV/peak_discharge/peak_discharge_comparison_HBV.csv"
     elif model == "HYPER":
-        input_file = "/data0/funato/hsp/0_out/BC/peak_discharge/peak_discharge_comparison_BC.csv"
+        input_file = "/data0/funato/hsp2/0_out/BC/peak_discharge/peak_discharge_comparison_BC.csv"
     else:
-        input_file = f"/data0/funato/hsp/0_out/{model}/peak_discharge/peak_discharge_comparison_{model}.csv"
+        input_file = f"/data0/funato/hsp2/0_out/{model}/peak_discharge/peak_discharge_comparison_{model}.csv"
     
     try:
         df = pd.read_csv(input_file, header=0, index_col=None)

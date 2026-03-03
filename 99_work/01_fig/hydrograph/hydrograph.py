@@ -9,7 +9,7 @@ import glob
 
 def get_prediction(model, train_type, basin_id, ce):
     """Get prediction data for a specific model, train type, basin, and ce"""
-    base_path = '/data0/funato/hsp/0_out'
+    base_path = '/data0/funato/hsp2/0_out'
     
     # Try different file patterns for different train types
     if train_type == 'individual':
@@ -105,7 +105,7 @@ def check_available_train_types(model, basin_id):
 model_list = ['LSTM', "XGB", "TCN", "RF"]
 basin_id_list = list(range(1,11))
 
-output_dir = "/data0/funato/hsp/0_out/1_fig/hydrograph/ML_comparison"
+output_dir = "/data0/funato/hsp2/0_out/1_fig/hydrograph/ML_comparison"
 os.makedirs(output_dir, exist_ok=True)
 
 

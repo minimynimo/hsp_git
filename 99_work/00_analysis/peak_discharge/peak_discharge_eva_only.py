@@ -13,13 +13,12 @@ model_list = ["HBV", "BC", "RF", "XGB", "TCN", "LSTM"]
 for model_name in model_list:
     print(f"Processing model: {model_name}")
 
-    if model_name == "BC":
-        input_dir = f"/data0/funato/hsp/0_out/BC/varssim_BC"
-    elif model_name == "HBV":
-        input_dir = f"/data0/funato/hsp/0_out/HBV/varssim_HBV"
+    if model_name == "BC" or model_name == "HBV":
+        input_dir = f"/data0/funato/hsp2/0_out/{model_name}/varssim_{model_name}"
     else:
-        input_dir = f"/data0/funato/hsp/0_out/{model_name}/GB/regional/varssim_{model_name}"
-    output_dir = f"/data0/funato/hsp/0_out/{model_name}/peak_discharge"
+        input_dir = f"/data0/funato/hsp2/0_out/{model_name}/GB/regional/varssim_{model_name}"
+        
+    output_dir = f"/data0/funato/hsp2/0_out/{model_name}/peak_discharge"
 
     os.makedirs(output_dir, exist_ok=True)
 

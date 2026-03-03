@@ -10,7 +10,7 @@ plt.style.use('default')
 sns.set_palette("husl")
 
 # Configuration
-model_list = ["HBV", "BC", "RF", "XGB", "TCN", "LSTM"]
+model_list = ["SACSMA", "BC", "RF", "XGB", "TCN", "LSTM"]
 file_tot_num = 424
 
 start_date_cal = "1993-01-01"
@@ -19,16 +19,16 @@ start_date_eva = "2001-01-01"
 end_date_eva = "2006-12-31"
 
 # Paths
-input_dir_base = "/data0/funato/hsp/0_out"
-output_dir = "/data0/funato/hsp/0_out/analysis/mass_conservation"
-output_fig_dir = "/data0/funato/hsp/0_out/1_fig/mass_conservation"
+input_dir_base = "/data0/funato/hsp2/0_out"
+output_dir = "/data0/funato/hsp2/0_out/analysis/mass_conservation"
+output_fig_dir = "/data0/funato/hsp2/0_out/1_fig/mass_conservation"
 
 # Ensure output directories exist
 os.makedirs(output_dir, exist_ok=True)
 os.makedirs(output_fig_dir, exist_ok=True)
 
 # Load basin characteristics
-#basin_char_dir = "/data0/funato/hsp/3_gis_data/GB/0_data/river_basin/dataset_GB/camelsgb_attribute_combined.csv"
+#basin_char_dir = "/data0/funato/hsp2/3_gis_data/GB/0_data/river_basin/dataset_GB/camelsgb_attribute_combined.csv"
 #basin_char_df = pd.read_csv(basin_char_dir, index_col='File_num')
 
 # Initialize storage for water balance data
@@ -44,8 +44,8 @@ for file in range(1, file_tot_num + 1):
         print(f"  Processing file: {file}")
 
     
-    # Read HBV file for observed data
-    input_file = f"{input_dir_base}/HBV/varssim_HBV/varssim{file:03d}.csv"
+    # Read SACSMA file for observed data
+    input_file = f"{input_dir_base}/SACSMA/varssim_SACSMA/varssim{file:03d}.csv"
     
     if not os.path.exists(input_file):
         continue
@@ -110,7 +110,7 @@ for model in model_list:
         
         
         # Determine input file path based on model
-        if model == "HBV":
+        if model == "SACSMA":
             input_file = f"{input_dir_base}/{model}/varssim_{model}/varssim{file:03d}.csv"
         elif model == "BC":
             input_file = f"{input_dir_base}/{model}/varssim_{model}/varssim{file:03d}.csv"

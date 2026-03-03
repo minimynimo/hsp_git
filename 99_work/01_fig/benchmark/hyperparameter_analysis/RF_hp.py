@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 
 MODEL_TYPES = ["regional", "individual"]
 
-output_dir = "/data0/funato/hsp/0_out/1_fig/benchmark/hyperparameter_analysis/RF/GB/"
+output_dir = "/data0/funato/hsp2/0_out/1_fig/benchmark/hyperparameter_analysis/RF/GB/"
 os.makedirs(output_dir, exist_ok=True)
 
 benchmark_list = ["KGE", "NSE", "RMSE", "MAE"]
@@ -32,12 +32,12 @@ for MODEL_TYPE in MODEL_TYPES:
                 for MAX_FEATUR in MAX_FEATURES:
                     
                     if MODEL_TYPE == "regional":
-                        input_path = f"/data0/funato/hsp/0_out/RF/GB/{MODEL_TYPE}/hp/results/RF_results_n{N_ESTIMATOR}_l{MIN_SAMPLE_LEAF}_f{MAX_FEATUR}_eva.csv"
+                        input_path = f"/data0/funato/hsp2/0_out/RF/GB/{MODEL_TYPE}/hp/results/RF_results_n{N_ESTIMATOR}_l{MIN_SAMPLE_LEAF}_f{MAX_FEATUR}_eva.csv"
                     elif MODEL_TYPE == "individual":
                         if MAX_FEATUR == "sqrt":
-                            input_path = f"/data0/funato/hsp/0_out/RF/GB/{MODEL_TYPE}/hp/n{N_ESTIMATOR}_d{MAX_DEPT}_l{MIN_SAMPLE_LEAF}_fsqrt/results/RF_results_eva.csv"
+                            input_path = f"/data0/funato/hsp2/0_out/RF/GB/{MODEL_TYPE}/hp/n{N_ESTIMATOR}_d{MAX_DEPT}_l{MIN_SAMPLE_LEAF}_fsqrt/results/RF_results_eva.csv"
                         else:  # MAX_FEATUR == "1/3"
-                            input_path = f"/data0/funato/hsp/0_out/RF/GB/{MODEL_TYPE}/hp/n{N_ESTIMATOR}_d{MAX_DEPT}_l{MIN_SAMPLE_LEAF}_f1/3/results/RF_results_eva.csv"
+                            input_path = f"/data0/funato/hsp2/0_out/RF/GB/{MODEL_TYPE}/hp/n{N_ESTIMATOR}_d{MAX_DEPT}_l{MIN_SAMPLE_LEAF}_f1/3/results/RF_results_eva.csv"
 
                     if not os.path.exists(input_path):
                         continue

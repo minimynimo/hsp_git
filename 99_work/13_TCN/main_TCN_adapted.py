@@ -35,7 +35,7 @@ loc, ver = "GB", 2
 
 ver_name = "ver1_1" if ver == 1 else "ver2_0"
 
-attribute_dir = f'/data0/funato/hsp/3_gis_data/{loc}/0_data/river_basin/dataset_{loc}'
+attribute_dir = f'/data0/funato/hsp2/3_gis_data/{loc}/0_data/river_basin/dataset_{loc}'
 
 # Define synthetic precipitation columns
 syn_precip_cols = ['syn_no_precip', 'syn_p_pet', 
@@ -52,7 +52,7 @@ elif loc == "GB" and ver == 2:
     file_tot_num = 424 # Using 20 for consistency with other models
     columns_drop = ['gauge_id']
     attribute_values = pd.read_csv(f'{attribute_dir}/camelsgb_attribute_combined.csv', encoding= 'UTF-8', index_col=0, header=0)
-    varssim_dir = f"/data0/funato/hsp/2_MERV/varssim_HBV"
+    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim"
 
 file_list = list(range(1, file_tot_num+1))
 
@@ -69,7 +69,7 @@ end_date_cal = '2000-12-31'
 start_date_eva = '2001-01-01'
 end_date_eva = '2006-12-31'
 
-output_dir = f"/data0/funato/hsp/0_out/TCN/{loc}/adapted_424"
+output_dir = f"/data0/funato/hsp2/0_out/TCN/{loc}/adapted_424"
 os.makedirs(output_dir, exist_ok=True)
 os.makedirs(output_dir + "/predict/og", exist_ok=True)
 os.makedirs(output_dir + "/results", exist_ok=True)
@@ -219,7 +219,7 @@ print(f"Shape of training sequences: {input_cal_seq.shape}")
 print(f"Shape of training targets: {target_cal_seq.shape}")
 
 # Try to load pre-trained regional model from shap_regional directory
-regional_model_path = f"/data0/funato/hsp/0_out/TCN/{loc}/shap/regional_424/TCN_model.h5"
+regional_model_path = f"/data0/funato/hsp2/0_out/TCN/{loc}/shap/regional_424/TCN_model.h5"
 if os.path.exists(regional_model_path):
     print(f"Loading pre-trained regional model from {regional_model_path}...")
     from keras.models import load_model

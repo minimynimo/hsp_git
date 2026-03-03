@@ -52,7 +52,7 @@ def file_name(input_num, total_len):
 
 def load_data_for_basin(file_num):
     """Load data for a specific basin"""
-    varssim_dir = "/data0/funato/hsp/2_MERV/varssim_HBV"
+    varssim_dir = "/data0/funato/hsp2/2_MERV/varssim"
     df = pd.read_csv(f"{varssim_dir}/varssim{file_name(file_num, 3)}.csv")
     df['Date'] = pd.to_datetime(df['Date'])
     df.set_index('Date', inplace=True)
@@ -288,15 +288,15 @@ def train(cfg):
         ax1.set_title('Rescaled Hydrograph (Training Period)', fontsize=14)
         obs_rescaled = (basin_samples['obs_scaled'] * bscaler['q_std']) + bscaler['q_mean']
         pred_rescaled = (basin_samples['pred_scaled'] * bscaler['q_std']) + bscaler['q_mean']
-        ax1.plot(basin_samples['date'], obs_rescaled, label='Observed', color='black')
-        ax1.plot(basin_samples['date'], pred_rescaled, label='Predicted', color='red', linestyle='--')
+        ax1.plot(basin_samples['date'].values, obs_rescaled.values, label='Observed', color='black')
+        ax1.plot(basin_samples['date'].values, pred_rescaled.values, label='Predicted', color='red', linestyle='--')
         ax1.set_ylabel('Discharge (m³/s)')
         ax1.legend()
         ax1.grid(True, linestyle='--', alpha=0.6)
 
         ax2.set_title('Scaled Hydrograph (Training Period)', fontsize=14)
-        ax2.plot(basin_samples['date'], basin_samples['obs_scaled'], label='Observed (scaled)', color='black')
-        ax2.plot(basin_samples['date'], basin_samples['pred_scaled'], label='Predicted (scaled)', color='red', linestyle='--')
+        ax2.plot(basin_samples['date'].values, basin_samples['obs_scaled'].values, label='Observed (scaled)', color='black')
+        ax2.plot(basin_samples['date'].values, basin_samples['pred_scaled'].values, label='Predicted (scaled)', color='red', linestyle='--')
         ax2.set_ylabel('Standardized Value')
         ax2.legend()
         ax2.grid(True, linestyle='--', alpha=0.6)
@@ -305,13 +305,13 @@ def train(cfg):
         df_basin_raw = load_data_for_basin(int(basin_id))
         df_basin_period = df_basin_raw.loc[cfg['train_start']:cfg['train_end']]
 
-        ax3.plot(df_basin_period.index, df_basin_period['PET'], label='PET', color='orange')
-        ax3.plot(df_basin_period.index, df_basin_period['Temp'], label='Temp (°C)', color='green')
+        ax3.plot(df_basin_period.index.values, df_basin_period['PET'].values, label='PET', color='orange')
+        ax3.plot(df_basin_period.index.values, df_basin_period['Temp'].values, label='Temp (°C)', color='green')
         ax3.set_ylabel('PET & Temp')
         ax3.legend(loc='upper left')
 
         ax3_twin = ax3.twinx()
-        ax3_twin.bar(df_basin_period.index, df_basin_period['Precip'], label='Precipitation', color='lightblue', width=1.0)
+        ax3_twin.bar(df_basin_period.index.values, df_basin_period['Precip'].values, label='Precipitation', color='lightblue', width=1.0)
         ax3_twin.set_ylabel('Precipitation (mm)')
         ax3_twin.legend(loc='upper right')
         ax3_twin.invert_yaxis()

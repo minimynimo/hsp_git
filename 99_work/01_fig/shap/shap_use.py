@@ -14,7 +14,7 @@ sns.set_palette("husl")
 
 def load_shap_data():
     """Load SHAP values and feature names for all models."""
-    base_path = Path("/data0/funato/hsp/0_out")
+    base_path = Path("/data0/funato/hsp2/0_out")
     models = ['RF', 'XGB', 'TCN', 'LSTM']
     
     model_data = {}
@@ -151,7 +151,7 @@ cbar.ax.tick_params(labelsize=fontsize)
 plt.tight_layout()
 
 # Save the figure
-output_path = '/data0/funato/hsp/0_out/1_fig/shap/f02_top10_shap_heatmap.png'
+output_path = '/data0/funato/hsp2/0_out/1_fig/shap/f02_top10_shap_heatmap.png'
 plt.savefig(output_path, dpi=300, bbox_inches='tight')
 print(f"\nHeatmap saved to: {output_path}")
 

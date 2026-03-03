@@ -28,7 +28,7 @@ from papercode.datautils import add_basin_attributes, load_attributes
 # ####################### #
 
 GLOBAL_SETTINGS = {
-    'loc': 'GB',
+    'loc': 'US',
     'ver': 2,
     'seq_length': 270,
     'train_start': pd.to_datetime('1993-01-01', format='%Y-%m-%d'),
@@ -43,7 +43,8 @@ if GLOBAL_SETTINGS['loc'] == "JP":
     file_tot_num = 87
 elif GLOBAL_SETTINGS['loc'] == "GB":
     file_tot_num = 424
-
+elif GLOBAL_SETTINGS['loc'] == "US":
+    file_tot_num = 614
 file_num_list = list(map(str, range(1, file_tot_num + 1)))[::4]
 
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -56,7 +57,7 @@ def file_name(input_num, total_len):
     return str(input_num).zfill(total_len)
 
 def load_data_for_basin(file_num):
-    varssim_dir = "/data0/funato/hsp/2_MERV/varssim_HBV"
+    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim_{GLOBAL_SETTINGS['loc']}"
     df = pd.read_csv(f"{varssim_dir}/varssim{file_name(file_num, 3)}.csv")
     df['Date'] = pd.to_datetime(df['Date'])
     df.set_index('Date', inplace=True)
@@ -214,31 +215,25 @@ def get_args() -> Dict:
     parser.add_argument('--run_dir', type=str, help="For evaluation mode.")
     parser.add_argument('--num_workers', type=int, default=2)
     parser.add_argument('--no_static', type=str2bool, default=False)
-    
-    # Fixed TCN hyperparameters based on Xu et al., 2021
-    parser.add_argument('--batch_size', type=int, default=256)
-    parser.add_argument('--epochs', type=int, default=30)
-    parser.add_argument('--learning_rate', type=float, default=1e-3, help='Fixed at 1e-3')
     parser.add_argument('--num_levels', type=int, default=8, help='Number of dilation levels (fixed at 8)')
     
-    # Hyperparameters for grid search
-    parser.add_argument('--num_filters', type=int, default=32, help='Number of filters per level')
-    parser.add_argument('--kernel_size', type=int, default=2, help='Kernel size for TCN')
-    parser.add_argument('--dropout', type=float, default=0.2, help='Dropout rate')
+    # TCN specific arguments
+    parser.add_argument('--batch_size', type=int, default=256)
+    parser.add_argument('--epochs', type=int, default=50)
+    parser.add_argument('--learning_rate', type=float, default=1e-3)
+    parser.add_argument('--dropout', type=float, default=0.4)
+    parser.add_argument('--kernel_size', type=int, default=4)
+    parser.add_argument('--num_filters', type=int, default=64, help='Number of filters per layer')
+    #parser.add_argument('--num_channels', type=int, nargs='+', default=[32, 64, 128])
 
     cfg = vars(parser.parse_args())
-    
-    # Create num_channels based on num_filters and num_levels
-    # All levels use the same number of filters
-    cfg['num_channels'] = [cfg['num_filters']] * cfg['num_levels']
-    
     cfg.update(GLOBAL_SETTINGS)
     return cfg
 
 def _setup_run(cfg: Dict) -> Dict:
     """Create folder structure for this run"""
     now = datetime.now()
-    hp_str = f"f{cfg['num_filters']}_k{cfg['kernel_size']}_d{cfg['dropout']}"
+    hp_str = f"f{cfg['num_filters']}_k{cfg['kernel_size']}_d{cfg['dropout']}_w{cfg[GLOBAL_SETTINGS['seq_length']]}"
     time_str = now.strftime("%m%d_%H%M")
     run_name = f"{hp_str}/tcn_run_{time_str}_seed{cfg['seed']}"
     cfg['run_dir'] = Path(__file__).parent / "runs_tcn" / run_name
@@ -322,8 +317,23 @@ def train(cfg):
     if not cfg["no_static"]:
         input_size += len(attributes.columns)
 
-    model = TCNModel(input_size=input_size, 
+    """model = TCNModel(input_size=input_size, 
                      num_channels=cfg["num_channels"], 
+                     kernel_size=cfg["kernel_size"], 
+                     dropout=cfg["dropout"]).to(DEVICE)"""
+    
+    cfg["num_channels"] = [cfg["num_filters"]] * cfg["num_levels"]
+
+    print(f"TCN Configuration: Kernel={cfg['kernel_size']}, Layers={cfg['num_levels']}, Filters={cfg['num_filters']}")
+    
+    # Calculate Receptive Field to verify physics
+    rf = 1 + 2 * (cfg['kernel_size'] - 1) * (2**cfg['num_levels'] - 1)
+    print(f"Theoretical Receptive Field: {rf} days")
+    if rf < 270:
+        print("WARNING: Receptive field is too short for hydrological memory (< 270 days)!")
+
+    model = TCNModel(input_size=input_size, 
+                     num_channels=cfg["num_channels"],  # This now uses the list we just built
                      kernel_size=cfg["kernel_size"], 
                      dropout=cfg["dropout"]).to(DEVICE)
     

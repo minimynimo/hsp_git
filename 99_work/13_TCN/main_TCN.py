@@ -37,11 +37,15 @@ if loc == "JP" and ver == 2:
 elif loc == "GB" and ver == 2:
     file_tot_num = 424
     columns_drop = ['grdc_no','river','station','WaterArea','ForestArea','ForestAreaRatio','WaterAreaRatio','lat_org','long_org', 'land_GolfCourse','land_GolfCourse_Ratio']
-    attribute_values = pd.read_csv(f'{attribute_dir}/basin_data_limited_met&soil&geology&land_{ver_name}.csv', encoding= 'UTF-8', index_col=0, header=0)
-    varssim_dir = f"/data0/funato/hsp/2_MERV/varssim_HBV"
+    attribute_values = pd.read_csv(f'{attribute_dir}/camelsgb_attribute_combined.csv', encoding= 'UTF-8', index_col=0, header=0)
+    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim_GB"
+elif loc == "US" and ver == 2:
+    file_tot_num = 614
+    columns_drop = ['grdc_no','river','station']
+    attribute_values = pd.read_csv(f'{attribute_dir}/camels_attribute_combined.csv', encoding= 'UTF-8', index_col=0, header=0)
+    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim_US"
 
-#file_list = list(range(1, file_tot_num+1))
-file_list = list(range(20,23))
+file_list = list(range(1, file_tot_num+1))
 
 input_dim = 3 + len(attribute_values.columns) - len(columns_drop)  # 3 meteorological + 193 attributes
 
@@ -58,7 +62,7 @@ end_date_cal = '2000-12-31'
 start_date_eva = '2001-01-01'
 end_date_eva = '2006-12-31'
 
-output_dir = f"/data0/funato/hsp/0_out/TCN/{loc}/shap"
+output_dir = f"/data0/funato/hsp2/0_out/TCN/{loc}/shap"
 os.makedirs(output_dir, exist_ok=True)
 os.makedirs(output_dir + "/predict", exist_ok=True)
 os.makedirs(output_dir + "/results", exist_ok=True)

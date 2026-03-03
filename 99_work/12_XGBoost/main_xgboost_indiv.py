@@ -20,7 +20,7 @@ if loc == "JP" and ver == 2:
     varssim_dir = f"/data0/funato/2_MERV/{loc}/varssim_nocal/{ver_name}"
 elif loc == "GB" and ver == 2:
     file_tot_num = 424
-    varssim_dir = f"/data0/funato/hsp/2_MERV/varssim_HBV"
+    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim"
 
 file_list = list(range(1, file_tot_num+1))
 #file_list = list(range(20,30))
@@ -31,16 +31,15 @@ start_date_eva = '2001-01-01'
 end_date_eva = '2006-12-31'
 
 n_estimators = 100
-max_depth = 4
-learning_rate = 0.05
+max_depth = 3
+learning_rate = 0.1
 
 param_tag = f"n{n_estimators}_d{max_depth}_lr{learning_rate}"
 
-output_dir = f"/data0/funato/hsp/0_out/XGB/{loc}/individual"
+output_dir = f"/data0/funato/hsp2/0_out/XGB/{loc}/individual"
 os.makedirs(output_dir, exist_ok=True)
 os.makedirs(output_dir + "/predict", exist_ok=True)
 os.makedirs(output_dir + "/results", exist_ok=True)
-
 
 def file_name(input_num, total_len):
     car_len = len(str(input_num))

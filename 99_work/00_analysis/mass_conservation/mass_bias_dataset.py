@@ -10,7 +10,7 @@ plt.style.use('default')
 sns.set_palette("husl")
 
 # Configuration
-model_list = ["HBV", "BC", "RF", "XGB", "TCN", "LSTM"]
+model_list = ["SACSMA", "BC", "RF", "XGB", "TCN", "LSTM"]
 file_tot_num = 424
 
 start_date_cal = "1993-01-01"
@@ -19,14 +19,14 @@ start_date_eva = "2001-01-01"
 end_date_eva = "2006-12-31"
 
 # Paths
-input_dir_base = "/data0/funato/hsp/0_out"
-output_dir = "/data0/funato/hsp/0_out/analysis/mass_conservation"
+input_dir_base = "/data0/funato/hsp2/0_out"
+output_dir = "/data0/funato/hsp2/0_out/analysis/mass_conservation"
 
 # Ensure output directories exist
 os.makedirs(output_dir, exist_ok=True)
 
 # Load basin characteristics
-basin_char_dir = "/data0/funato/hsp/3_gis_data/GB/0_data/river_basin/dataset_GB/camelsgb_attribute_combined.csv"
+basin_char_dir = "/data0/funato/hsp2/3_gis_data/GB/0_data/river_basin/dataset_GB/camelsgb_attribute_combined.csv"
 basin_char_df = pd.read_csv(basin_char_dir, index_col='File_num')
 
 # Initialize storage for mass bias data
@@ -48,7 +48,7 @@ for model in model_list:
             continue
         
         # Determine input file path based on model
-        if model == "HBV":
+        if model == "SACSMA":
             input_file = f"{input_dir_base}/{model}/varssim_{model}/varssim{file:03d}.csv"
         elif model == "BC":
             input_file = f"{input_dir_base}/{model}/varssim_{model}/varssim{file:03d}.csv"

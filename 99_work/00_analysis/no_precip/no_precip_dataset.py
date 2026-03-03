@@ -17,7 +17,7 @@ start_date_zero = "2002-01-01"
 results = []
 all_discharge_data = {model: [] for model in model_list}
 
-output_dir = "/data0/funato/hsp/0_out/analysis/no_precip_discharge"
+output_dir = "/data0/funato/hsp2/0_out/analysis/no_precip_discharge"
 os.makedirs(output_dir, exist_ok=True)
     
 for model in model_list:
@@ -26,10 +26,11 @@ for model in model_list:
     for file in range(1, file_tot_num + 1):
         if file % 50 == 0 or file == 1:
             print(f"Processing model: {model}, file number: {file}")
-        if model not in ["HBV", "BC"]:
-            input_file = f"/data0/funato/hsp/0_out/{model}/GB/regional/varssim_{model}/varssim{file:03d}.csv"
+        if model == "HBV" or model == "BC":
+            input_file = f"/data0/funato/hsp2/0_out/{model}/varssim_{model}/varssim{file:03d}.csv"
         else:
-            input_file = f"/data0/funato/hsp/0_out/{model}/varssim_{model}/varssim{file:03d}.csv"
+            input_file = f"/data0/funato/hsp2/0_out/{model}/GB/regional/varssim_{model}/varssim{file:03d}.csv"
+
         if not os.path.exists(input_file):
             print(f"File {input_file} does not exist. Skipping.")
             continue

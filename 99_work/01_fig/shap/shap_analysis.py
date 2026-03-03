@@ -40,8 +40,8 @@ for model in model_list:
     print(f"SHAP ANALYSIS FOR {model} MODEL")
     print(f"{'='*60}")
 
-    shap_dir = f"/data0/funato/hsp/0_out/{model}/GB/shap/regional/shap_objects"
-    output_dir = f"/data0/funato/hsp/0_out/1_fig/shap/{model}"
+    shap_dir = f"/data0/funato/hsp2/0_out/{model}/GB/shap/regional/shap_objects"
+    output_dir = f"/data0/funato/hsp2/0_out/1_fig/shap/{model}"
     os.makedirs(output_dir, exist_ok=True)
 
     expected_values_file = f"{shap_dir}/expected_value.npy"  # Note: singular 'value'
@@ -422,7 +422,7 @@ print("\nCreating enhanced comparative analysis...")
 # Load all model summaries for comparison
 all_summaries = []
 for model in model_list:
-    summary_file = f"/data0/funato/hsp/0_out/1_fig/shap/{model}/{model}_enhanced_shap_summary.csv"
+    summary_file = f"/data0/funato/hsp2/0_out/1_fig/shap/{model}/{model}_enhanced_shap_summary.csv"
     if os.path.exists(summary_file):
         model_summary = pd.read_csv(summary_file)
         all_summaries.append(model_summary)
@@ -454,7 +454,7 @@ if all_summaries:
     ax1.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=10)
     ax1.grid(True, alpha=0.3)
     plt.tight_layout()
-    plt.savefig("/data0/funato/hsp/0_out/1_fig/shap/category_importance_stacked.png", dpi=300, bbox_inches='tight')
+    plt.savefig("/data0/funato/hsp2/0_out/1_fig/shap/category_importance_stacked.png", dpi=300, bbox_inches='tight')
     plt.close()
 
     # 2. Top feature comparison
@@ -475,7 +475,7 @@ if all_summaries:
                 f'{feature}\n({category})', ha='center', va='bottom', fontsize=8, rotation=0)
     
     plt.tight_layout()
-    plt.savefig("/data0/funato/hsp/0_out/1_fig/shap/top_feature_comparison.png", dpi=300, bbox_inches='tight')
+    plt.savefig("/data0/funato/hsp2/0_out/1_fig/shap/top_feature_comparison.png", dpi=300, bbox_inches='tight')
     plt.close()
 
     # 3. Sample size comparison
@@ -490,7 +490,7 @@ if all_summaries:
         ax3.text(i, size + size*0.02, str(size), ha='center', va='bottom', fontsize=10)
     
     plt.tight_layout()
-    plt.savefig("/data0/funato/hsp/0_out/1_fig/shap/sample_size_comparison.png", dpi=300, bbox_inches='tight')
+    plt.savefig("/data0/funato/hsp2/0_out/1_fig/shap/sample_size_comparison.png", dpi=300, bbox_inches='tight')
     plt.close()
 
     # 4. Mean SHAP values comparison
@@ -500,7 +500,7 @@ if all_summaries:
     ax4.set_title('Average Feature Importance by Model', fontweight='bold')
     ax4.grid(True, alpha=0.3)
     plt.tight_layout()
-    plt.savefig("/data0/funato/hsp/0_out/1_fig/shap/mean_shap_comparison.png", dpi=300, bbox_inches='tight')
+    plt.savefig("/data0/funato/hsp2/0_out/1_fig/shap/mean_shap_comparison.png", dpi=300, bbox_inches='tight')
     plt.close()
 
     # 5. Category-specific comparison (top 3 categories)
@@ -533,21 +533,21 @@ if all_summaries:
     ax5.legend()
     ax5.grid(True, alpha=0.3)
     plt.tight_layout()
-    plt.savefig("/data0/funato/hsp/0_out/1_fig/shap/top3_categories_comparison.png", dpi=300, bbox_inches='tight')
+    plt.savefig("/data0/funato/hsp2/0_out/1_fig/shap/top3_categories_comparison.png", dpi=300, bbox_inches='tight')
     plt.close()
 
     
     # Save enhanced comparison summary
-    comparison_df.to_csv("/data0/funato/hsp/0_out/1_fig/shap/enhanced_model_comparison_summary.csv", index=False)
+    comparison_df.to_csv("/data0/funato/hsp2/0_out/1_fig/shap/enhanced_model_comparison_summary.csv", index=False)
     
     print("Enhanced comparative analysis saved as separate files:")
-    print("  - Category importance (stacked): /data0/funato/hsp/0_out/1_fig/shap/category_importance_stacked.png")
-    print("  - Top feature comparison: /data0/funato/hsp/0_out/1_fig/shap/top_feature_comparison.png")
-    print("  - Sample size comparison: /data0/funato/hsp/0_out/1_fig/shap/sample_size_comparison.png")
-    print("  - Mean SHAP comparison: /data0/funato/hsp/0_out/1_fig/shap/mean_shap_comparison.png")
-    print("  - Top 3 categories comparison: /data0/funato/hsp/0_out/1_fig/shap/top3_categories_comparison.png")
-    print("  - Complexity vs importance: /data0/funato/hsp/0_out/1_fig/shap/complexity_vs_importance.png")
-    print("  - Summary CSV: /data0/funato/hsp/0_out/1_fig/shap/enhanced_model_comparison_summary.csv")
+    print("  - Category importance (stacked): /data0/funato/hsp2/0_out/1_fig/shap/category_importance_stacked.png")
+    print("  - Top feature comparison: /data0/funato/hsp2/0_out/1_fig/shap/top_feature_comparison.png")
+    print("  - Sample size comparison: /data0/funato/hsp2/0_out/1_fig/shap/sample_size_comparison.png")
+    print("  - Mean SHAP comparison: /data0/funato/hsp2/0_out/1_fig/shap/mean_shap_comparison.png")
+    print("  - Top 3 categories comparison: /data0/funato/hsp2/0_out/1_fig/shap/top3_categories_comparison.png")
+    print("  - Complexity vs importance: /data0/funato/hsp2/0_out/1_fig/shap/complexity_vs_importance.png")
+    print("  - Summary CSV: /data0/funato/hsp2/0_out/1_fig/shap/enhanced_model_comparison_summary.csv")
 
 print("\nAll SHAP analyses completed successfully!")
 

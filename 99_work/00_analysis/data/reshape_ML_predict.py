@@ -4,10 +4,11 @@ import pandas as pd
 import numpy as np  
 import os   
 
-model_list = ["RF", "XGB", "TCN", "LSTM"]
+#model_list = ["RF", "XGB", "TCN", "LSTM"]
 #model_list = ["RF"]
-#model_list = ["TCN"]
+model_list = ["TCN"]
 #model_list = ["XGB"]
+#model_list = ["LSTM"]
 
 file_tot_num = 424
 
@@ -21,21 +22,29 @@ peak_length_list = [1, 3, 5]
 rate_list = [0, 10, 30, 50]
 
 param_tag_dict = {
-    "RF": "",
+    "RF": "_n100_d5_s2_l1_mf0.7_ms0.5_w270",
     "XGB": "",
     "TCN": "",
-    "LSTM": "_hs256_do0.2"
+    "LSTM": "_hs256_do0.2_e30"
+}
+
+param_synthetic_tag_dict = {
+    "RF": "_n100_d5_s2_l1_mf0.7_ms0.5_w270",
+    "XGB": "",
+    "TCN": "_n64_k4_d0.4",
+    "LSTM": "_hs256_do0.2_e30"
 }
 
 
-base_input_dir = "/data0/funato/hsp/2_MERV/varssim_HBV"
+base_input_dir = "/data0/funato/hsp2/2_MERV/varssim"
 for model_name in model_list:
-    input_dir = f"/data0/funato/hsp/0_out/{model_name}/GB/regional/predict/synthetic"
-    output_dir = f"/data0/funato/hsp/0_out/{model_name}/GB/regional/varssim_{model_name}"
+    input_dir = f"/data0/funato/hsp2/0_out/{model_name}/GB/regional/predict/synthetic"
+    output_dir = f"/data0/funato/hsp2/0_out/{model_name}/GB/regional/varssim_{model_name}"
     os.makedirs(output_dir, exist_ok=True)
 
     print(f"Processing model: {model_name}")
     param_tag = param_tag_dict.get(model_name, "")
+    param_synthetic_tag = param_synthetic_tag_dict.get(model_name, "")
 
     for file_num in range(1, file_tot_num + 1):
         print(f"Processing file {file_num} for model {model_name}")
@@ -135,77 +144,76 @@ for model_name in model_list:
             #print(f"Processing synthetic column: {sim_col}")
             if sim_col == 'og':
                 # Read combined files for original predictions (cal and eva)
-                input_file_cal = f"/data0/funato/hsp/0_out/{model_name}/GB/regional/predict/{model_name}_predict{param_tag}_cal.csv"
-                input_file_eva = f"/data0/funato/hsp/0_out/{model_name}/GB/regional/predict/{model_name}_predict{param_tag}_eva.csv"
+                input_file_cal = f"/data0/funato/hsp2/0_out/{model_name}/GB/regional/predict/{model_name}_predict{param_tag}_cal.csv"
+                input_file_eva = f"/data0/funato/hsp2/0_out/{model_name}/GB/regional/predict/{model_name}_predict{param_tag}_eva.csv"
                 
-                # Read combined files - basins are rows, dates are columns
-                input_df_cal = pd.read_csv(input_file_cal, index_col=0)  # Basin number as index
-                input_df_eva = pd.read_csv(input_file_eva, index_col=0)  # Basin number as index
+                series_list = []
+                col_name = "Prediction"
                 
-                #print(f"Input files for original data: {input_file_cal}, {input_file_eva} with sizes {input_df_cal.shape} and {input_df_eva.shape}")
+                if os.path.exists(input_file_cal):
+                    input_df_cal = pd.read_csv(input_file_cal, index_col=0)
+                    print(f"Cal file exists, shape: {input_df_cal.shape}, file_num {file_num} in index: {file_num in input_df_cal.index}")
+                    if file_num in input_df_cal.index:
+                        cal_series = input_df_cal.loc[file_num]
+                        cal_dates = pd.to_datetime(input_df_cal.columns)
+                        cal_ts = pd.Series(cal_series.values, index=cal_dates)
+                        print(f"Added cal series with {len(cal_ts)} values, date range: {cal_ts.index[0]} to {cal_ts.index[-1]}")
+                        series_list.append(cal_ts)
+                else:
+                    print(f"Cal file does not exist: {input_file_cal}")
                 
-                # Extract data for current basin (file_num)
-                if file_num in input_df_cal.index and file_num in input_df_eva.index:
-                    # Get time series for this basin
-                    cal_series = input_df_cal.loc[file_num]
-                    eva_series = input_df_eva.loc[file_num]
-                    
-                    # Convert column names (date strings) to datetime index
-                    cal_dates = pd.to_datetime(input_df_cal.columns)
-                    eva_dates = pd.to_datetime(input_df_eva.columns)
-                    
-                    # Create pandas Series with proper datetime index
-                    cal_ts = pd.Series(cal_series.values, index=cal_dates)
-                    eva_ts = pd.Series(eva_series.values, index=eva_dates)
-                    
+                if os.path.exists(input_file_eva):
+                    input_df_eva = pd.read_csv(input_file_eva, index_col=0)
+                    print(f"Eva file exists, shape: {input_df_eva.shape}, file_num {file_num} in index: {file_num in input_df_eva.index}")
+                    if file_num in input_df_eva.index:
+                        eva_series = input_df_eva.loc[file_num]
+                        eva_dates = pd.to_datetime(input_df_eva.columns)
+                        eva_ts = pd.Series(eva_series.values, index=eva_dates)
+                        print(f"Added eva series with {len(eva_ts)} values, date range: {eva_ts.index[0]} to {eva_ts.index[-1]}")
+                        series_list.append(eva_ts)
+                else:
+                    print(f"Eva file does not exist: {input_file_eva}")
+                
+                if series_list:
                     # Combine cal and eva predictions into a single series
-                    input_series = pd.concat([cal_ts, eva_ts], axis=0)
-                    input_series = input_series.sort_index()  # Ensure proper chronological order
-                    
-                    #print(f"Combined input series shape: {input_series.shape}")
-                    #print(f"Combined input series head:\n{input_series.head()}")
-                    #print(f"Combined input series tail:\n{input_series.tail()}")
-                    
-                    # Convert to DataFrame for consistency with the rest of the code
-                    col_name = "Prediction"
+                    input_series = pd.concat(series_list, axis=0)
+                    input_series = input_series.sort_index()
+                    print(f"Combined series has {len(input_series)} values, date range: {input_series.index[0]} to {input_series.index[-1]}")
                     input_df = pd.DataFrame({col_name: input_series})
                 else:
-                    print(f"Warning: Basin {file_num} not found in combined prediction files")
-                    # Create empty series with same index as base_df
+                    print(f"Warning: Basin {file_num} not found in prediction files")
                     input_df = pd.DataFrame({col_name: np.nan}, index=base_df.index)
                 
             else:
-                # Read synthetic prediction files
-                input_file = f"{input_dir}/{model_name}_predict{param_tag}_syn_{sim_col}_eva.csv"
+                # Read synthetic prediction files (both cal and eva periods)
+                input_file_cal = f"{input_dir}/{model_name}_predict{param_synthetic_tag}_syn_{sim_col}_cal.csv"
+                input_file_eva = f"{input_dir}/{model_name}_predict{param_synthetic_tag}_syn_{sim_col}_eva.csv"
                 
-                if os.path.exists(input_file):
-                    # Read combined synthetic file - basins are rows, dates are columns
-                    input_df_syn = pd.read_csv(input_file, index_col=0)  # Basin number as index
-                    
-                    # Extract data for current basin (file_num)
-                    if file_num in input_df_syn.index:
-                        # Get time series for this basin
-                        syn_series = input_df_syn.loc[file_num]
-                        
-                        # Convert column names (date strings) to datetime index
-                        syn_dates = pd.to_datetime(input_df_syn.columns)
-                        
-                        # Create pandas Series with proper datetime index
-                        syn_ts = pd.Series(syn_series.values, index=syn_dates)
-                        
-                        #print(f"Synthetic input series shape: {syn_ts.shape}")
-                        
-                        # Convert to DataFrame for consistency
-                        col_name = "Prediction"
-                        input_df = pd.DataFrame({col_name: syn_ts})
-                    else:
-                        print(f"Warning: Basin {file_num} not found in synthetic file {input_file}")
-                        # Create empty series with same index as base_df
-                        input_df = pd.DataFrame({col_name: np.nan}, index=base_df.index)
+                series_list = []
+                col_name = "Prediction"
+                
+                if os.path.exists(input_file_cal):
+                    input_df_syn_cal = pd.read_csv(input_file_cal, index_col=0)
+                    if file_num in input_df_syn_cal.index:
+                        cal_series = input_df_syn_cal.loc[file_num]
+                        cal_dates = pd.to_datetime(input_df_syn_cal.columns)
+                        cal_ts = pd.Series(cal_series.values, index=cal_dates)
+                        series_list.append(cal_ts)
+                
+                if os.path.exists(input_file_eva):
+                    input_df_syn_eva = pd.read_csv(input_file_eva, index_col=0)
+                    if file_num in input_df_syn_eva.index:
+                        eva_series = input_df_syn_eva.loc[file_num]
+                        eva_dates = pd.to_datetime(input_df_syn_eva.columns)
+                        eva_ts = pd.Series(eva_series.values, index=eva_dates)
+                        series_list.append(eva_ts)
+                
+                if series_list:
+                    input_series = pd.concat(series_list, axis=0)
+                    input_series = input_series.sort_index()
+                    input_df = pd.DataFrame({col_name: input_series})
                 else:
-                    print(f"Warning: Synthetic file not found: {input_file}")
-                    # Create empty series with same index as base_df  
-                    col_name = "Prediction"
+                    print(f"Warning: Basin {file_num} not found in synthetic files")
                     input_df = pd.DataFrame({col_name: np.nan}, index=base_df.index)
 
             # Ensure the index matches the base_df

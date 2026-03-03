@@ -6,6 +6,7 @@ import os
 import argparse
 
 from sklearn.ensemble import RandomForestRegressor
+from sklearn.preprocessing import StandardScaler
 
 from datetime import datetime
 
@@ -25,7 +26,7 @@ if loc == "JP" and ver == 2:
 elif loc == "GB" and ver == 2:
     file_tot_num = 424
     columns_drop = ['grdc_no','river','station','WaterArea','ForestArea','ForestAreaRatio','WaterAreaRatio','lat_org','long_org', 'land_GolfCourse','land_GolfCourse_Ratio']
-    varssim_dir = f"/data0/funato/hsp/2_MERV/varssim_HBV"
+    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim"
 
 
 file_list = list(range(1, file_tot_num+1))
@@ -63,7 +64,7 @@ min_samples_split = 2
 
 # Create output directory with hyperparameter settings
 hp_str = f"n{n_estimators}_d{max_depth if max_depth is not None else 'None'}_l{min_samples_leaf}_f{args.max_features}"
-output_dir = f"/data0/funato/hsp/0_out/RF/{loc}/individual/hp/{hp_str}/"
+output_dir = f"/data0/funato/hsp2/0_out/RF/{loc}/individual/hp/{hp_str}/"
 os.makedirs(output_dir, exist_ok=True)
 os.makedirs(output_dir + "/predict", exist_ok=True)
 os.makedirs(output_dir + "/results", exist_ok=True)
@@ -174,6 +175,10 @@ for file_num in file_list:
 
     input_cal = input_cal[:-1] #2898
     input_eva = input_eva[:-1] #1089
+
+    scaler = StandardScaler()
+    input_cal = scaler.fit_transform(input_cal)
+    input_eva = scaler.transform(input_eva)
 
     target_cal = df_cal['Obs flow'].values[1:] #2898
     target_eva = df_eva['Obs flow'].values[1:] #1089

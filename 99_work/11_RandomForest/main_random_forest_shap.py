@@ -18,7 +18,7 @@ loc, ver = "GB", 2
 
 ver_name = "ver1_1" if ver == 1 else "ver2_0"   
 
-attribute_dir = f'/data0/funato/hsp/3_gis_data/{loc}/0_data/river_basin/dataset_{loc}'
+attribute_dir = f'/data0/funato/hsp2/3_gis_data/{loc}/0_data/river_basin/dataset_{loc}'
 
 syn_precip_cols = ['syn_no_precip','syn_p_pet','syn_peak1_rate0',
                     'syn_peak1_rate10', 'syn_peak1_rate30', 'syn_peak1_rate50',
@@ -34,7 +34,7 @@ elif loc == "GB" and ver == 2:
     file_tot_num = 424
     columns_drop = ['gauge_id']
     attribute_values = pd.read_csv(f'{attribute_dir}/camelsgb_attribute_combined.csv', encoding= 'UTF-8', index_col=0, header=0)
-    varssim_dir = f"/data0/funato/hsp/2_MERV/varssim_HBV"
+    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim"
 
 #file_list = list(range(1, file_tot_num+1))
 file_list = list(range(20,30))
@@ -50,7 +50,7 @@ n_estimators = 100
 max_samples = 0.5
 min_samples_split = 2
 
-output_dir = f"/data0/funato/hsp/0_out/RF/{loc}/shap"
+output_dir = f"/data0/funato/hsp2/0_out/RF/{loc}/shap"
 os.makedirs(output_dir, exist_ok=True)
 os.makedirs(output_dir + "/predict", exist_ok=True)
 os.makedirs(output_dir + "/results", exist_ok=True)

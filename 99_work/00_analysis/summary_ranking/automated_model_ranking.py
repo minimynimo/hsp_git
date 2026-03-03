@@ -5,8 +5,8 @@ import glob
 
 # --- Configuration ---
 # Update this base path if needed
-base_dir = "/data0/funato/hsp/0_out"
-output_dir = "/data0/funato/hsp/0_out/analysis/summary_ranking_multi/automated_ranks"
+base_dir = "/data0/funato/hsp2/0_out"
+output_dir = "/data0/funato/hsp2/0_out/analysis/summary_ranking_multi/automated_ranks"
 os.makedirs(output_dir, exist_ok=True)
 
 model_list = ["HBV", "HYPER", "RF", "XGB", "TCN", "LSTM"]

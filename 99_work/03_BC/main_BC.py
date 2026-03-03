@@ -42,7 +42,7 @@ print(file_tag)
 ver_name = "ver1_1" if ver == 1 else "ver2_0"   
 
 file_tot_num = 424
-varssim_dir = f"/data0/funato/hsp/2_MERV/HYPER"
+varssim_dir = f"/data0/funato/hsp2/2_MERV/HYPER"
 
 precip_cols = ['no_precip',  
                'peak1_rate0','peak1_rate10', 'peak1_rate30', 'peak1_rate50',
@@ -56,7 +56,7 @@ end_date_cal = '2000-12-31'
 start_date_eva = '2001-01-01'
 end_date_eva = '2006-12-31'
 
-output_dir = f'/data0/funato/hsp/0_out/BC'
+output_dir = f'/data0/funato/hsp2/0_out/BC'
 os.makedirs(output_dir, exist_ok=True)
 os.makedirs(output_dir + '/results', exist_ok=True)
 os.makedirs(output_dir + '/predict/synthetic', exist_ok=True)
@@ -126,27 +126,12 @@ def BMK(obs_data, sim_data, benchmark):
             return np.nan
         return 1 - (np.sum(np.square(obs_data - sim_data)) / denom)
     
-    elif benchmark == "logNSE":
-        temp_obs_data = np.where((obs_data <= 0) | np.isnan(obs_data), 1e-6, obs_data)
-        temp_sim_data = np.where((sim_data <= 0) | np.isnan(sim_data), 1e-6, sim_data)
-        obs_ave = np.mean(temp_obs_data)
-        numer = np.sum((np.log(temp_sim_data) - np.log(temp_obs_data))**2)
-        denom = np.sum((np.log(temp_obs_data) - np.log(obs_ave))**2) + 1e-8
-        return 1 - numer / denom
-    
     elif benchmark == "E1":
         obs_ave = np.mean(obs_data)
         denom = np.sum(np.abs(obs_data - obs_ave))
         if denom == 0:
             return np.nan
         return 1 - (np.sum(np.abs(obs_data - sim_data)) / denom)
-    
-    elif benchmark == "Erel":
-        obs_ave = np.mean(obs_data)
-        temp_obs_data = np.where(obs_data == 0, 1e-6, obs_data)
-        numer = np.sum(np.square((temp_obs_data - sim_data) / temp_obs_data))
-        denom = np.sum(np.square((obs_data - obs_ave) / obs_ave)) + 1e-8
-        return 1 - numer / denom
     
     elif benchmark == "VE":
         obs_sum = np.sum(obs_data)
@@ -197,17 +182,17 @@ for file_num in file_list:
     log_file.flush()
 
     ### INPUT DATA ###
-    df = load_data("varssim_nocal_camels", file_num)
+    df = load_data("varssim_nocal_og", file_num)
 
     df_cal = df[start_date_cal:end_date_cal].copy()  # Use copy to avoid SettingWithCopyWarning
     df_eva = df[start_date_eva:end_date_eva].copy()
 
     # Load BMA predictions
-    bma_df_cal = pd.read_csv(f'/data0/funato/hsp/0_out/BMA/predict/BMA_predict_cal.csv', index_col=0)
-    bma_df_eva = pd.read_csv(f'/data0/funato/hsp/0_out/BMA/predict/BMA_predict_eva.csv', index_col=0)
+    bma_df_cal = pd.read_csv(f'/data0/funato/hsp2/0_out/BMA/predict/BMA_predict_cal.csv', index_col=0)
+    bma_df_eva = pd.read_csv(f'/data0/funato/hsp2/0_out/BMA/predict/BMA_predict_eva.csv', index_col=0)
 
-    df_cal['Sim flow'] = bma_df_cal.loc[f'file_{file_num}_cal'].values
-    df_eva['Sim flow'] = bma_df_eva.loc[f'file_{file_num}_eva'].values
+    df_cal['Sim flow'] = bma_df_cal.loc[f'file_{file_num}'].values
+    df_eva['Sim flow'] = bma_df_eva.loc[f'file_{file_num}'].values
 
     # Calculate Flow Error
     df_cal['Flow Error'] = df_cal['Obs flow'] - df_cal['Sim flow']
@@ -352,8 +337,8 @@ for file_num in file_list:
         syn_eva = syn_df[start_date_eva:end_date_eva].copy()   
 
         # Load BMA predictions for synthetic data
-        syn_bma_df_cal = pd.read_csv(f'/data0/funato/hsp/0_out/BMA/predict/synthetic/BMA_predict_{precip_col}_cal.csv', index_col=0)
-        syn_bma_df_eva = pd.read_csv(f'/data0/funato/hsp/0_out/BMA/predict/synthetic/BMA_predict_{precip_col}_eva.csv', index_col=0)
+        syn_bma_df_cal = pd.read_csv(f'/data0/funato/hsp2/0_out/BMA/predict/synthetic/BMA_predict_{precip_col}_cal.csv', index_col=0)
+        syn_bma_df_eva = pd.read_csv(f'/data0/funato/hsp2/0_out/BMA/predict/synthetic/BMA_predict_{precip_col}_eva.csv', index_col=0)
 
         syn_cal['Sim flow'] = syn_bma_df_cal.loc[f'file_{file_num}_cal'].values
         syn_eva['Sim flow'] = syn_bma_df_eva.loc[f'file_{file_num}_eva'].values

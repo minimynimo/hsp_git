@@ -28,11 +28,12 @@ import sys
 benchmark_list = ["KGE","NSE","E1", "VE", "d","RMSE","MAE"]
 
 #loc, ver = "JP", 2
-loc, ver = "GB", 2
+#loc, ver = "GB", 2
+loc, ver = "US", 2
 
 ver_name = "ver1_1" if ver == 1 else "ver2_0"
 
-attribute_dir = f'/data0/funato/hsp/3_gis_data/{loc}/0_data/river_basin/dataset_{loc}'
+attribute_dir = f'/data0/funato/hsp2/3_gis_data/{loc}/0_data/river_basin/dataset_{loc}'
 
 # Define synthetic precipitation columns
 syn_precip_cols = ['syn_no_precip',
@@ -49,7 +50,12 @@ elif loc == "GB" and ver == 2:
     file_tot_num = 424 # Using 20 for consistency with other models
     columns_drop = ['gauge_id']
     attribute_values = pd.read_csv(f'{attribute_dir}/camelsgb_attribute_combined.csv', encoding= 'UTF-8', index_col=0, header=0)
-    varssim_dir = f"/data0/funato/hsp/2_MERV/varssim_HBV"
+    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim_GB"
+elif loc == "US" and ver == 2:
+    file_tot_num = 614
+    columns_drop = ['gauge_id']
+    attribute_values = pd.read_csv(f'{attribute_dir}/camels_attribute_combined.csv', encoding= 'UTF-8', index_col=0, header=0)
+    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim_US"
 
 file_list = list(range(1, file_tot_num+1))
 
@@ -68,7 +74,7 @@ start_date_eva = '2001-01-01'
 end_date_eva = '2006-12-31'
 
 # --- Updated output directories for LSTM ---
-output_dir = f"/data0/funato/hsp/0_out/LSTM/{loc}/adapted_424"
+output_dir = f"/data0/funato/hsp2/0_out/LSTM/{loc}/adapted"
 os.makedirs(output_dir, exist_ok=True)
 os.makedirs(output_dir + "/predict/og", exist_ok=True)
 os.makedirs(output_dir + "/results", exist_ok=True)
@@ -235,7 +241,7 @@ if input_eva_seq.shape[0] > max_eval_samples:
     target_eva_seq = target_eva_seq[indices_eva]
 
 # Try to load pre-trained regional model from shap_regional directory
-regional_model_path = f"/data0/funato/hsp/0_out/LSTM/{loc}/shap/regional/LSTM_model.h5"
+regional_model_path = f"/data0/funato/hsp2/0_out/LSTM/{loc}/shap/regional/LSTM_model.h5"
 if os.path.exists(regional_model_path):
     print(f"Loading pre-trained regional model from {regional_model_path}...")
     from keras.models import load_model

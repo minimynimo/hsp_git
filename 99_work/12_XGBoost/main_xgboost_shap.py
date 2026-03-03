@@ -26,7 +26,7 @@ elif loc == "GB" and ver == 2:
     file_tot_num = 424
     columns_drop = ['grdc_no','river','station','WaterArea','ForestArea','ForestAreaRatio','WaterAreaRatio','lat_org','long_org', 'land_GolfCourse','land_GolfCourse_Ratio']
     attribute_values = pd.read_csv(f'{attribute_dir}/basin_data_limited_met&soil&geology&land_{ver_name}.csv', encoding= 'UTF-8', index_col=0, header=0)
-    varssim_dir = f"/data0/funato/hsp/2_MERV/varssim_HBV"
+    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim"
 
 file_list = list(range(1, file_tot_num+1))
 #file_list = list(range(20,30))
@@ -39,7 +39,7 @@ end_date_eva = '2006-12-31'
 n_estimators = 500
 learning_rate = 0.1
 
-output_dir = f"/data0/funato/hsp/0_out/XGB/{loc}"
+output_dir = f"/data0/funato/hsp2/0_out/XGB/{loc}"
 os.makedirs(output_dir, exist_ok=True)
 os.makedirs(output_dir + "/predict", exist_ok=True)
 os.makedirs(output_dir + "/results", exist_ok=True)

@@ -70,7 +70,7 @@ def file_name(input_num, total_len):
 
 def load_data_for_basin(file_num):
     """Load data for a specific basin"""
-    varssim_dir = "/data0/funato/hsp/2_MERV/varssim_HBV"
+    varssim_dir = "/data0/funato/hsp2/2_MERV/varssim"
     df = pd.read_csv(f"{varssim_dir}/varssim{file_name(file_num, 3)}.csv")
     df['Date'] = pd.to_datetime(df['Date'])
     df.set_index('Date', inplace=True)
@@ -241,7 +241,7 @@ def evaluate_original_data(model, run_cfg, basins, static_attrs=None, args=None)
         'eva': (GLOBAL_SETTINGS["val_start"], GLOBAL_SETTINGS["val_end"])
     }
     
-    output_dir = Path(args.output_dir if args and args.output_dir else "/data0/funato/hsp/0_out/RF/GB/regional")
+    output_dir = Path(args.output_dir if args and args.output_dir else "/data0/funato/hsp2/0_out/RF/GB/regional")
     
     for period_name, (start_date, end_date) in periods.items():
         print(f"\nEvaluating {period_name.upper()} period ({start_date.date()} to {end_date.date()})")
@@ -342,7 +342,7 @@ def evaluate_synthetic_data(model, run_cfg, basins, static_attrs=None, args=None
     
     print("\n--- Evaluating Synthetic Scenarios ---")
     
-    output_dir = Path(args.output_dir if args and args.output_dir else "/data0/funato/hsp/0_out/RF/GB/regional/hp")
+    output_dir = Path(args.output_dir if args and args.output_dir else "/data0/funato/hsp2/0_out/RF/GB/regional/hp")
     start_date = GLOBAL_SETTINGS["val_start"]
     end_date = GLOBAL_SETTINGS["val_end"]
     
@@ -474,7 +474,7 @@ def main():
                         help='Path to the trained model directory')
     parser.add_argument('--n_basins', type=int, default=None,
                         help='Number of basins to process (for testing)')
-    parser.add_argument('--output_dir', type=str, default="/data0/funato/hsp/0_out/RF/GB/regional/hp",
+    parser.add_argument('--output_dir', type=str, default="/data0/funato/hsp2/0_out/RF/GB/regional/hp",
                         help='Output directory for predictions and results')
     parser.add_argument('--hp_string', type=str, default="",
                         help='Hyperparameter string to append to filenames')

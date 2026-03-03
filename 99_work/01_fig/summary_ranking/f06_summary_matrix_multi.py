@@ -25,7 +25,7 @@ import matplotlib.pyplot as plt
 import os
 
 # Configuration
-output_dir = "/data0/funato/hsp/0_out/1_fig/summary_ranking_multi"
+output_dir = "/data0/funato/hsp2/0_out/1_fig/summary_ranking_multi"
 os.makedirs(output_dir, exist_ok=True)
 
 model_list = ["HBV", "HYPER", "RF", "XGB", "TCN", "LSTM"]
@@ -55,22 +55,22 @@ kge_scores = {}
 benchmark = "KGE"
 
 for model in model_list:
-    base_path = f"/data0/funato/hsp/0_out/{model}/GB/regional/results"  
+    base_path = f"/data0/funato/hsp2/0_out/{model}/GB/regional/results"  
 
     if model == "HYPER":
-        input_file_cal = f"/data0/funato/hsp/0_out/BC/results/BC_results_cal.csv"
-        input_file_eva = f"/data0/funato/hsp/0_out/BC/results/BC_results_eva.csv"
+        input_file_cal = f"/data0/funato/hsp2/0_out/BC/results/BC_results_cal.csv"
+        input_file_eva = f"/data0/funato/hsp2/0_out/BC/results/BC_results_eva.csv"
         # Use BC for column names since that's what's in the files
         col_name_cal = f"BC_{benchmark}_cal"
         col_name_eva = f"BC_{benchmark}_eva"
     elif model == "HBV":
-        input_file_cal = f"/data0/funato/hsp/0_out/HBV/GB/shap/regional/results/HBV_results_cal.csv"
-        input_file_eva = f"/data0/funato/hsp/0_out/HBV/GB/shap/regional/results/HBV_results_eva.csv"
+        input_file_cal = f"/data0/funato/hsp2/0_out/HBV/GB/shap/regional/results/HBV_results_cal.csv"
+        input_file_eva = f"/data0/funato/hsp2/0_out/HBV/GB/shap/regional/results/HBV_results_eva.csv"
         col_name_cal = f"HBV_{benchmark}_cal"
         col_name_eva = f"HBV_{benchmark}_eva"
     else:
-        input_file_cal = f"/data0/funato/hsp/0_out/{model}/GB/regional/results/{model}_results{param_tag_dict.get(model, '')}_cal.csv"
-        input_file_eva = f"/data0/funato/hsp/0_out/{model}/GB/regional/results/{model}_results{param_tag_dict.get(model, '')}_eva.csv"
+        input_file_cal = f"/data0/funato/hsp2/0_out/{model}/GB/regional/results/{model}_results{param_tag_dict.get(model, '')}_cal.csv"
+        input_file_eva = f"/data0/funato/hsp2/0_out/{model}/GB/regional/results/{model}_results{param_tag_dict.get(model, '')}_eva.csv"
         col_name_cal = benchmark
         col_name_eva = benchmark
     
@@ -92,7 +92,7 @@ for model in model_list:
 # Step 2: Load Mass Conservation data (absolute mass bias)
 mass_bias_scores = {}
 
-mass_bias_file = "/data0/funato/hsp/0_out/analysis/mass_conservation/mass_bias_data.csv"
+mass_bias_file = "/data0/funato/hsp2/0_out/analysis/mass_conservation/mass_bias_data.csv"
 mass_df = pd.read_csv(mass_bias_file)
 
 for model in model_list:
@@ -113,7 +113,7 @@ for model in model_list:
 # Step 3: Load Drought Condition data (mean discharge during zero precipitation)
 drought_scores = {}
 
-drought_file = "/data0/funato/hsp/0_out/analysis/no_precip_discharge/no_precip_model_summary.csv"
+drought_file = "/data0/funato/hsp2/0_out/analysis/no_precip_discharge/no_precip_model_summary.csv"
 drought_df = pd.read_csv(drought_file)
 
 for model in model_list:
@@ -129,7 +129,7 @@ for model in model_list:
         print(f"Warning: No drought discharge data found for {model}")
         drought_scores[model] = np.nan
 # Step 4: Load Flood Condition ranks from automated ranking
-rank_df = pd.read_csv("/data0/funato/hsp/0_out/analysis/summary_ranking_multi/automated_ranks/automated_plausibility_ranks.csv")
+rank_df = pd.read_csv("/data0/funato/hsp2/0_out/analysis/summary_ranking_multi/automated_ranks/automated_plausibility_ranks.csv")
 flood_ranks = rank_df.set_index('Model')['Flood_Rank'].to_dict()
 
 print("\nCalculating ranks...")

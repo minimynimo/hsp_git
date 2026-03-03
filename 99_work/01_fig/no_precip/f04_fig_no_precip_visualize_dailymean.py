@@ -10,8 +10,8 @@ fs = 20
 
 # Configuration
 model_list = ["HBV", "HYPER","RF", "XGB", "TCN", "LSTM"]  # Can be expanded if needed
-input_dir = "/data0/funato/hsp/0_out/analysis/no_precip_discharge"
-output_fig_dir = "/data0/funato/hsp/0_out/1_fig/no_precip_discharge_dailymean_use"
+input_dir = "/data0/funato/hsp2/0_out/analysis/no_precip_discharge"
+output_fig_dir = "/data0/funato/hsp2/0_out/1_fig/no_precip_discharge_dailymean_use"
 
 # Ensure output directory exists
 os.makedirs(output_fig_dir, exist_ok=True)
@@ -66,13 +66,12 @@ for model in valid_models:
 
 
 # 7. Focused view - Box plot with limited y-axis
-max_for_focus = np.percentile(np.concatenate(box_data), 95)  # 95th percentile
 plt.figure(figsize=(8, 6))
 # showmeans=True will plot the mean; style it as a '+'
 
 bp3 = plt.boxplot(
     box_data,
-    tick_labels=valid_models,
+    labels=valid_models,
     patch_artist=True,
     showmeans=True,
     meanprops={
@@ -92,7 +91,7 @@ for median in bp3['medians']:
 plt.ylabel('Daily Mean Discharge [m³/s]', fontsize=fs)
 plt.xlabel('Model', fontsize=fs)
 plt.tick_params(labelsize=fs)
-plt.ylim(-0.1, max_for_focus)
+plt.ylim(-0.1, max([np.max(all_discharge_data[model]) for model in valid_models])*1.01)
 plt.grid(True, alpha=0.3)
 plt.tight_layout()
 plt.savefig(f"{output_fig_dir}/f04_no_precip_boxplot_focused.png", dpi=300, bbox_inches='tight')
@@ -108,7 +107,7 @@ for model in valid_models:
     p = np.arange(1, len(data_sorted) + 1) / len(data_sorted)
     plt.plot(data_sorted, p, label=model, color=color_list[model], linewidth=3)
 plt.title('Cumulative Distribution of Daily Mean Discharge', fontsize=fs)
-plt.xlabel('Daily Mean Discharge [m³/s]', fontsize=fs)
+plt.xlabel('Daily Mean Discharge [mm/d]', fontsize=fs)
 plt.ylabel('CDF', fontsize=fs)
 plt.tick_params(labelsize=fs)
 plt.xlim(-0.2, 8)

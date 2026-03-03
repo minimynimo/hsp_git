@@ -25,7 +25,8 @@ tf.config.set_visible_devices([], 'GPU')
 benchmark_list = ["KGE","NSE","E1", "VE", "d","RMSE","MAE"]
 
 #loc, ver = "JP", 2
-loc, ver = "GB", 2
+#loc, ver = "GB", 2
+loc, ver = "US", 2
 
 ver_name = "ver1_1" if ver == 1 else "ver2_0"
 
@@ -40,7 +41,10 @@ if loc == "JP" and ver == 2:
     varssim_dir = f"/data0/funato/2_MERV/{loc}/varssim_nocal/{ver_name}"
 elif loc == "GB" and ver == 2:
     file_tot_num = 424
-    varssim_dir = f"/data0/funato/hsp/2_MERV/varssim_HBV"
+    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim_GB"
+elif loc == "US" and ver == 2:
+    file_tot_num = 614
+    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim_US"
 
 file_list = list(range(1, file_tot_num+1))
 
@@ -57,7 +61,7 @@ end_date_cal = '2000-12-31'
 start_date_eva = '2001-01-01'
 end_date_eva = '2006-12-31'
 
-output_dir = f"/data0/funato/hsp/0_out/TCN_temp/{loc}/regional"
+output_dir = f"/data0/funato/hsp2/0_out/TCN/{loc}/regional"
 os.makedirs(output_dir, exist_ok=True)
 os.makedirs(output_dir + "/predict/og", exist_ok=True)
 os.makedirs(output_dir + "/results", exist_ok=True)

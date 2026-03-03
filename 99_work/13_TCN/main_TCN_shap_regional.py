@@ -21,11 +21,12 @@ import sys
 benchmark_list = ["KGE","NSE","E1", "VE", "d","RMSE","MAE"]
 
 #loc, ver = "JP", 2
-loc, ver = "GB", 2
+#loc, ver = "GB", 2
+loc, ver = "US", 2
 
 ver_name = "ver1_1" if ver == 1 else "ver2_0"
 
-attribute_dir = f'/data0/funato/hsp/3_gis_data/{loc}/0_data/river_basin/dataset_{loc}'
+attribute_dir = f'/data0/funato/hsp2/3_gis_data/{loc}/0_data/river_basin/dataset_{loc}'
 
 # Define synthetic precipitation columns
 syn_precip_cols = ['syn_no_precip',
@@ -35,14 +36,19 @@ syn_precip_cols = ['syn_no_precip',
 
 if loc == "JP" and ver == 2:
     file_tot_num = 87
-    columns_drop = ['grdc_no','river','station','WaterASrea','ForestArea','ForestAreaRatio','WaterAreaRatio','lat_org','long_org', 'land_GolfCourse','land_GolfCourse_Ratio']
+    columns_drop = ['grdc_no','river','station','WaterArea','ForestArea','ForestAreaRatio','WaterAreaRatio','lat_org','long_org', 'land_GolfCourse','land_GolfCourse_Ratio']
     attribute_values = pd.read_csv(f'{attribute_dir}/basin_data_limited_met&soil&geology&land_{ver_name}.csv', encoding= 'UTF-8', index_col=0, header=0)
     varssim_dir = f"/data0/funato/2_MERV/{loc}/varssim_nocal/{ver_name}"
 elif loc == "GB" and ver == 2:
     file_tot_num = 424 # Using 20 for consistency with other models
     columns_drop = ['gauge_id']
     attribute_values = pd.read_csv(f'{attribute_dir}/camelsgb_attribute_combined.csv', encoding= 'UTF-8', index_col=0, header=0)
-    varssim_dir = f"/data0/funato/hsp/2_MERV/varssim_HBV"
+    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim_GB"
+elif loc == "US" and ver == 2:
+    file_tot_num = 614
+    columns_drop = ['gauge_id','gauge_name','country']
+    attribute_values = pd.read_csv(f'{attribute_dir}/camels_attribute_combined.csv', encoding= 'UTF-8', index_col=0, header=0)
+    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim_US"
 
 file_list = list(range(1, file_tot_num+1))
 
@@ -59,14 +65,14 @@ end_date_cal = '2000-12-31'
 start_date_eva = '2001-01-01'
 end_date_eva = '2006-12-31'
 
-output_dir = f"/data0/funato/hsp/0_out/TCN/{loc}/shap/regional_424"
+output_dir = f"/data0/funato/hsp2/0_out/TCN/{loc}/shap/regional"
 os.makedirs(output_dir, exist_ok=True)
 os.makedirs(output_dir + "/predict/og", exist_ok=True)
 os.makedirs(output_dir + "/results", exist_ok=True)
 os.makedirs(output_dir + "/hydrographs", exist_ok=True)
 os.makedirs(output_dir + "/predict/synthetic", exist_ok=True)
 
-output_dir_shap = f"0_out/1_fig/shap/TCN/{loc}/regional_424"
+output_dir_shap = f"0_out/1_fig/shap/TCN/{loc}/regional"
 os.makedirs(output_dir_shap, exist_ok=True)
 
 

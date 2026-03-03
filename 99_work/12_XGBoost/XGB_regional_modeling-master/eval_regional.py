@@ -43,7 +43,7 @@ def file_name(input_num, total_len):
     return str(input_num).zfill(total_len)
 
 def load_data_for_basin(file_num):
-    varssim_dir = "/data0/funato/hsp/2_MERV/varssim_HBV"
+    varssim_dir = "/data0/funato/hsp2/2_MERV/varssim"
     df = pd.read_csv(f"{varssim_dir}/varssim{file_name(file_num, 3)}.csv")
     df['Date'] = pd.to_datetime(df['Date'])
     df.set_index('Date', inplace=True)
@@ -359,7 +359,7 @@ def main():
     val_end = pd.to_datetime(GLOBAL_SETTINGS['val_end'])
 
     periods = {'cal': (train_start, train_end), 'eva': (val_start, val_end)}
-    output_base = Path(f"/data0/funato/hsp/0_out/XGB/{GLOBAL_SETTINGS['loc']}/regional")
+    output_base = Path(f"/data0/funato/hsp2/0_out/XGB/{GLOBAL_SETTINGS['loc']}/regional")
     
     for period_name, (start, end) in periods.items():
         predictions_df, metrics_df = evaluate_period(model, basins, cfg, scalers, attributes, start, end)

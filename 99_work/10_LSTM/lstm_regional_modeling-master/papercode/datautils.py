@@ -30,6 +30,12 @@ SCALER = {
         'input_stds': np.array([4.150642797674723, 5.221306962850592, 2.1611745017309048]),
         'output_mean': np.array([1.838397528976445]),
         'output_std': np.array([3.2740873977972185])
+    },
+    "US":{
+        'input_means': np.array([3.0267525200819776, 13.110970171836367, 10.81853041139944]),
+        'input_stds': np.array([1.085855688036388, 5.04530884159448, 5.45962822094668]),
+        'output_mean': np.array([1.6033382557458762]),
+        'output_std': np.array([1.6091810953328294])
     }
 }
 
@@ -63,6 +69,15 @@ def add_basin_attributes(db_path: str = None, loc :str=None, ver_name:str = None
         INVALID_ATTR = [
             'gauge_id','gauge_name','country'
         ]
+    elif loc == "US":
+        # Use the attribute file from hsp2 directory for US
+        us_attribute_dir = '/data0/funato/hsp2/hsp_git/3_gis_data/US/0_data/river_basin/dataset_US'
+        attribute_values = pd.read_csv(f'{us_attribute_dir}/camels_attribute_combined.csv', encoding= 'UTF-8', index_col=0, header=0)
+        INVALID_ATTR = [
+            'gauge_id','gauge_name','country'
+        ]
+    else:
+        raise ValueError(f"Unsupported location: {loc}. Supported locations are: JP, GB, US")
 
 
     # df : file_num, attr1, attr2, attr3, ...
@@ -109,6 +124,10 @@ def load_attributes(db_path: str,
             'grdc_no','river','station','WaterArea','ForestArea','ForestAreaRatio','WaterAreaRatio','lat_org','long_org', 'land_GolfCourse','land_GolfCourse_Ratio'
         ]
     elif loc == "GB":
+        INVALID_ATTR = [
+            'gauge_id','gauge_name','country'
+        ]
+    elif loc == "US":
         INVALID_ATTR = [
             'gauge_id','gauge_name','country'
         ]

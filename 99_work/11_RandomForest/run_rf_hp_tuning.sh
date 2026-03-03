@@ -3,8 +3,8 @@
 # Random Forest Hyperparameter Tuning Script
 # Runs all hyperparameter combinations in parallel using specified cores
 # Usage: ./run_rf_hp_tuning.sh <StartCore> <NumCores> <ModelType>
-# nohup /data0/funato/hsp/99_work/11_RandomForest/run_rf_hp_tuning.sh 12 12 regional &
-# nohup /data0/funato/hsp/99_work/11_RandomForest/run_rf_hp_tuning.sh 14 2 individual &
+# nohup /data0/funato/hsp2/99_work/11_RandomForest/run_rf_hp_tuning.sh 16 2 regional &
+# nohup /data0/funato/hsp2/99_work/11_RandomForest/run_rf_hp_tuning.sh 18 1 individual &
 
 if [ "$#" -ne 3 ]; then
     echo "Usage: $0 <StartCore> <NumCores> <ModelType>"
@@ -25,7 +25,7 @@ echo "Using cores: $START_CORE to $END_CORE"
 echo "Total cores: $NUM_CORES"
 
 # Python executable (use virtual environment if available)
-PYTHON_CMD="/data0/funato/hsp/.venv/bin/python"
+PYTHON_CMD="/data0/funato/hsp2/.venv/bin/python"
 if [ ! -f "$PYTHON_CMD" ]; then
     PYTHON_CMD="python3"
 fi
@@ -35,16 +35,16 @@ if [ "$MODEL_TYPE" == "regional" ]; then
     N_ESTIMATORS=(100 300 500)
     MIN_SAMPLES_LEAF=(2 5)
     MAX_DEPTH=("None")
-    MAX_FEATURES=("sqrt" "1/3")
-    SCRIPT_PATH="/data0/funato/hsp/99_work/11_RandomForest/RF_regional_modeling-master/main_rf_hp.py"
-    LOG_DIR="/data0/funato/hsp/99_work/11_RandomForest/RF_regional_modeling-master/logs"
+    MAX_FEATURES=("sqrt")
+    SCRIPT_PATH="/data0/funato/hsp2/99_work/11_RandomForest/RF_regional_modeling-master/main_rf_hp.py"
+    LOG_DIR="/data0/funato/hsp2/99_work/11_RandomForest/RF_regional_modeling-master/logs"
 elif [ "$MODEL_TYPE" == "individual" ]; then
     N_ESTIMATORS=(100 300 500)
     MIN_SAMPLES_LEAF=(5 10)
     MAX_DEPTH=(10 20)
-    MAX_FEATURES=("sqrt" "1/3")
-    SCRIPT_PATH="/data0/funato/hsp/99_work/11_RandomForest/main_random_forest_indiv_hp.py"
-    LOG_DIR="/data0/funato/hsp/99_work/11_RandomForest/logs"
+    MAX_FEATURES=("sqrt")
+    SCRIPT_PATH="/data0/funato/hsp2/99_work/11_RandomForest/main_random_forest_indiv_hp.py"
+    LOG_DIR="/data0/funato/hsp2/99_work/11_RandomForest/logs"
 else
     echo "Error: ModelType must be 'regional' or 'individual'"
     exit 1

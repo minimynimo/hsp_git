@@ -43,7 +43,7 @@ def file_name(input_num, total_len):
     return str(input_num).zfill(total_len)
 
 def load_data_for_basin(file_num):
-    varssim_dir = "/data0/funato/hsp/2_MERV/varssim_HBV"
+    varssim_dir = "/data0/funato/hsp2/2_MERV/varssim"
     df = pd.read_csv(f"{varssim_dir}/varssim{file_name(file_num, 3)}.csv")
     df['Date'] = pd.to_datetime(df['Date'])
     df.set_index('Date', inplace=True)
@@ -311,7 +311,7 @@ def main():
     parser = argparse.ArgumentParser(description='Regional XGBoost Evaluation')
     parser.add_argument('--run_dir', type=str, required=True)
     parser.add_argument('--n_basins', type=int, default=None)
-    parser.add_argument('--output_dir', type=str, default="/data0/funato/hsp/0_out/XGB/GB/regional",
+    parser.add_argument('--output_dir', type=str, default="/data0/funato/hsp2/0_out/XGB/GB/regional",
                         help='Output directory for predictions and results')
     parser.add_argument('--hp_string', type=str, default=None,
                         help='Hyperparameter string for output filenames')

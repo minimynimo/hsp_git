@@ -36,7 +36,7 @@ loc, ver = "GB", 2
 
 ver_name = "ver1_1" if ver == 1 else "ver2_0"
 
-attribute_dir = f'/data0/funato/hsp/3_gis_data/{loc}/0_data/river_basin/dataset_{loc}'
+attribute_dir = f'/data0/funato/hsp2/3_gis_data/{loc}/0_data/river_basin/dataset_{loc}'
 
 # Define synthetic precipitation columns
 syn_precip_cols = ['syn_no_precip', 
@@ -53,7 +53,12 @@ elif loc == "GB" and ver == 2:
     file_tot_num = 424 # Using 20 for consistency with other models
     columns_drop = ['gauge_id']
     attribute_values = pd.read_csv(f'{attribute_dir}/camelsgb_attribute_combined.csv', encoding= 'UTF-8', index_col=0, header=0)
-    varssim_dir = f"/data0/funato/hsp/2_MERV/varssim_HBV"
+    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim_GB"
+elif loc == "US" and ver == 2:
+    file_tot_num = 614
+    columns_drop = ['gauge_id']
+    attribute_values = pd.read_csv(f'{attribute_dir}/camels_attribute_combined.csv', encoding= 'UTF-8', index_col=0, header=0)
+    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim_US"
 
 file_list = list(range(1, file_tot_num+1))
 
@@ -72,14 +77,14 @@ start_date_eva = '2001-01-01'
 end_date_eva = '2006-12-31'
 
 # --- Updated output directories for LSTM ---
-output_dir = f"/data0/funato/hsp/0_out/LSTM/{loc}/shap/regional_424"
+output_dir = f"/data0/funato/hsp2/0_out/LSTM/{loc}/shap/regional"
 os.makedirs(output_dir, exist_ok=True)
 os.makedirs(output_dir + "/predict/og", exist_ok=True)
 os.makedirs(output_dir + "/results", exist_ok=True)
 os.makedirs(output_dir + "/hydrographs", exist_ok=True)
 os.makedirs(output_dir + "/predict/synthetic", exist_ok=True)
 
-output_dir_shap = f"0_out/1_fig/shap/LSTM/{loc}/regional_424"
+output_dir_shap = f"0_out/1_fig/shap/LSTM/{loc}/regional"
 os.makedirs(output_dir_shap, exist_ok=True)
 
 

@@ -26,12 +26,8 @@ from papercode.ealstm import EALSTM
 # Global Definitions      #
 # ####################### #
 
-"""syn_precip_cols = ['syn_no_precip', 
+syn_precip_cols = ['syn_no_precip', 
                    'syn_peak1_rate0', 'syn_peak1_rate10', 'syn_peak1_rate30', 'syn_peak1_rate50',
-                   'syn_peak3_rate0', 'syn_peak3_rate10', 'syn_peak3_rate30', 'syn_peak3_rate50',
-                   'syn_peak5_rate0', 'syn_peak5_rate10', 'syn_peak5_rate30', 'syn_peak5_rate50']"""
-
-syn_precip_cols = ['syn_peak1_rate30', 'syn_peak1_rate50',
                    'syn_peak3_rate0', 'syn_peak3_rate10', 'syn_peak3_rate30', 'syn_peak3_rate50',
                    'syn_peak5_rate0', 'syn_peak5_rate10', 'syn_peak5_rate30', 'syn_peak5_rate50']
 
@@ -93,7 +89,7 @@ def file_name(input_num, total_len):
     return str(input_num).zfill(total_len)
 
 def load_data_for_basin(file_num):
-    varssim_dir = "/data0/funato/hsp/2_MERV/varssim_HBV"
+    varssim_dir = "/data0/funato/hsp2/2_MERV/varssim"
     df = pd.read_csv(f"{varssim_dir}/varssim{file_name(file_num, 3)}.csv")
     df['Date'] = pd.to_datetime(df['Date'])
     df.set_index('Date', inplace=True)
@@ -341,7 +337,7 @@ def main():
     parser = argparse.ArgumentParser(description='Regional LSTM Evaluation')
     parser.add_argument('--run_dir', type=str, required=True)
     parser.add_argument('--n_basins', type=int, default=None)
-    parser.add_argument('--model_epoch', type=int, default=30, 
+    parser.add_argument('--model_epoch', type=int, default=100, 
                         help='Which model epoch to use for evaluation (default: 30)')
     args = parser.parse_args()
     
@@ -400,7 +396,7 @@ def main():
     val_start = pd.to_datetime(GLOBAL_SETTINGS['val_start'])
     val_end = pd.to_datetime(GLOBAL_SETTINGS['val_end'])
     
-    output_base = Path(f"/data0/funato/hsp/0_out/LSTM/{GLOBAL_SETTINGS['loc']}/regional")
+    output_base = Path(f"/data0/funato/hsp2/0_out/LSTM/{GLOBAL_SETTINGS['loc']}/regional")
 
 
 

@@ -14,34 +14,39 @@ fs = 15
 
 """
 MEMO INDIVIDUAL
-/data0/funato/hsp/0_out/RF/GB/individual/results/RF_results_n100_d20_l10_fsqrt_eva.csv
-/data0/funato/hsp/0_out/XGB/GB/individual/results/XGB_results_n100_d4_lr0.05_eva.csv
-/data0/funato/hsp/0_out/TCN/GB/individual/results/TCN_results_f128_k4_d0.2_eva.csv
-/data0/funato/hsp/0_out/LSTM/GB/individual/results/LSTM_results_h32_lr0.005_e100_w270_b256_d0.2_eva.csv
+/data0/funato/hsp2/0_out/RF/GB/individual/results/RF_results_n100_d10_l10_fsqrt_eva.csv #
+/data0/funato/hsp2/0_out/XGB/GB/individual/results/XGB_results_n100_d3_lr0.1_eva.csv
+/data0/funato/hsp2/0_out/TCN/GB/individual/results/TCN_predict_f32_k4_d0.2_eva.csv
+/data0/funato/hsp2/0_out/LSTM/GB/individual/results/LSTM_results_h32_lr0.001_e100_w270_b256_d0.2_eva.csv #
 
 MEMO ADAPTED
-/data0/funato/hsp/0_out/TCN/GB/adapted/results/TCN_results_n64_k4_d0.4_eva.csv
-/data0/funato/hsp/0_out/LSTM/GB/adapted/results/LSTM_results_hs256_do0.2_eva.csv
+/data0/funato/hsp2/0_out/TCN/GB/adapted/results/TCN_results_eva.csv
+/data0/funato/hsp2/0_out/LSTM/GB/adapted/results/LSTM_results_hs256_do0.2_e30_eva.csv #
 
 MEMO REGIONAL
-/data0/funato/hsp/0_out/RF/GB/regional/results/RF_results_n100_d5_s2_l1_mf0.7_ms0.5_w270_eva.csv
-/data0/funato/hsp/0_out/XGB/GB/regional/results/XGB_results_eva.csv
-/data0/funato/hsp/0_out/TCN/GB/regional/results/TCN_results_n64_k4_d0.4_eva.csv
-/data0/funato/hsp/0_out/LSTM/GB/regional/results/LSTM_results_hs256_do0.2_eva.csv
+/data0/funato/hsp2/0_out/RF/GB/regional/results/RF_results_n100_d5_s2_l1_mf0.7_ms0.5_w270_eva.csv #
+/data0/funato/hsp2/0_out/XGB/GB/regional/results/XGB_results_eva.csv
+/data0/funato/hsp2/0_out/TCN/GB/regional/results/TCN_results_n64_k4_d0.4_eva.csv
+/data0/funato/hsp2/0_out/LSTM/GB/regional/results/LSTM_results_hs256_do0.2_e30_eva.csv #
 """
 
 param_idv_tag_dict = {
-    "RF": "_n100_d20_l10_fsqrt",
-    "XGB": "_n100_d4_lr0.05",
-    "TCN": "_f128_k4_d0.2",
-    "LSTM": "_h32_lr0.005_e100_w270_b256_d0.2"
+    "RF": "_n100_d10_l10_fsqrt",
+    "XGB": "_n100_d3_lr0.1",
+    "TCN": "_f32_k4_d0.2",
+    "LSTM": "_h32_lr0.001_e100_w30_b256_d0.2"
 }
 
 param_reg_tag_dict = {
     "RF": "_n100_d5_s2_l1_mf0.7_ms0.5_w270",
     "XGB": "",
     "TCN": "_n64_k4_d0.4",
-    "LSTM": "_hs256_do0.2"
+    "LSTM": "_hs256_do0.2_e30"
+}
+
+param_adp_tag_dict = {
+    "TCN": "",
+    "LSTM": "_hs256_do0.2_e30"
 }
 
 ###RF
@@ -92,16 +97,18 @@ benchmark_limits_cdf = {
     'MAE': {'min': 0, 'max': 5}
 }
 
-output_dir_box = "/data0/funato/hsp/0_out/1_fig/benchmark/ML_training_comparison/box"
-output_dir_cdf = "/data0/funato/hsp/0_out/1_fig/benchmark/ML_training_comparison/cdf"
+output_dir_box = "/data0/funato/hsp2/0_out/1_fig/benchmark/ML_training_comparison/box"
+output_dir_cdf = "/data0/funato/hsp2/0_out/1_fig/benchmark/ML_training_comparison/cdf"
 os.makedirs(output_dir_box, exist_ok=True)
 os.makedirs(output_dir_cdf, exist_ok=True)
 
 def get_file_path(model, train_type):
-    base_path = f"/data0/funato/hsp/0_out/{model}/GB/{train_type}/results"
+    base_path = f"/data0/funato/hsp2/0_out/{model}/GB/{train_type}/results"
     if train_type == "individual":
         param_tag = param_idv_tag_dict.get(model, "")
-    else:  # regional or adapted
+    elif train_type == "adapted":
+        param_tag = param_adp_tag_dict.get(model, "")
+    else:  # regional
         param_tag = param_reg_tag_dict.get(model, "")
     
     return os.path.join(base_path, f"{model}_results{param_tag}_eva.csv")
@@ -254,6 +261,7 @@ for benchmark in benchmark_list:
     output_path_cdf = os.path.join(output_dir_cdf, f'fig_by_benchmark_{benchmark}_cdf.png')
     plt.savefig(output_path_cdf, dpi=400, bbox_inches='tight')
     plt.close()
+    print(f"Saved box plot to {output_path_box}")
 
 print("All benchmark plots have been generated successfully!")
 print(f"Box plots saved to: {output_dir_box}")

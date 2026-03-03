@@ -36,12 +36,12 @@ dropout_rate = args.dropout
 # Fixed hyperparameters based on Kratzert et al. (2018, 2019)
 num_epochs = 20  # Fixed at 20 for individual basins
 learning_rate = 1e-3  # Fixed at 1e-3
-window_size = 270  # Input sequence length
+window_size = 30  # Input sequence length
 batch_size = 256  # Keep as is
 
 #loc, ver = "JP", 2
-#loc, ver = "US", 2
-loc, ver = "GB", 2
+loc, ver = "US", 2
+#loc, ver = "GB", 2
 #loc, ver = "AUS", 2
 
 benchmark_list = ["KGE","NSE","E1", "VE", "d","RMSE","MAE"]
@@ -55,7 +55,7 @@ ver_name = "ver1_1" if ver == 1 else "ver2_0"
 if loc == "JP":
     file_tot_num = 87
 elif loc == "US":
-    file_tot_num = 667
+    file_tot_num = 614
 elif loc == "AUS":
     file_tot_num = 84
 elif loc == "GB":
@@ -64,7 +64,9 @@ elif loc == "GB":
 if loc == "JP" and ver == 2:
     varssim_dir = f"/data0/funato/2_MERV/{loc}/varssim_nocal/{ver_name}"
 elif loc == "GB" and ver == 2:
-    varssim_dir = f"/data0/funato/hsp/2_MERV/varssim_HBV"
+    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim_GB"
+elif loc == "US" and ver == 2:
+    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim_US"
 
 #file_list = range(1, file_tot_num + 1)
 file_list = range(1,file_tot_num + 1, 4)
@@ -75,7 +77,7 @@ DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu") # This l
 print(f"Using device: {DEVICE}")
 
 # Create output directory with hyperparameter settings
-output_dir = f"/data0/funato/hsp/0_out/LSTM/{loc}/individual/hp/{hp_str}/"
+output_dir = f"/data0/funato/hsp2/0_out/LSTM/{loc}/individual/hp/{hp_str}/"
 os.makedirs(output_dir, exist_ok=True)
 os.makedirs(output_dir + '/predict', exist_ok=True)
 os.makedirs(output_dir + '/results', exist_ok=True)

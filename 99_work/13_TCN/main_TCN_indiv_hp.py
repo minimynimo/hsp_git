@@ -27,7 +27,8 @@ benchmark_list = ["KGE","NSE","E1", "VE", "d","RMSE","MAE"]
 
 
 #loc, ver = "JP", 2
-loc, ver = "GB", 2
+#loc, ver = "GB", 2
+loc, ver = "US", 2
 
 ver_name = "ver1_1" if ver == 1 else "ver2_0"   
 
@@ -37,7 +38,10 @@ if loc == "JP" and ver == 2:
     varssim_dir = f"/data0/funato/2_MERV/{loc}/varssim_nocal/{ver_name}"
 elif loc == "GB" and ver == 2:
     file_tot_num = 424
-    varssim_dir = f"/data0/funato/hsp/2_MERV/varssim_HBV"
+    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim_GB"
+elif loc == "US" and ver == 2:
+    file_tot_num = 614
+    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim_US"
 
 file_list = list(range(1, file_tot_num+1))[::4]
 
@@ -56,7 +60,7 @@ kernel_size = args.kernel_size
 dropout = args.dropout
 
 # Fixed hyperparameters based on Xu et al., 2021
-timesteps = 270
+timesteps = 90
 epochs = 30  # Fixed at 30 for consistency
 batch_size = 64  # Keep as is for individual basins
 nb_stacks = 1  # Single stack
@@ -68,8 +72,8 @@ start_date_eva = '2001-01-01'
 end_date_eva = '2006-12-31'
 
 # Create output directory with hyperparameter settings
-hp_str = f"f{nb_filters}_k{kernel_size}_d{dropout}"
-output_dir = f"/data0/funato/hsp/0_out/TCN/{loc}/individual/hp/{hp_str}"
+hp_str = f"f{nb_filters}_k{kernel_size}_d{dropout}_w{timesteps}"
+output_dir = f"/data0/funato/hsp2/0_out/TCN/{loc}/individual/hp/{hp_str}"
 os.makedirs(output_dir, exist_ok=True)
 os.makedirs(output_dir + "/predict", exist_ok=True)
 os.makedirs(output_dir + "/results", exist_ok=True)

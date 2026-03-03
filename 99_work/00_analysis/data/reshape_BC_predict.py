@@ -16,9 +16,9 @@ pred_discharge_cols = ['og', 'no_precip',
 peak_length_list = [1, 3, 5]
 rate_list = [0, 10, 30, 50]
 
-base_input_dir = "/data0/funato/hsp/2_MERV/varssim_HBV"
-input_dir = f"/data0/funato/hsp/0_out/BC/predict"
-output_dir = f"/data0/funato/hsp/0_out/BC/varssim_BC"
+base_input_dir = "/data0/funato/hsp2/2_MERV/varssim"
+input_dir = f"/data0/funato/hsp2/0_out/BC/predict"
+output_dir = f"/data0/funato/hsp2/0_out/BC/varssim_BC"
 os.makedirs(output_dir, exist_ok=True)
 
 def load_transposed_bc_data(sim_col, file_num):
@@ -26,8 +26,8 @@ def load_transposed_bc_data(sim_col, file_num):
     
     if sim_col == 'og':
         # Handle 'og' scenario with transposed files
-        cal_file = f"/data0/funato/hsp/0_out/BC/predict/BC_predict_cal.csv"
-        eva_file = f"/data0/funato/hsp/0_out/BC/predict/BC_predict_eva.csv"
+        cal_file = f"/data0/funato/hsp2/0_out/BC/predict/BC_predict_cal.csv"
+        eva_file = f"/data0/funato/hsp2/0_out/BC/predict/BC_predict_eva.csv"
         
         if not os.path.exists(cal_file) or not os.path.exists(eva_file):
             print(f"Warning: BC files for og do not exist.")
@@ -141,7 +141,7 @@ for file_num in range(1, file_tot_num + 1):
 
     # Copy base columns from the original file
     base_df = base_df[['Date', 'Obs flow', 'Precip', 'Temp', 'PET', 
-                'syn_no_precip', 'syn_p_pet', 'Temp_at_peak', 
+                'syn_no_precip', 'Temp_at_peak', 
                 'PET_at_peak', 'Obs_flow_at_peak', 
                 'syn_peak1_rate0','syn_peak1_rate10', 'syn_peak1_rate30', 'syn_peak1_rate50',
                 'syn_peak3_rate0','syn_peak3_rate10', 'syn_peak3_rate30', 'syn_peak3_rate50',

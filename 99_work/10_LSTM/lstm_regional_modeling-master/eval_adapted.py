@@ -27,7 +27,7 @@ from papercode.nseloss import NSELoss
 # ####################### #
 
 GLOBAL_SETTINGS = {
-    'loc': 'GB',
+    'loc': 'US',
     'ver': 2,
     'seq_length': 270,
     'train_start': pd.to_datetime('1993-01-01', format='%Y-%m-%d'),
@@ -43,12 +43,13 @@ benchmark_list = ["NSE", "KGE", "E1", "VE", "d", "RMSE", "MAE"]
                    'syn_peak3_rate0', 'syn_peak3_rate10', 'syn_peak3_rate30', 'syn_peak3_rate50',
                    'syn_peak5_rate0', 'syn_peak5_rate10', 'syn_peak5_rate30', 'syn_peak5_rate50']"""
 
-syn_precip_cols = ['syn_peak1_rate30', 'syn_peak1_rate50',
+syn_precip_cols = ['syn_no_precip', 
+                   'syn_peak1_rate0','syn_peak1_rate10', 'syn_peak1_rate30', 'syn_peak1_rate50',
                    'syn_peak3_rate0', 'syn_peak3_rate10', 'syn_peak3_rate30', 'syn_peak3_rate50',
                    'syn_peak5_rate0', 'syn_peak5_rate10', 'syn_peak5_rate30', 'syn_peak5_rate50']
 
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-DEVICE = torch.device("cpu")  # Force CPU for debugging
+#åDEVICE = torch.device("cpu")  # Force CPU for debugging
 print(f"Using device: {DEVICE}")
 if torch.cuda.is_available():
     print(f"GPU: {torch.cuda.get_device_name(0)}")
@@ -56,7 +57,8 @@ if torch.cuda.is_available():
 
 
 if GLOBAL_SETTINGS['loc'] == "JP": file_tot_num = 87
-else: file_tot_num = 424 # changed from 424 due to change of dataset from Caravan to CamelGB
+elif GLOBAL_SETTINGS['loc'] == "US": file_tot_num = 614
+elif GLOBAL_SETTINGS['loc'] == "GB": file_tot_num = 424 # changed from 424 due to change of dataset from Caravan to CamelGB
 file_num_list = list(map(str, range(1, file_tot_num + 1)))
 
 # ####################### #
@@ -95,7 +97,7 @@ def file_name(input_num, total_len):
     return str(input_num).zfill(total_len)
 
 def load_data_for_basin(file_num):
-    varssim_dir = "/data0/funato/hsp/2_MERV/varssim_HBV"
+    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim_{GLOBAL_SETTINGS['loc']}"
     df = pd.read_csv(f"{varssim_dir}/varssim{file_name(file_num, 3)}.csv")
     df['Date'] = pd.to_datetime(df['Date'])
     df.set_index('Date', inplace=True)
@@ -458,7 +460,7 @@ def fine_tune_and_evaluate(base_model, basin, dates, cfg, static_attrs):
 def main():
     parser = argparse.ArgumentParser(description='Adapted LSTM Evaluation')
     parser.add_argument('--run_dir', type=str, required=True)
-    parser.add_argument('--model_epoch', type=int, default=30)
+    parser.add_argument('--model_epoch', type=int, default=100)
     parser.add_argument('--n_basins', type=int, default=None)
     args = parser.parse_args()
     
@@ -491,13 +493,13 @@ def main():
         db_path = run_dir / "attributes.db"
         static_attrs = load_attributes(db_path, basins=basins_to_process, drop_lat_lon=True)
 
-    output_dir = Path(f"/data0/funato/hsp/0_out/LSTM/{GLOBAL_SETTINGS['loc']}/adapted")
+    output_dir = Path(f"/data0/funato/hsp2/0_out/LSTM/{GLOBAL_SETTINGS['loc']}/adapted")
 
     param_tag = f"hs{cfg['hidden_size']}_do{cfg.get('dropout', 0.0)}_e{cfg['epochs']}"
 
     
     # Directory for saving/loading fine-tuned models
-    adapted_models_dir = Path("/data0/funato/hsp/99_work/10_LSTM/lstm_regional_modeling-master/runs_lstm_adapted")
+    adapted_models_dir = Path(f"/data0/funato/hsp2/99_work/10_LSTM/lstm_regional_modeling-master/runs_lstm_adapted/{GLOBAL_SETTINGS['loc']}")
     adapted_models_dir.mkdir(parents=True, exist_ok=True)
     
     # Store fine-tuned models and scalers for each basin (fine-tune once, use multiple times)
@@ -527,7 +529,7 @@ def main():
                         'eva': (GLOBAL_SETTINGS['val_start'], GLOBAL_SETTINGS['val_end'])}.items():
         print(f"\nEvaluating {name.upper()} period...")
         
-        pred_path = output_dir / "predict" / f"LSTM_predict_{param_tag}_{name}.csv"
+        pred_path = output_dir / "predict_p" / f"LSTM_predict_{param_tag}_{name}.csv"
         pred_path.parent.mkdir(parents=True, exist_ok=True)
         
         all_metrics = []
@@ -540,9 +542,8 @@ def main():
             preds, obs, eval_dates = evaluate_period(basin_models[basin], basin, dates, cfg, static_attrs, basin_scalers[basin])
             if preds is not None:
                 # Create row with basin as index and dates as columns
-                preds_df = pd.DataFrame({'date': eval_dates, 'prediction': preds}).set_index('date')
-                basin_row = preds_df['prediction'].to_frame().T
-                basin_row.index = [basin]
+                basin_series = pd.Series(preds, index=eval_dates, name=basin)
+                basin_row = basin_series.to_frame().T
                 basin_row.index.name = 'basin'
                 
                 # Append to CSV incrementally
@@ -567,7 +568,7 @@ def main():
             print(f"Predictions saved to {pred_path}")
 
             results_df = pd.DataFrame(all_metrics).set_index('basin')
-            results_path = output_dir / "results" / f"LSTM_results_{param_tag}_{name}.csv"
+            results_path = output_dir / "results_p" / f"LSTM_results_{param_tag}_{name}.csv"
             results_path.parent.mkdir(parents=True, exist_ok=True)
             results_df.to_csv(results_path)
             print(f"Results saved to {results_path}")
@@ -586,7 +587,7 @@ def main():
         syn_end = pd.to_datetime('2001-02-10') if 'peak' in scenario_col else val_end
         dates = (val_start, syn_end)
         
-        pred_path = output_dir / "predict" / "synthetic" / f"LSTM_predict_{param_tag}_{scenario_col}_eva.csv"
+        pred_path = output_dir / "predict_p" / "synthetic" / f"LSTM_predict_{param_tag}_{scenario_col}_eva.csv"
         pred_path.parent.mkdir(parents=True, exist_ok=True)
         
         first_basin = True
@@ -599,10 +600,9 @@ def main():
             
             if predictions is not None and len(predictions) > 0 and len(eval_dates) == len(predictions):
                 # Create row with basin as index and dates as columns
-                preds_df = pd.DataFrame({'date': eval_dates, 'prediction': predictions}).set_index('date')
-                preds_df['prediction'] = preds_df['prediction'].clip(lower=0)
-                basin_row = preds_df['prediction'].to_frame().T
-                basin_row.index = [basin]
+                clipped_preds = np.clip(predictions, a_min=0, a_max=None)
+                basin_series = pd.Series(clipped_preds, index=eval_dates, name=basin)
+                basin_row = basin_series.to_frame().T
                 basin_row.index.name = 'basin'
                 
                 # Append to CSV incrementally

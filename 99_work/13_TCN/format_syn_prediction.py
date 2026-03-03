@@ -1,8 +1,8 @@
 import os
 import pandas as pd
 
-input_dir = "/data0/funato/hsp/0_out/TCN/GB/regional/predict/synthetic_wrongformat"
-output_dir = "/data0/funato/hsp/0_out/TCN/GB/regional/predict/synthetic"
+input_dir = "/data0/funato/hsp2/0_out/TCN/GB/regional/predict/synthetic_wrongformat"
+output_dir = "/data0/funato/hsp2/0_out/TCN/GB/regional/predict/synthetic"
 
 # Create output directory if it doesn't exist
 os.makedirs(output_dir, exist_ok=True)

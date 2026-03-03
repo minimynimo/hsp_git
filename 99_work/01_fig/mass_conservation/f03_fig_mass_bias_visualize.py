@@ -6,16 +6,16 @@ import seaborn as sns
 
 
 fs = 20
-input_data = "/data0/funato/hsp/0_out/analysis/mass_conservation/mass_bias_data.csv"
+input_data = "/data0/funato/hsp2/0_out/analysis/mass_conservation/mass_bias_data.csv"
 input_df = pd.read_csv(input_data)
 
-output_dir = "/data0/funato/hsp/0_out/1_fig/mass_conservation"
+output_dir = "/data0/funato/hsp2/0_out/1_fig/mass_conservation"
 os.makedirs(output_dir, exist_ok=True)
 
-model_list = ["HBV", "HYPER", "RF", "XGB", "TCN", "LSTM"]
+model_list = ["SACSMA", "HYPER", "RF", "XGB", "TCN", "LSTM"]
 
 color_list = {
-    "HBV": "#7B7B7B",    # Kept as requested (Medium Grey)
+    "SACSMA": "#7B7B7B",    # Kept as requested (Medium Grey)
     "HYPER": "#628AE8",  # Kept as requested (Steel Blue)
     "RF":   "#FF7F00",   # Red
     "XGB":  "#9C4803",   # Bright Orange
@@ -40,7 +40,7 @@ plt.xlabel('Model', fontsize=fs)
 plt.ylabel('Mass Bias', fontsize=fs)
 plt.tick_params(labelsize=fs)
 plt.xticks(rotation=45)
-plt.ylim(-0.1,2)
+plt.ylim(-0.1, 1.5)
 plt.grid(True, alpha=0.3)
 plt.tight_layout()
 plt.savefig(f"{output_dir}/f03_mass_bias_boxplot.png", dpi=300, bbox_inches='tight')
@@ -60,8 +60,8 @@ plt.title('Mass Bias', fontsize=fs)
 plt.xlabel('Mass Bias', fontsize=fs)    
 plt.ylabel('Cumulative Proportion', fontsize=fs)
 plt.tick_params(labelsize=fs*0.8)
-plt.xlim(0, 3)
-plt.xticks([0.0, 1.0, 2.0, 3.0], ['0.0', '1.0', '2.0', '3.0'])
+plt.xlim(0, 1.5)
+plt.xticks([0.0, 0.5, 1.0, 1.5], ['0.0', '0.5', '1.0', '1.5'])
 plt.ylim(0, 1)
 plt.legend(fontsize=fs*0.6)
 plt.grid(True, alpha=0.3)

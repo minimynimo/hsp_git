@@ -34,8 +34,8 @@ elif loc == "JP" and ver == 2:
 elif loc == "GB" and ver == 2:
     # Adjusted file_tot_num to 20 as in the RF script for consistency. Change if needed.
     file_tot_num = 424
-    varssim_dir = f"/data0/funato/hsp/2_MERV/varssim_HBV"
-    varssim_dir = f"/data0/funato/hsp/2_MERV/varssim_HBV"
+    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim"
+    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim"
 
 file_list = list(range(1, file_tot_num + 1))
 # file_list = list(range(20,22)) # Uncomment for quick test
@@ -50,7 +50,7 @@ n_estimators = 500
 learning_rate = 0.1
 max_depth = 4
 
-output_dir = f"/data0/funato/hsp/0_out/XGB/{loc}/regional"
+output_dir = f"/data0/funato/hsp2/0_out/XGB/{loc}/regional"
 os.makedirs(output_dir, exist_ok=True)
 os.makedirs(output_dir + "/predict/og", exist_ok=True)
 os.makedirs(output_dir + "/results", exist_ok=True)

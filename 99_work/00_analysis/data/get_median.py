@@ -2,7 +2,7 @@
 import pandas as pd
 
 
-input_file = "/data0/funato/hsp/0_out/BC/results/BC_results_cal.csv"
+input_file = "/data0/funato/hsp2/0_out/BC/results/BC_results_cal.csv"
 
 input_df = pd.read_csv(input_file)
 input_df.set_index('file_num', inplace=True)

@@ -19,10 +19,10 @@ pred_discharge_cols = ['og', 'no_precip',
 peak_length_list = [1, 3, 5]
 rate_list = [0, 10, 30, 50]
 
-base_input_dir = "/data0/funato/hsp/2_MERV/varssim_HBV"
+base_input_dir = "/data0/funato/hsp2/2_MERV/varssim_HBV"
 for model_name in model_list:
-    input_dir = f"/data0/funato/hsp/0_out/{model_name}/GB/regional/predict/synthetic"
-    output_dir = f"/data0/funato/hsp/0_out/{model_name}/GB/regional/varssim_{model_name}"
+    input_dir = f"/data0/funato/hsp2/0_out/{model_name}/GB/regional/predict/synthetic"
+    output_dir = f"/data0/funato/hsp2/0_out/{model_name}/GB/regional/varssim_{model_name}"
     os.makedirs(output_dir, exist_ok=True)
 
     for file_num in range(1, file_tot_num + 1):
@@ -122,8 +122,8 @@ for model_name in model_list:
         for sim_col in pred_discharge_cols:
             print(f"Processing synthetic column: {sim_col}")
             if sim_col == 'og':
-                input_file_cal = f"/data0/funato/hsp/0_out/{model_name}/GB/regional/predict/og/{model_name}_predict_cal_basin_{file_num}.csv"
-                input_file_eva = f"/data0/funato/hsp/0_out/{model_name}/GB/regional/predict/og/{model_name}_predict_eva_basin_{file_num}.csv"
+                input_file_cal = f"/data0/funato/hsp2/0_out/{model_name}/GB/regional/predict/og/{model_name}_predict_cal_basin_{file_num}.csv"
+                input_file_eva = f"/data0/funato/hsp2/0_out/{model_name}/GB/regional/predict/og/{model_name}_predict_eva_basin_{file_num}.csv"
                 input_df_cal = pd.read_csv(input_file_cal, parse_dates=['Date'])
                 input_df_cal.set_index('Date', inplace=True)
                 input_df_cal.sort_index(inplace=True)

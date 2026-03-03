@@ -21,6 +21,9 @@ from sklearn.metrics import mean_squared_error
 from tqdm import tqdm
 import torch
 
+# Force matplotlib to use non-interactive backend for headless operation
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 from papercode.datautils import add_basin_attributes, load_attributes
@@ -52,7 +55,7 @@ def file_name(input_num, total_len):
 
 def load_data_for_basin(file_num):
     """Load data for a specific basin"""
-    varssim_dir = "/data0/funato/hsp/2_MERV/varssim_HBV"
+    varssim_dir = "/data0/funato/hsp2/2_MERV/varssim"
     df = pd.read_csv(f"{varssim_dir}/varssim{file_name(file_num, 3)}.csv")
     df['Date'] = pd.to_datetime(df['Date'])
     df.set_index('Date', inplace=True)

@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 MODEL_TYPES = ["regional", "individual"]
 
 # Updated output directory for XGB
-output_dir = "/data0/funato/hsp/0_out/1_fig/benchmark/hyperparameter_analysis/XGB/GB/"
+output_dir = "/data0/funato/hsp2/0_out/1_fig/benchmark/hyperparameter_analysis/XGB/GB/"
 os.makedirs(output_dir, exist_ok=True)
 
 benchmark_list = ["KGE", "NSE", "RMSE", "MAE"]
@@ -37,16 +37,16 @@ for MODEL_TYPE in MODEL_TYPES:
                 
                 if MODEL_TYPE == "regional":
                     input_path = (
-                        f"/data0/funato/hsp/0_out/XGB/GB/{MODEL_TYPE}/hp/results/XGB_results_n{N_EST}_d{MAX_D}_lr{LR}_eva.csv"
+                        f"/data0/funato/hsp2/0_out/XGB/GB/{MODEL_TYPE}/hp/results/XGB_results_n{N_EST}_d{MAX_D}_lr{LR}_eva.csv"
                     )
                     
                     # Fallback: specific check if the user meant the file contains the HP info
                     # or if the static file example was just one instance.
                 
                 elif MODEL_TYPE == "individual":
-                    # Pattern: /data0/funato/hsp/0_out/XGB/GB/individual/hp/n300_d3_lr0.1/results/XGB_results_eva.csv
+                    # Pattern: /data0/funato/hsp2/0_out/XGB/GB/individual/hp/n300_d3_lr0.1/results/XGB_results_eva.csv
                     input_path = (
-                        f"/data0/funato/hsp/0_out/XGB/GB/{MODEL_TYPE}/hp/"
+                        f"/data0/funato/hsp2/0_out/XGB/GB/{MODEL_TYPE}/hp/"
                         f"n{N_EST}_d{MAX_D}_lr{LR}/results/XGB_results_eva.csv"
                     )
 

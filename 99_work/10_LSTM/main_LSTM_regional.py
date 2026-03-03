@@ -54,7 +54,10 @@ if loc == "JP" and ver == 2:
     varssim_dir = f"/data0/funato/2_MERV/{loc}/varssim_nocal/{ver_name}"
 elif loc == "GB" and ver == 2:
     file_tot_num = 424 # Using 20 for consistency with other models
-    varssim_dir = f"/data0/funato/hsp/2_MERV/varssim_HBV"
+    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim_GB"
+elif loc == "US" and ver == 2:
+    file_tot_num = 614
+    varssim_dir = f"/data0/funato/2_MERV/{loc}/varssim_US"
 
 file_list = list(range(1, file_tot_num+1))
 
@@ -83,7 +86,7 @@ start_date_eva = '2001-01-01'
 end_date_eva = '2006-12-31'
 
 # --- Updated output directories for LSTM ---
-output_dir = f"/data0/funato/hsp/0_out/LSTM/{loc}/regional"
+output_dir = f"/data0/funato/hsp2/0_out/LSTM/{loc}/regional"
 os.makedirs(output_dir, exist_ok=True)
 os.makedirs(output_dir + "/predict/og", exist_ok=True)
 os.makedirs(output_dir + "/results", exist_ok=True)

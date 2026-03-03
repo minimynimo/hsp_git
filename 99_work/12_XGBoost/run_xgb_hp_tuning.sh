@@ -6,10 +6,18 @@
 
 # 
 
-PYTHON=/data0/funato/hsp/.venv/bin/python
-REGIONAL_SCRIPT=/data0/funato/hsp/99_work/12_XGBoost/XGB_regional_modeling-master/main_xgb_hp.py
-INDIVIDUAL_SCRIPT=/data0/funato/hsp/99_work/12_XGBoost/main_xgboost_indiv_hp.py
-LOG_DIR=/data0/funato/hsp/99_work/12_XGBoost/logs
+if [ -x "/data0/funato/hsp2/.venv/bin/python3" ]; then
+    PYTHON="/data0/funato/hsp2/.venv/bin/python3"
+else
+    PYTHON="$(command -v python3 || command -v python || true)"
+    if [ -z "$PYTHON" ]; then
+        echo "Error: No python executable found. Install Python or create the virtualenv at /data0/funato/hsp2/.venv"
+        exit 1
+    fi
+fi
+REGIONAL_SCRIPT=/data0/funato/hsp2/99_work/12_XGBoost/XGB_regional_modeling-master/main_xgb_hp.py
+INDIVIDUAL_SCRIPT=/data0/funato/hsp2/99_work/12_XGBoost/main_xgboost_indiv_hp.py
+LOG_DIR=/data0/funato/hsp2/99_work/12_XGBoost/logs
 
 mkdir -p $LOG_DIR
 

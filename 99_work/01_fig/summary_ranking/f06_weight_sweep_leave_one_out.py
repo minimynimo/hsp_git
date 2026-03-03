@@ -9,7 +9,7 @@ from matplotlib.colors import ListedColormap
 
 # --- Configuration ---
 # Directory to save the output figures
-output_dir = "/data0/funato/hsp/0_out/1_fig/summary_ranking_multi/sensitivity_analysis"
+output_dir = "/data0/funato/hsp2/0_out/1_fig/summary_ranking_multi/sensitivity_analysis"
 os.makedirs(output_dir, exist_ok=True)
 
 # Number of random weight combinations for the Top-1 Frequency analysis
@@ -37,7 +37,7 @@ color_list = {
 fs = 20 
 
 # --- Input Data: Plausibility Ranks ---
-rank_file = "/data0/funato/hsp/0_out/analysis/summary_ranking_multi/automated_ranks/automated_plausibility_ranks.csv"
+rank_file = "/data0/funato/hsp2/0_out/analysis/summary_ranking_multi/automated_ranks/automated_plausibility_ranks.csv"
 
 if not os.path.exists(rank_file):
     print(f"Error: Rank file not found at {rank_file}")

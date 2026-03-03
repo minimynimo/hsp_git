@@ -44,7 +44,7 @@ GLOBAL_SETTINGS = {
 benchmark_list = ["NSE", "KGE", "E1", "VE", "d", "RMSE", "MAE"] 
 
 # Define synthetic precipitation columns (matching main.py)
-syn_precip_cols = ['syn_no_precip', 'syn_p_pet', 
+syn_precip_cols = ['syn_no_precip',
                    'syn_peak1_rate0', 'syn_peak1_rate10', 'syn_peak1_rate30', 'syn_peak1_rate50',
                    'syn_peak3_rate0', 'syn_peak3_rate10', 'syn_peak3_rate30', 'syn_peak3_rate50',
                    'syn_peak5_rate0', 'syn_peak5_rate10', 'syn_peak5_rate30', 'syn_peak5_rate50']
@@ -70,7 +70,7 @@ def file_name(input_num, total_len):
 
 def load_data_for_basin(file_num):
     """Load data for a specific basin"""
-    varssim_dir = "/data0/funato/hsp/2_MERV/varssim_HBV"
+    varssim_dir = "/data0/funato/hsp2/2_MERV/varssim"
     df = pd.read_csv(f"{varssim_dir}/varssim{file_name(file_num, 3)}.csv")
     df['Date'] = pd.to_datetime(df['Date'])
     df.set_index('Date', inplace=True)
@@ -241,7 +241,7 @@ def evaluate_original_data(model, run_cfg, basins, static_attrs=None):
         'eva': (GLOBAL_SETTINGS["val_start"], GLOBAL_SETTINGS["val_end"])
     }
     
-    output_dir = Path("/data0/funato/hsp/0_out/RF/GB/regional")
+    output_dir = Path("/data0/funato/hsp2/0_out/RF/GB/regional")
     
     for period_name, (start_date, end_date) in periods.items():
         print(f"\nEvaluating {period_name.upper()} period ({start_date.date()} to {end_date.date()})")
@@ -337,7 +337,7 @@ def evaluate_synthetic_data(model, run_cfg, basins, static_attrs=None):
     """Evaluate on synthetic scenarios (evaluation period only)"""
     print("\n--- Evaluating Synthetic Scenarios ---")
     
-    output_dir = Path("/data0/funato/hsp/0_out/RF/GB/regional")
+    output_dir = Path("/data0/funato/hsp2/0_out/RF/GB/regional")
     start_date = GLOBAL_SETTINGS["val_start"]
     end_date = GLOBAL_SETTINGS["val_end"]
     

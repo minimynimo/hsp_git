@@ -24,7 +24,7 @@ from papercode.ealstm import EALSTM
 # Global Definitions      #
 # ####################### #
 
-GLOBAL_SETTINGS = {'loc': 'GB', 
+GLOBAL_SETTINGS = {'loc': 'US', 
                    'ver': 2, 
                    'train_start': pd.to_datetime('1993-01-01', format='%Y-%m-%d'),
                    'train_end': pd.to_datetime('2000-12-31', format='%Y-%m-%d'),
@@ -82,7 +82,7 @@ def file_name(input_num, total_len):
     return str(input_num).zfill(total_len)
 
 def load_data_for_basin(file_num):
-    varssim_dir = "/data0/funato/hsp/2_MERV/varssim_HBV"
+    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim_{GLOBAL_SETTINGS['loc']}"
     df = pd.read_csv(f"{varssim_dir}/varssim{file_name(file_num, 3)}.csv")
     df['Date'] = pd.to_datetime(df['Date'])
     df.set_index('Date', inplace=True)
@@ -330,9 +330,9 @@ def main():
     parser = argparse.ArgumentParser(description='Regional LSTM Evaluation')
     parser.add_argument('--run_dir', type=str, required=True)
     parser.add_argument('--n_basins', type=int, default=None)
-    parser.add_argument('--model_epoch', type=int, default=30, 
+    parser.add_argument('--model_epoch', type=int, default=100, 
                         help='Which model epoch to use for evaluation (default: 30)')
-    parser.add_argument('--output_dir', type=str, default="/data0/funato/hsp/0_out/LSTM/GB/regional/hp",
+    parser.add_argument('--output_dir', type=str, default=f"/data0/funato/hsp2/0_out/LSTM/{GLOBAL_SETTINGS['loc']}/regional/hp",
                         help='Output directory for predictions and results')
     parser.add_argument('--hp_string', type=str, default=None,
                         help='Hyperparameter string for output filenames')
@@ -367,6 +367,7 @@ def main():
     is_concat_static = cfg.get('concat_static', False)
     
     if GLOBAL_SETTINGS['loc'] == "JP": file_tot_num = 87
+    elif GLOBAL_SETTINGS['loc'] == "US": file_tot_num = 614
     else: file_tot_num = 424
     # Use zero-padded basin IDs to match scalers.json format
     basins = [str(i).zfill(3) for i in range(1, file_tot_num + 1)]
@@ -377,7 +378,7 @@ def main():
         try:
             db_path = run_dir / "attributes.db"
             from papercode.datautils import load_attributes
-            attrs = load_attributes(db_path, basins=[int(b) for b in basins], loc='GB')
+            attrs = load_attributes(db_path, basins=[int(b) for b in basins], loc=GLOBAL_SETTINGS['loc'])
             input_size_stat = attrs.shape[1]
             print(f"Loaded {len(attrs)} basin attributes with {input_size_stat} features each")
         except Exception as e:
@@ -400,7 +401,7 @@ def main():
     attributes = None
     if not is_no_static:
         db_path = run_dir / 'attributes.db'
-        attributes = load_attributes(db_path, basins=[int(b) for b in basins], loc='GB')
+        attributes = load_attributes(db_path, basins=[int(b) for b in basins], loc=GLOBAL_SETTINGS['loc'])
     
     train_start = pd.to_datetime(cfg['train_start'])
     train_end = pd.to_datetime(cfg['train_end'])

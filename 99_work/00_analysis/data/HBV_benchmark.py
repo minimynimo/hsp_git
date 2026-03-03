@@ -2,13 +2,13 @@ import numpy as np
 import pandas as pd
 import os
 
-input_dir = "/data0/funato/hsp/2_MERV/varssim_HBV"
+input_dir = "/data0/funato/hsp2/0_out/HBV/varssim_HBV"
 
 file_tot_num = 424
 
 benchmark_list = ["KGE","NSE","E1","VE", "d","RMSE","MAE"]
 
-output_dir = "/data0/funato/hsp/0_out/HBV/GB/shap/regional/results"
+output_dir = "/data0/funato/hsp2/0_out/HBV/GB/results"
 os.makedirs(output_dir, exist_ok=True)
 
 start_date_cal = "1993-01-01"

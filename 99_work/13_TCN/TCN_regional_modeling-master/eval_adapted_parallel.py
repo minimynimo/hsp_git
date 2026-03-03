@@ -113,7 +113,7 @@ class TCNModel(nn.Module):
 def file_name(input_num, total_len): return str(input_num).zfill(total_len)
 
 def load_data_for_basin(file_num):
-    varssim_dir = "/data0/funato/hsp/2_MERV/varssim_HBV"
+    varssim_dir = "/data0/funato/hsp2/2_MERV/varssim"
     df = pd.read_csv(f"{varssim_dir}/varssim{file_name(file_num, 3)}.csv", index_col='Date', parse_dates=True)
     return df
 
@@ -447,8 +447,8 @@ def main():
         db_path = run_dir / "attributes.db"
         static_attrs = load_attributes(db_path, basins=file_num_list, drop_lat_lon=True)
 
-    output_dir = Path(f"/data0/funato/hsp/0_out/TCN/{GLOBAL_SETTINGS['loc']}/adapted")
-    adapted_models_dir = Path("/data0/funato/hsp/99_work/13_TCN/TCN_regional_modeling-master/runs_tcn_adapted")
+    output_dir = Path(f"/data0/funato/hsp2/0_out/TCN/{GLOBAL_SETTINGS['loc']}/adapted")
+    adapted_models_dir = Path("/data0/funato/hsp2/99_work/13_TCN/TCN_regional_modeling-master/runs_tcn_adapted")
     adapted_models_dir.mkdir(parents=True, exist_ok=True)
     
     # Fine-tuning stage
@@ -503,9 +503,10 @@ def main():
                     
                 preds, obs, eval_dates = evaluate_period(basin_models[basin], basin, dates, cfg, static_attrs, basin_scalers[basin])
                 if preds is not None:
-                    preds_df = pd.DataFrame({'date': eval_dates, 'prediction': preds}).set_index('date')
-                    basin_row = preds_df['prediction'].to_frame().T
-                    basin_row.index = [basin]
+                    # Create a Series with dates as index and predictions as values
+                    basin_series = pd.Series(preds, index=eval_dates, name=basin)
+                    # Convert to DataFrame with basin as row and dates as columns
+                    basin_row = basin_series.to_frame().T
                     basin_row.index.name = 'basin'
                     
                     if first_basin:

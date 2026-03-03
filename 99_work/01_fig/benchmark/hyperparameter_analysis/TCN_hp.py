@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 MODEL_TYPES = ["regional", "individual"]
 
 # Updated output directory for TCN
-output_dir = "/data0/funato/hsp/0_out/1_fig/benchmark/hyperparameter_analysis/TCN/GB/"
+output_dir = "/data0/funato/hsp2/0_out/1_fig/benchmark/hyperparameter_analysis/TCN/GB/"
 os.makedirs(output_dir, exist_ok=True)
 
 benchmark_list = ["KGE", "NSE", "RMSE", "MAE"]
@@ -39,16 +39,16 @@ for MODEL_TYPE in MODEL_TYPES:
                 
                 # --- 3. Construct File Paths ---
                 if MODEL_TYPE == "regional":
-                    # Pattern: /data0/funato/hsp/0_out/TCN/GB/regional/hp/results/TCN_results_f32_k2_d0.2_cal.csv
+                    # Pattern: /data0/funato/hsp2/0_out/TCN/GB/regional/hp/results/TCN_results_f32_k2_d0.2_cal.csv
                     input_path = (
-                        f"/data0/funato/hsp/0_out/TCN/GB/{MODEL_TYPE}/hp/results/"
+                        f"/data0/funato/hsp2/0_out/TCN/GB/{MODEL_TYPE}/hp/results/"
                         f"TCN_results_f{NUM_FILTER}_k{KERNEL_SIZE}_d{DROPOUT}_cal.csv"
                     )
                 
                 elif MODEL_TYPE == "individual":
-                    # Pattern: /data0/funato/hsp/0_out/TCN/GB/individual/hp/f16_k2_d0.4/results/TCN_results_eva.csv
+                    # Pattern: /data0/funato/hsp2/0_out/TCN/GB/individual/hp/f16_k2_d0.4/results/TCN_results_eva.csv
                     input_path = (
-                        f"/data0/funato/hsp/0_out/TCN/GB/{MODEL_TYPE}/hp/"
+                        f"/data0/funato/hsp2/0_out/TCN/GB/{MODEL_TYPE}/hp/"
                         f"f{NUM_FILTER}_k{KERNEL_SIZE}_d{DROPOUT}/results/"
                         f"TCN_results_eva.csv"
                     )
