@@ -4,6 +4,8 @@ import os
 import numpy as np
 from scipy import stats
 
+loc = "US"
+
 model_list = ["RF", "XGB", "TCN", "LSTM"]
 train_types = ["regional", "adapted","individual"]
 
@@ -11,29 +13,31 @@ benchmark_list = ["KGE", "NSE", "E1", "VE", "RMSE", "MAE"]
 
 fs = 15
 
+basin_ids = pd.read_csv("/data0/funato/hsp2/3_gis_data/US/0_data/river_basin/dataset_US/small_basins_1000.csv", index_col=None, header=0)["basin_id"].tolist()
+
 
 """
 MEMO INDIVIDUAL
-/data0/funato/hsp2/0_out/RF/GB/individual/results/RF_results_n100_d10_l10_fsqrt_eva.csv #
-/data0/funato/hsp2/0_out/XGB/GB/individual/results/XGB_results_n100_d3_lr0.1_eva.csv
-/data0/funato/hsp2/0_out/TCN/GB/individual/results/TCN_predict_f32_k4_d0.2_eva.csv
-/data0/funato/hsp2/0_out/LSTM/GB/individual/results/LSTM_results_h32_lr0.001_e100_w270_b256_d0.2_eva.csv #
+/data0/funato/hsp2/0_out/RF/{loc}/individual/results/RF_results_n100_d10_l10_fsqrt_eva.csv #
+/data0/funato/hsp2/0_out/XGB/{loc}/individual/results/XGB_results_n100_d3_lr0.1_eva.csv
+/data0/funato/hsp2/0_out/TCN/{loc}/individual/results/TCN_predict_f32_k4_d0.2_eva.csv
+/data0/funato/hsp2/0_out/LSTM/{loc}/individual/results/LSTM_results_h32_lr0.001_e100_w270_b256_d0.2_eva.csv #
 
 MEMO ADAPTED
-/data0/funato/hsp2/0_out/TCN/GB/adapted/results/TCN_results_eva.csv
-/data0/funato/hsp2/0_out/LSTM/GB/adapted/results/LSTM_results_hs256_do0.2_e30_eva.csv #
+/data0/funato/hsp2/0_out/TCN/{loc}/adapted/results/TCN_results_eva.csv
+/data0/funato/hsp2/0_out/LSTM/{loc}/adapted/results/LSTM_results_hs256_do0.2_e30_eva.csv #
 
 MEMO REGIONAL
-/data0/funato/hsp2/0_out/RF/GB/regional/results/RF_results_n100_d5_s2_l1_mf0.7_ms0.5_w270_eva.csv #
-/data0/funato/hsp2/0_out/XGB/GB/regional/results/XGB_results_eva.csv
-/data0/funato/hsp2/0_out/TCN/GB/regional/results/TCN_results_n64_k4_d0.4_eva.csv
-/data0/funato/hsp2/0_out/LSTM/GB/regional/results/LSTM_results_hs256_do0.2_e30_eva.csv #
+/data0/funato/hsp2/0_out/RF/{loc}/regional/results/RF_results_n100_d5_s2_l1_mf0.7_ms0.5_w270_eva.csv #
+/data0/funato/hsp2/0_out/XGB/{loc}/regional/results/XGB_results_eva.csv
+/data0/funato/hsp2/0_out/TCN/{loc}/regional/results/TCN_results_n64_k4_d0.4_eva.csv
+/data0/funato/hsp2/0_out/LSTM/{loc}/regional/results/LSTM_results_hs256_do0.4_e30_eva.csv #
 """
 
 param_idv_tag_dict = {
     "RF": "_n100_d10_l10_fsqrt",
     "XGB": "_n100_d3_lr0.1",
-    "TCN": "_f32_k4_d0.2",
+    "TCN": "_f64_k4_d0.2_w30",
     "LSTM": "_h32_lr0.001_e100_w30_b256_d0.2"
 }
 
@@ -41,12 +45,12 @@ param_reg_tag_dict = {
     "RF": "_n100_d5_s2_l1_mf0.7_ms0.5_w270",
     "XGB": "",
     "TCN": "_n64_k4_d0.4",
-    "LSTM": "_hs256_do0.2_e30"
+    "LSTM": "_hs256_do0.4_e30"
 }
 
 param_adp_tag_dict = {
     "TCN": "",
-    "LSTM": "_hs256_do0.2_e30"
+    "LSTM": "_hs256_do0.4_e30"
 }
 
 ###RF
@@ -97,13 +101,13 @@ benchmark_limits_cdf = {
     'MAE': {'min': 0, 'max': 5}
 }
 
-output_dir_box = "/data0/funato/hsp2/0_out/1_fig/benchmark/ML_training_comparison/box"
-output_dir_cdf = "/data0/funato/hsp2/0_out/1_fig/benchmark/ML_training_comparison/cdf"
+output_dir_box = f"/data0/funato/hsp2/0_out/1_fig/{loc}/benchmark/ML_training_comparison/box"
+output_dir_cdf = f"/data0/funato/hsp2/0_out/1_fig/{loc}/benchmark/ML_training_comparison/cdf"
 os.makedirs(output_dir_box, exist_ok=True)
 os.makedirs(output_dir_cdf, exist_ok=True)
 
 def get_file_path(model, train_type):
-    base_path = f"/data0/funato/hsp2/0_out/{model}/GB/{train_type}/results"
+    base_path = f"/data0/funato/hsp2/0_out/{model}/{loc}/{train_type}/results"
     if train_type == "individual":
         param_tag = param_idv_tag_dict.get(model, "")
     elif train_type == "adapted":
@@ -155,6 +159,9 @@ for benchmark in benchmark_list:
             file_path = get_file_path(model, train_type)
             if os.path.exists(file_path):
                 df = pd.read_csv(file_path)
+                # Filter to only include basins in basin_ids list
+                if 'basin' in df.columns:
+                    df = df[df['basin'].isin(basin_ids)]
                 # Column name format: try {MODEL}_{BENCHMARK}_eva first, then {BENCHMARK}
                 col_name = f"{model}_{benchmark}_eva"
                 if col_name not in df.columns:
@@ -213,6 +220,9 @@ for benchmark in benchmark_list:
             file_path = get_file_path(model, train_type)
             if os.path.exists(file_path):
                 df = pd.read_csv(file_path)
+                # Filter to only include basins in basin_ids list
+                if 'basin' in df.columns:
+                    df = df[df['basin'].isin(basin_ids)]
                 # Column name format: try {MODEL}_{BENCHMARK}_eva first, then {BENCHMARK}
                 col_name = f"{model}_{benchmark}_eva"
                 if col_name not in df.columns:

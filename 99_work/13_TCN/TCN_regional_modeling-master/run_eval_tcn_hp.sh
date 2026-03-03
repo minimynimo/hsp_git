@@ -5,20 +5,23 @@
 
 set -e  # Exit on any error
 
+#LOC="GB"  # Location identifier
+LOC="US"  # Location identifier
+
 # Configuration
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PYTHON_PATH="/data0/funato/hsp/.venv/bin/python"
 RUNS_BASE="$SCRIPT_DIR/runs_tcn"
-OUTPUT_DIR="/data0/funato/hsp2/0_out/TCN/GB/regional/hp"
+OUTPUT_DIR="/data0/funato/hsp2/0_out/TCN/$LOC/regional/hp"
 MODEL_EPOCH=30
 
 # Core assignment for parallel execution
-START_CORE=5
-CORES_PER_JOB=8
+START_CORE=13
+CORES_PER_JOB=4
 
 # Hyperparameter grid
-NB_FILTERS=(32 64)
-KERNEL_SIZES=(2 4)
+NB_FILTERS=(64 128)
+KERNEL_SIZES=(3 5)
 DROPOUTS=(0.2 0.4)
 
 # Function to find the run directory for given hyperparameters
@@ -26,7 +29,7 @@ find_run_dir() {
     local f=$1
     local k=$2
     local d=$3
-    local hp_dir="$RUNS_BASE/f${f}_k${k}_d${d}"
+    local hp_dir="$RUNS_BASE/hp/$LOC/f${f}_k${k}_d${d}_w270"
     
     if [[ ! -d "$hp_dir" ]]; then
         echo "WARNING: HP directory not found: $hp_dir" >&2
@@ -109,7 +112,7 @@ echo "All hyperparameter evaluations complete!"
 echo "Results saved to: $OUTPUT_DIR"
 echo "========================================="
 echo "    - synthetic/TCN_predict_${PARAM_STRING}_*_eva.csv (synthetic scenarios)"
-echo "  - Results: /data0/funato/hsp2/0_out/TCN/GB/regional/results/"
+echo "  - Results: /data0/funato/hsp2/0_out/TCN/$LOC/regional/results/"
 echo "    - TCN_results_${PARAM_STRING}_cal.csv (calibration period)"
 echo "    - TCN_results_${PARAM_STRING}_eva.csv (evaluation period)"
 echo ""

@@ -1,0 +1,10 @@
+**/*.pyc
+**/*.pt
+**/*.db
+**/*.p
+
+*/.ipynb_checkpoints/*.ipynb
+.vscode
+*runs*/
+
+/data0/funato/hsp/99_work/13_TCN/TCN_regional_modeling-master/notebooks/*.p

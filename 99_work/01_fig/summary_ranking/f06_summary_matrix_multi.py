@@ -24,8 +24,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 import os
 
+loc = "US"
+
 # Configuration
-output_dir = "/data0/funato/hsp2/0_out/1_fig/summary_ranking_multi"
+output_dir = f"/data0/funato/hsp2/0_out/1_fig/{loc}/summary_ranking_multi"
 os.makedirs(output_dir, exist_ok=True)
 
 model_list = ["HBV", "HYPER", "RF", "XGB", "TCN", "LSTM"]
@@ -92,7 +94,7 @@ for model in model_list:
 # Step 2: Load Mass Conservation data (absolute mass bias)
 mass_bias_scores = {}
 
-mass_bias_file = "/data0/funato/hsp2/0_out/analysis/mass_conservation/mass_bias_data.csv"
+mass_bias_file = f"/data0/funato/hsp2/0_out/analysis/mass_conservation/mass_bias_data.csv"
 mass_df = pd.read_csv(mass_bias_file)
 
 for model in model_list:
@@ -113,7 +115,7 @@ for model in model_list:
 # Step 3: Load Drought Condition data (mean discharge during zero precipitation)
 drought_scores = {}
 
-drought_file = "/data0/funato/hsp2/0_out/analysis/no_precip_discharge/no_precip_model_summary.csv"
+drought_file = f"/data0/funato/hsp2/0_out/analysis/no_precip_discharge/no_precip_model_summary.csv"
 drought_df = pd.read_csv(drought_file)
 
 for model in model_list:

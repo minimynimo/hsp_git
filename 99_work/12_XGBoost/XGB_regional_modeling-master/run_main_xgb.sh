@@ -6,7 +6,7 @@
 
 # Core assignment
 cores=1
-start_core=1 # Start core (1-indexed)
+start_core=11 # Start core (1-indexed)
 
 # Seeds
 nseeds=1
@@ -31,7 +31,7 @@ else
     log_name="master_log_XGB_nostatic.log"
 fi
 
-loc="GB"
+loc="US"
 
 end_core=$((start_core + cores - 1))  # Calculate end core based on core count
 
@@ -57,9 +57,9 @@ for (( seed = $firstseed ; seed < $((nseeds+$firstseed)) ; seed++ )); do
 
     if [ "$model" = "xgb" ]; then
         if [ "$static_bool" = true ]; then
-            outfile="/data0/funato/hsp2/0_out/XGB/GB/reports_static/xgb.$seed.$(date +%Y-%m-%d_%H-%M-%S).out"
+            outfile="/data0/funato/hsp2/0_out/XGB/$loc/reports_static/xgb.$seed.$(date +%Y-%m-%d_%H-%M-%S).out"
         else
-            outfile="/data0/funato/hsp2/0_out/XGB/GB/reports_nostatic/xgb.$seed.$(date +%Y-%m-%d_%H-%M-%S).out"
+            outfile="/data0/funato/hsp2/0_out/XGB/$loc/reports_nostatic/xgb.$seed.$(date +%Y-%m-%d_%H-%M-%S).out"
         fi
         mkdir -p "$(dirname "$outfile")" # Create output directory if it doesn't exist
         start_time=$(date '+%Y-%m-%d %H:%M:%S') # Log start time

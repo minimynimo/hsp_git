@@ -4,7 +4,8 @@ import numpy as np
 
 model_list = ["HBV","BC", "RF", "XGB", "TCN","LSTM"]
 
-file_tot_num = 424
+#loc, file_tot_num = "GB", 424
+loc, file_tot_num = "US", 614
 
 start_date_cal = "1993-01-01"
 end_date_cal = "2000-12-31"
@@ -17,7 +18,7 @@ start_date_zero = "2002-01-01"
 results = []
 all_discharge_data = {model: [] for model in model_list}
 
-output_dir = "/data0/funato/hsp2/0_out/analysis/no_precip_discharge"
+output_dir = f"/data0/funato/hsp2/0_out/analysis/{loc}/no_precip_discharge"
 os.makedirs(output_dir, exist_ok=True)
     
 for model in model_list:
@@ -29,7 +30,7 @@ for model in model_list:
         if model == "HBV" or model == "BC":
             input_file = f"/data0/funato/hsp2/0_out/{model}/varssim_{model}/varssim{file:03d}.csv"
         else:
-            input_file = f"/data0/funato/hsp2/0_out/{model}/GB/regional/varssim_{model}/varssim{file:03d}.csv"
+            input_file = f"/data0/funato/hsp2/0_out/{model}/{loc}/regional/varssim_{model}/varssim{file:03d}.csv"
 
         if not os.path.exists(input_file):
             print(f"File {input_file} does not exist. Skipping.")

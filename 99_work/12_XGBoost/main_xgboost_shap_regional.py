@@ -14,33 +14,47 @@ import shap
 benchmark_list = ["KGE", "NSE", "E1", "VE", "d", "RMSE", "MAE"]
 
 # loc, ver = "JP", 2
-loc, ver = "GB", 2
+#loc, ver = "GB", 2
+loc, ver = "US", 2
 
 ver_name = "ver1_1" if ver == 1 else "ver2_0"
 
 attribute_dir = f'/data0/funato/hsp2/3_gis_data/{loc}/0_data/river_basin/dataset_{loc}'
 
 # Define synthetic precipitation columns
-syn_precip_cols = ['syn_no_precip', 'syn_p_pet', 
+syn_precip_cols = ['syn_no_precip', 
                    'syn_peak1_rate0','syn_peak1_rate10', 'syn_peak1_rate30', 'syn_peak1_rate50',
                    'syn_peak3_rate0','syn_peak3_rate10', 'syn_peak3_rate30', 'syn_peak3_rate50',
                    'syn_peak5_rate0','syn_peak5_rate10', 'syn_peak5_rate30', 'syn_peak5_rate50']
 
 dynamic_features = ["Precip", "Temp", "PET"]
 
+# Define the 18 valid basin attributes
+VALID_ATTR = [
+    'p_mean', 'pet_mean', 'aridity', 'seasonality', 'frac_snow', 'high_prec_freq',
+    'high_prec_dur', 'low_prec_freq', 'low_prec_dur', 'ele_mt_smn', 'slp_dg_sav', 'area',
+    'for_pc_sse', 'snd_pc_sav', 'slt_pc_sav', 'cly_pc_sav','soc_th_sav', 'swc_pc_syr']
+
 if loc == "JP" and ver == 2:
     file_tot_num = 87
+    file_list = list(range(1, file_tot_num + 1))
     columns_drop = ['grdc_no', 'river', 'station', 'WaterArea', 'ForestArea', 'ForestAreaRatio', 'WaterAreaRatio', 'lat_org', 'long_org', 'land_GolfCourse', 'land_GolfCourse_Ratio']
     attribute_values = pd.read_csv(f'{attribute_dir}/basin_data_limited_met&soil&geology&land_{ver_name}.csv', encoding='UTF-8', index_col=0, header=0)
     varssim_dir = f"/data0/funato/2_MERV/{loc}/varssim_nocal/{ver_name}"
 elif loc == "GB" and ver == 2:
-    # Adjusted file_tot_num to 20 as in the RF script for consistency. Change if needed.
     file_tot_num = 424
-    columns_drop = ['gauge_id']
+    file_list = list(range(1, file_tot_num + 1))
+    columns_drop = ['gauge_id', 'gauge_name', 'country']
     attribute_values = pd.read_csv(f'{attribute_dir}/camelsgb_attribute_combined.csv', encoding='UTF-8', index_col=0, header=0)
-    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim"
-
-file_list = list(range(1, file_tot_num + 1))
+    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim_GB"
+elif loc == "US" and ver == 2:
+    # Load small basins list (area < 1000 km²) for US
+    small_basins_csv = "/data0/funato/hsp2/3_gis_data/US/0_data/river_basin/dataset_US/small_basins_1000.csv"
+    small_basins_df = pd.read_csv(small_basins_csv)
+    file_list = small_basins_df['basin_id'].tolist()
+    columns_drop = ['gauge_id', 'gauge_name', 'country']
+    attribute_values = pd.read_csv(f'{attribute_dir}/camels_attribute_combined.csv', encoding='UTF-8', index_col=0, header=0)
+    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim_US"
 # file_list = list(range(20,22)) # Uncomment for quick test
 
 start_date_cal = '1993-01-01'
@@ -48,12 +62,13 @@ end_date_cal = '2000-12-31'
 start_date_eva = '2001-01-01'
 end_date_eva = '2006-12-31'
 
-# XGBoost Parameters
+# XGBoost Parameters (matching regional code)
+timesteps = 270  # seq_length from regional code
 n_estimators = 500
-learning_rate = 0.1
-max_depth = 4
+learning_rate = 0.05  # Matching regional code
+max_depth = 7  # Matching regional code
 
-output_dir = f"/data0/funato/hsp2/0_out/XGB/{loc}/shap/regional_424"
+output_dir = f"/data0/funato/hsp2/0_out/XGB/{loc}/shap/regional"
 os.makedirs(output_dir, exist_ok=True)
 os.makedirs(output_dir + "/predict/og", exist_ok=True)
 os.makedirs(output_dir + "/results", exist_ok=True)
@@ -64,6 +79,12 @@ os.makedirs(output_dir_shap, exist_ok=True)
 
 # Clean attribute values and normalize
 attribute_values_dropped = attribute_values.drop(columns=[col for col in columns_drop if col in attribute_values.columns])
+
+# Keep only valid attributes (File_num if it exists as column, plus VALID_ATTR)
+keep_cols = [col for col in VALID_ATTR if col in attribute_values_dropped.columns]
+if 'File_num' in attribute_values_dropped.columns:
+    keep_cols = ['File_num'] + keep_cols
+attribute_values_dropped = attribute_values_dropped[keep_cols]
 
 cols_to_numeric = [col for col in attribute_values_dropped.columns if col != 'File_num']
 attribute_values_dropped[cols_to_numeric] = attribute_values_dropped[cols_to_numeric].apply(pd.to_numeric, errors='coerce')
@@ -332,9 +353,9 @@ for i in range(min(3, X_explain_df.shape[0])):
         force_plot
     )
 print("SHAP force plots saved.")
+print("SHAP analysis complete.")
+print("DONE")
 
-
-print("Saving per-basin predictions, results, and evaluating synthetic data...")
 results_cal = []
 results_eva = []
 syn_predict_dfs_combined = {col: {} for col in syn_precip_cols}
@@ -383,8 +404,8 @@ for file_num in file_list:
 
         df_current = df_current_basin[start_date_cal:end_date_eva_syn].copy()
         
-        syn_temp_col = 'Temp_at_peak' if syn_precip_col not in ['syn_no_precip', 'syn_p_pet'] else 'Temp'
-        syn_pet_col = 'PET_at_peak' if syn_precip_col not in ['syn_no_precip', 'syn_p_pet'] else 'PET'
+        syn_temp_col = 'Temp_at_peak' if syn_precip_col not in ['syn_no_precip'] else 'Temp'
+        syn_pet_col = 'PET_at_peak' if syn_precip_col not in ['syn_no_precip'] else 'PET'
 
         syn_input_dyn = np.hstack([df_current[syn_precip_col].shift(1).values.reshape(-1, 1), df_current[syn_temp_col].shift(1).values.reshape(-1, 1), df_current[syn_pet_col].shift(1).values.reshape(-1, 1)])[1:]
         

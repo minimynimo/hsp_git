@@ -11,8 +11,10 @@ RUN_DIR=""
 N_BASINS=""
 PYTHON_PATH="/data0/funato/hsp/.venv/bin/python"
 
+loc="US"  # Location identifier
+
 START_CORE=8 # 1 indexed
-CORES=2
+CORES=1
 END_CORE=$((START_CORE + CORES - 1))
 
 # Parse command line arguments
@@ -126,11 +128,11 @@ echo ""
 echo "Output files created with parameter string: $PARAM_STRING"
 echo ""
 echo "Regional evaluation:"
-echo "  - Predictions: /data0/funato/hsp2/0_out/RF/GB/regional/predict/"
+echo "  - Predictions: /data0/funato/hsp2/0_out/RF/$loc/regional/predict/"
 echo "    - RF_predict_${PARAM_STRING}_cal.csv (calibration period)"
 echo "    - RF_predict_${PARAM_STRING}_eva.csv (evaluation period)"
 echo "    - synthetic/RF_predict_${PARAM_STRING}_*_eva.csv (synthetic scenarios)"
-echo "  - Results: /data0/funato/hsp2/0_out/RF/GB/regional/results/"
+echo "  - Results: /data0/funato/hsp2/0_out/RF/$loc/regional/results/"
 echo "    - RF_results_${PARAM_STRING}_cal.csv (calibration period)"
 echo "    - RF_results_${PARAM_STRING}_eva.csv (evaluation period)"
 echo ""
@@ -138,4 +140,4 @@ echo ""
 
 ###RUN USING####
 # chmod +x /data0/funato/hsp2/99_work/11_RandomForest/RF_regional_modeling-master/run_eval_rf.sh
-# nohup /data0/funato/hsp2/99_work/11_RandomForest/RF_regional_modeling-master/run_eval_rf.sh --run_dir /data0/funato/hsp2/99_work/11_RandomForest/RF_regional_modeling-master/runs_rf/rf_run_0116_1747_seed300 > output_eval_rf.log 2>&1 &
+# nohup /data0/funato/hsp2/99_work/11_RandomForest/RF_regional_modeling-master/run_eval_rf.sh --run_dir /data0/funato/hsp2/99_work/11_RandomForest/RF_regional_modeling-master/runs_rf/US/rf_run_0301_2014_seed300 > output_eval_rf.log 2>&1 &

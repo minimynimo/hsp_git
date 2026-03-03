@@ -11,7 +11,9 @@ sns.set_palette("husl")
 
 # Configuration
 model_list = ["SACSMA", "BC", "RF", "XGB", "TCN", "LSTM"]
-file_tot_num = 424
+
+#loc,  file_tot_num = "GB", 424
+loc, file_tot_num = "US", 614
 
 start_date_cal = "1993-01-01"
 end_date_cal = "2000-12-31"
@@ -20,8 +22,8 @@ end_date_eva = "2006-12-31"
 
 # Paths
 input_dir_base = "/data0/funato/hsp2/0_out"
-output_dir = "/data0/funato/hsp2/0_out/analysis/mass_conservation"
-output_fig_dir = "/data0/funato/hsp2/0_out/1_fig/mass_conservation"
+output_dir = f"/data0/funato/hsp2/0_out/analysis/{loc}/mass_conservation"
+output_fig_dir = f"/data0/funato/hsp2/0_out/1_fig/{loc}/mass_conservation"
 
 # Ensure output directories exist
 os.makedirs(output_dir, exist_ok=True)

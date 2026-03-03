@@ -169,7 +169,12 @@ class HydroDataset(Dataset):
             static_data_scaled = None
             if not self.cfg["no_static"]:
                 static_data = self.attributes.loc[int(basin)].values
-                static_data_scaled = (static_data - self.scalers['static_means']) / self.scalers['static_stds']
+                # Use np.where to safely handle division by zero (already handled in scaler creation)
+                static_data_scaled = np.where(
+                    self.scalers['static_stds'] != 0,
+                    (static_data - self.scalers['static_means']) / self.scalers['static_stds'],
+                    0.0
+                )
             
             is_nan = df_period[dyn_cols + [q_col]].isnull().any(axis=1)
             clumps = np.ma.clump_unmasked(np.ma.masked_array(is_nan, is_nan))
@@ -215,7 +220,6 @@ def get_args() -> Dict:
     parser.add_argument('--run_dir', type=str, help="For evaluation mode.")
     parser.add_argument('--num_workers', type=int, default=2)
     parser.add_argument('--no_static', type=str2bool, default=False)
-    parser.add_argument('--num_levels', type=int, default=8, help='Number of dilation levels (fixed at 8)')
     
     # TCN specific arguments
     parser.add_argument('--batch_size', type=int, default=256)
@@ -236,7 +240,7 @@ def _setup_run(cfg: Dict) -> Dict:
     hp_str = f"f{cfg['num_filters']}_k{cfg['kernel_size']}_d{cfg['dropout']}_w{cfg[GLOBAL_SETTINGS['seq_length']]}"
     time_str = now.strftime("%m%d_%H%M")
     run_name = f"{hp_str}/tcn_run_{time_str}_seed{cfg['seed']}"
-    cfg['run_dir'] = Path(__file__).parent / "runs_tcn" / run_name
+    cfg['run_dir'] = Path(__file__).parent / "runs_tcn" / "hp" / GLOBAL_SETTINGS['loc'] / run_name
     cfg['run_dir'].mkdir(parents=True, exist_ok=True)
     
     with open(cfg['run_dir'] / 'cfg.json', 'w') as fp:
@@ -299,6 +303,8 @@ def train(cfg):
         attributes = load_attributes(db_path=db_path, basins=[int(b) for b in basins], drop_lat_lon=True)
         scalers['static_means'] = attributes.mean().values
         scalers['static_stds'] = attributes.std().values
+        # Replace zero stds with 1.0 to avoid division by zero
+        scalers['static_stds'] = np.where(scalers['static_stds'] == 0, 1.0, scalers['static_stds'])
 
     def convert_for_json(obj):
         if isinstance(obj, dict): return {k: convert_for_json(v) for k, v in obj.items()}
@@ -393,16 +399,16 @@ def train(cfg):
         # Rescaled Hydrograph
         obs_rescaled = (basin_samples['obs_scaled'] * bscaler['q_std']) + bscaler['q_mean']
         pred_rescaled = (basin_samples['pred_scaled'] * bscaler['q_std']) + bscaler['q_mean']
-        ax1.plot(basin_samples['date'], obs_rescaled, label='Observed', color='black')
-        ax1.plot(basin_samples['date'], pred_rescaled, label='Predicted', color='blue', linestyle='--')
+        ax1.plot(basin_samples['date'].values, obs_rescaled.values, label='Observed', color='black')
+        ax1.plot(basin_samples['date'].values, pred_rescaled.values, label='Predicted', color='blue', linestyle='--')
         ax1.set_title('Rescaled Hydrograph (Training Period)')
         ax1.set_ylabel('Discharge (m³/s)')
         ax1.legend()
         ax1.grid(True, linestyle='--', alpha=0.5)
 
         # Scaled Hydrograph
-        ax2.plot(basin_samples['date'], basin_samples['obs_scaled'], label='Observed (scaled)', color='black')
-        ax2.plot(basin_samples['date'], basin_samples['pred_scaled'], label='Predicted (scaled)', color='blue', linestyle='--')
+        ax2.plot(basin_samples['date'].values, basin_samples['obs_scaled'].values, label='Observed (scaled)', color='black')
+        ax2.plot(basin_samples['date'].values, basin_samples['pred_scaled'].values, label='Predicted (scaled)', color='blue', linestyle='--')
         ax2.set_title('Scaled Hydrograph (What the model sees)')
         ax2.set_ylabel('Standardized Value')
         ax2.set_xlabel('Date')

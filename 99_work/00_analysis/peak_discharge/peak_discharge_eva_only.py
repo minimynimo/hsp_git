@@ -6,6 +6,8 @@ import matplotlib.dates as mdates
 import seaborn as sns # Import seaborn for plotting
 
 # Configuration for model and directories
+loc = "US"
+
 model_name = "HBV"
 model_name = "BC"  # Change to "XGB" or "TCN" as needed
 model_list = ["HBV", "BC", "RF", "XGB", "TCN", "LSTM"]
@@ -16,9 +18,9 @@ for model_name in model_list:
     if model_name == "BC" or model_name == "HBV":
         input_dir = f"/data0/funato/hsp2/0_out/{model_name}/varssim_{model_name}"
     else:
-        input_dir = f"/data0/funato/hsp2/0_out/{model_name}/GB/regional/varssim_{model_name}"
+        input_dir = f"/data0/funato/hsp2/0_out/{model_name}/{loc}/regional/varssim_{model_name}"
         
-    output_dir = f"/data0/funato/hsp2/0_out/{model_name}/peak_discharge"
+    output_dir = f"/data0/funato/hsp2/0_out/{model_name}/{loc}/peak_discharge"
 
     os.makedirs(output_dir, exist_ok=True)
 

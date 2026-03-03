@@ -4,18 +4,20 @@ import os
 import glob
 
 # --- Configuration ---
+loc = "US"
+
 # Update this base path if needed
 base_dir = "/data0/funato/hsp2/0_out"
-output_dir = "/data0/funato/hsp2/0_out/analysis/summary_ranking_multi/automated_ranks"
+output_dir = f"/data0/funato/hsp2/0_out/analysis/{loc}/summary_ranking_multi/automated_ranks"
 os.makedirs(output_dir, exist_ok=True)
 
 model_list = ["HBV", "HYPER", "RF", "XGB", "TCN", "LSTM"]
 # Note: In file paths, HYPER might be labeled as BC. We handle this mapping below.
 
-# --- Helper to map model names to file paths ---
+"""# --- Helper to map model names to file paths ---
 def get_model_path_name(model_name):
     return "BC" if model_name == "HYPER" else model_name
-
+"""
 # ==========================================
 # 1. MASS CONSERVATION RANKING (Composite)
 # ==========================================
@@ -23,7 +25,7 @@ def calculate_mass_ranks():
     print("\n--- Calculating Mass Conservation Ranks (Mass Bias + ET Bias) ---")
     
     # 1.1 Calculate Mass Bias Metric
-    mass_file = f"{base_dir}/analysis/mass_conservation/mass_bias_data.csv"
+    mass_file = f"{base_dir}/analysis/{loc}/mass_conservation/mass_bias_data.csv"
     mass_bias_scores = {}
     
     if os.path.exists(mass_file):
@@ -47,7 +49,7 @@ def calculate_mass_ranks():
         mass_bias_scores = {m: np.nan for m in model_list}
 
     # 1.2 Calculate ET Bias Metric
-    et_file = f"{base_dir}/analysis/mass_conservation/water_balance_data.csv"
+    et_file = f"{base_dir}/analysis/{loc}/mass_conservation/water_balance_data.csv"
     et_bias_scores = {}
     
     if os.path.exists(et_file):
@@ -108,7 +110,7 @@ def calculate_mass_ranks():
 # ==========================================
 def calculate_drought_ranks():
     print("\n--- Calculating Drought Condition Ranks ---")
-    drought_file = f"{base_dir}/analysis/no_precip_discharge/no_precip_model_summary.csv"
+    drought_file = f"{base_dir}/analysis/{loc}/no_precip_discharge/no_precip_model_summary.csv"
 
     if not os.path.exists(drought_file):
         print(f"CRITICAL WARNING: Drought summary file not found at {drought_file}")
@@ -163,8 +165,8 @@ def calculate_flood_ranks():
     ranks = {}
     
     for model in model_list:
-        path_name = get_model_path_name(model)
-        flood_file = f"{base_dir}/{path_name}/peak_discharge/peak_discharge_comparison_{path_name}.csv"
+        #path_name = get_model_path_name(model)
+        flood_file = f"{base_dir}/{model}/peak_discharge/peak_discharge_comparison_{model}.csv"
         
         if not os.path.exists(flood_file):
             print(f"Warning: Flood file not found for {model}")

@@ -6,7 +6,7 @@
 
 # Core assignment
 cores=1
-start_core=5 # Start core (1-indexed)
+start_core=34 # Start core (1-indexed)
 
 # Seeds
 nseeds=1
@@ -33,7 +33,7 @@ else
     log_name="master_log_TCN_nostatic.log"
 fi
 
-loc="GB"
+loc="US"
 
 end_core=$((start_core + cores - 1))  # Calculate end core based on core count
 
@@ -59,9 +59,9 @@ for (( seed = $firstseed ; seed < $((nseeds+$firstseed)) ; seed++ )); do
 
     if [ "$model" = "tcn" ]; then
         if [ "$static_bool" = true ]; then
-            outfile="/data0/funato/hsp2/0_out/TCN/GB/reports_static/tcn.$seed.$(date +%Y-%m-%d_%H-%M-%S).out"
+            outfile="/data0/funato/hsp2/0_out/TCN/$loc/reports_static/tcn.$seed.$(date +%Y-%m-%d_%H-%M-%S).out"
         else
-            outfile="/data0/funato/hsp2/0_out/TCN/GB/reports_nostatic/tcn.$seed.$(date +%Y-%m-%d_%H-%M-%S).out"
+            outfile="/data0/funato/hsp2/0_out/TCN/$loc/reports_nostatic/tcn.$seed.$(date +%Y-%m-%d_%H-%M-%S).out"
         fi
         mkdir -p "$(dirname "$outfile")" # Create output directory if it doesn't exist
         start_time=$(date '+%Y-%m-%d %H:%M:%S') # Log start time

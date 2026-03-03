@@ -32,10 +32,10 @@ fi
 
 # Hyperparameter grids based on model type
 if [ "$MODEL_TYPE" == "regional" ]; then
-    NUM_FILTERS=(64 128) #32 
-    KERNEL_SIZE=(3 5)
-    DROPOUT=(0.2 0.4)
-    NUM_LAYERS=(6 8)
+    NUM_FILTERS=(128) # 64 128 ##32 
+    KERNEL_SIZE=(3 5) #3 5)
+    DROPOUT=(0.2 0.4) #(0.2 0.4)
+    #NUM_LAYERS=(6 8)
     SCRIPT_PATH="/data0/funato/hsp2/99_work/13_TCN/TCN_regional_modeling-master/main_tcn_hp.py"
     LOG_DIR="/data0/funato/hsp2/99_work/13_TCN/TCN_regional_modeling-master/logs"
 elif [ "$MODEL_TYPE" == "individual" ]; then

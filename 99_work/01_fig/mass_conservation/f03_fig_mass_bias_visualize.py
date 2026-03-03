@@ -4,12 +4,13 @@ import matplotlib.pyplot as plt
 import os
 import seaborn as sns
 
+loc = "US"
 
 fs = 20
-input_data = "/data0/funato/hsp2/0_out/analysis/mass_conservation/mass_bias_data.csv"
+input_data = f"/data0/funato/hsp2/0_out/analysis/mass_conservation/mass_bias_data.csv"
 input_df = pd.read_csv(input_data)
 
-output_dir = "/data0/funato/hsp2/0_out/1_fig/mass_conservation"
+output_dir = f"/data0/funato/hsp2/0_out/1_fig/{loc}/mass_conservation"
 os.makedirs(output_dir, exist_ok=True)
 
 model_list = ["SACSMA", "HYPER", "RF", "XGB", "TCN", "LSTM"]

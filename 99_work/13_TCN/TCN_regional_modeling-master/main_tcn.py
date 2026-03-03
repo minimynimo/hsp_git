@@ -45,11 +45,15 @@ ver_name = "ver1_1" if GLOBAL_SETTINGS['ver'] == 1 else "ver2_0"
 
 if GLOBAL_SETTINGS['loc'] == "JP":
     file_tot_num = 87
+    file_num_list = list(map(str, range(1, file_tot_num + 1)))
 elif GLOBAL_SETTINGS['loc'] == "GB":
     file_tot_num = 424
+    file_num_list = list(map(str, range(1, file_tot_num + 1)))
 elif GLOBAL_SETTINGS['loc'] == "US":
-    file_tot_num = 614
-file_num_list = list(map(str, range(1, file_tot_num + 1)))
+    # Load small basins list (area < 1000 km²) for US
+    small_basins_csv = "/data0/funato/hsp2/3_gis_data/US/0_data/river_basin/dataset_US/small_basins_1000.csv"
+    small_basins_df = pd.read_csv(small_basins_csv)
+    file_num_list = small_basins_df['basin_id'].astype(str).tolist()
 
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -160,15 +164,13 @@ class HydroDataset(Dataset):
         q_col = 'Obs flow'
 
         for basin in tqdm(self.basins, desc="Processing basins"):
-            if basin not in self.scalers['basin_scalers']: continue
-
             df = load_data_for_basin(int(basin))
             df_period = df.loc[self.cfg['train_start']:self.cfg['train_end']]
             
-            bscaler = self.scalers['basin_scalers'][basin]
+            gscaler = self.scalers['global_scalers']
             
-            dyn_data_scaled = (df_period[dyn_cols].values - bscaler['dynamic_means']) / bscaler['dynamic_stds']
-            q_data_scaled = (df_period[q_col].values - bscaler['q_mean']) / bscaler['q_std']
+            dyn_data_scaled = (df_period[dyn_cols].values - gscaler['dynamic_means']) / gscaler['dynamic_stds']
+            q_data_scaled = (df_period[q_col].values - gscaler['q_mean']) / gscaler['q_std']
             
             static_data_scaled = None
             if not self.cfg["no_static"]:
@@ -228,10 +230,14 @@ def get_args() -> Dict:
     parser.add_argument('--dropout', type=float, default=0.4)
     parser.add_argument('--kernel_size', type=int, default=4)
     parser.add_argument('--num_filters', type=int, default=64)
-    parser.add_argument('--num_channels', type=int, nargs='+', default=[32, 64, 128])
+    parser.add_argument('--num_channels', type=int, nargs='+', default=None)
 
     cfg = vars(parser.parse_args())
     cfg.update(GLOBAL_SETTINGS)
+    # Ensure TCN channel definition matches eval_regional/eval_adapted logic.
+    # If num_filters/num_levels are provided, derive num_channels from them.
+    if cfg.get("num_filters") is not None and cfg.get("num_levels") is not None:
+        cfg["num_channels"] = [cfg["num_filters"]] * cfg["num_levels"]
     return cfg
 
 def _setup_run(cfg: Dict) -> Dict:
@@ -262,42 +268,33 @@ def train(cfg):
     cfg = _setup_run(cfg)
     for key, val in cfg.items(): print(f"{key}: {val}")
 
-    print("\nCalculating per-basin scalers from clean data blocks...")
+    print("\nUsing global normalization scalers (matching LSTM approach)...")
     dyn_cols = ['Precip', 'PET', 'Temp']
     q_col = 'Obs flow'
-    basin_scalers = {}
+    
+    # Global scalers - same as LSTM's SCALER values
+    # Maurer mean/std calculated over all basins in period 01.10.1999 until 30.09.2008
+    global_scalers = {
+        'dynamic_means': np.array([3.0267525200819776, 13.110970171836367, 10.81853041139944]),
+        'dynamic_stds': np.array([1.085855688036388, 5.04530884159448, 5.45962822094668]),
+        'q_mean': 1.6033382557458762,
+        'q_std': 1.6091810953328294
+    }
 
-    for basin in tqdm(basins, desc="Loading basin data for scaling"):
-        df = load_data_for_basin(int(basin))
-        df_period = df.loc[cfg['train_start']:cfg['train_end']]
-        
-        is_nan = df_period[dyn_cols + [q_col]].isnull().any(axis=1)
-        clean_blocks = []
-        clumps = np.ma.clump_unmasked(np.ma.masked_array(df_period.index, is_nan))
-        if not isinstance(clumps, list): clumps = [clumps] if clumps else []
-
-        for s in clumps:
-            clean_blocks.append(df_period.iloc[s])
-        
-        if not clean_blocks: continue
-            
-        basin_clean_df = pd.concat(clean_blocks)
-        
-        basin_scalers[basin] = {
-            'q_mean': basin_clean_df[q_col].mean(),
-            'q_std': basin_clean_df[q_col].std(),
-            'dynamic_means': basin_clean_df[dyn_cols].mean().values,
-            'dynamic_stds': basin_clean_df[dyn_cols].std().values
-        }
-
-    scalers = {'basin_scalers': basin_scalers}
+    scalers = {'global_scalers': global_scalers}
     
     db_path = str(cfg['run_dir'] / 'attributes.db')
     add_basin_attributes(db_path=db_path, loc=GLOBAL_SETTINGS['loc'], ver_name=ver_name)
     
+    # Define the 18 valid basin attributes to use
+    VALID_ATTR = [
+        'p_mean', 'pet_mean', 'aridity', 'seasonality', 'frac_snow', 'high_prec_freq',
+        'high_prec_dur', 'low_prec_freq', 'low_prec_dur', 'ele_mt_smn', 'slp_dg_sav', 'area',
+        'for_pc_sse', 'snd_pc_sav', 'slt_pc_sav', 'cly_pc_sav','soc_th_sav', 'swc_pc_syr']
+    
     attributes = None
     if not cfg["no_static"]:
-        attributes = load_attributes(db_path=db_path, basins=basins, drop_lat_lon=True)
+        attributes = load_attributes(db_path=db_path, basins=basins, drop_lat_lon=True, keep_features=VALID_ATTR)
         scalers['static_means'] = attributes.mean().values
         scalers['static_stds'] = attributes.std().values
 
@@ -371,14 +368,14 @@ def train(cfg):
         print(f"  Plotting basin {basin_id}...")
         
         basin_samples = df_samples[df_samples['basin'] == basin_id]
-        bscaler = scalers['basin_scalers'][basin_id]
+        gscaler = scalers['global_scalers']
         
         fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(20, 12), sharex=True)
         fig.suptitle(f'TCN Training Debug Analysis for Basin {basin_id}', fontsize=16)
         
         # Rescaled Hydrograph
-        obs_rescaled = (basin_samples['obs_scaled'] * bscaler['q_std']) + bscaler['q_mean']
-        pred_rescaled = (basin_samples['pred_scaled'] * bscaler['q_std']) + bscaler['q_mean']
+        obs_rescaled = (basin_samples['obs_scaled'] * gscaler['q_std']) + gscaler['q_mean']
+        pred_rescaled = (basin_samples['pred_scaled'] * gscaler['q_std']) + gscaler['q_mean']
         ax1.plot(basin_samples['date'], obs_rescaled, label='Observed', color='black')
         ax1.plot(basin_samples['date'], pred_rescaled, label='Predicted', color='blue', linestyle='--')
         ax1.set_title('Rescaled Hydrograph (Training Period)')

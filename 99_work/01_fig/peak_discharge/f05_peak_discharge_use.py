@@ -4,10 +4,11 @@ import os
 import matplotlib.pyplot as plt
 import seaborn as sns
 
+loc = "US"
 fs = 24
 
 # Configuration
-output_dir = "/data0/funato/hsp2/0_out/1_fig/peak_discharge_use"
+output_dir = f"/data0/funato/hsp2/0_out/1_fig/{loc}/peak_discharge_use"
 os.makedirs(output_dir, exist_ok=True)
 
 model_list = ["HBV", "HYPER", "RF", "XGB", "TCN", "LSTM"]

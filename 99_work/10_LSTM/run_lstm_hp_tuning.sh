@@ -12,9 +12,9 @@
 # ============================================
 
 # Regional model hyperparameters
-REGIONAL_HIDDEN_SIZE=(256 512) #128
-REGIONAL_DROPOUT=(0.2 0.0) #0.4 
-REGIONAL_LEARNING_RATE=(0.001 0.0005 0.0001)
+REGIONAL_HIDDEN_SIZE=(256 512) #128 512
+REGIONAL_DROPOUT=(0.2) #0.4 0.2 
+REGIONAL_LEARNING_RATE=(0.001 0.0001) #(0.001 0.0005 0.0001)
 
 # Individual model hyperparameters
 INDIVIDUAL_HIDDEN_SIZE=(16 32)

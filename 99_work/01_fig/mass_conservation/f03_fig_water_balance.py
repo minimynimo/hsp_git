@@ -4,10 +4,12 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import os
 
-input_data = "/data0/funato/hsp2/0_out/analysis/mass_conservation/water_balance_data.csv"
+loc = "US"
+
+input_data = f"/data0/funato/hsp2/0_out/analysis/mass_conservation/water_balance_data.csv"
 input_df = pd.read_csv(input_data)
 
-output_dir = "/data0/funato/hsp2/0_out/1_fig/mass_conservation"
+output_dir = f"/data0/funato/hsp2/0_out/1_fig/{loc}/mass_conservation"
 os.makedirs(output_dir, exist_ok=True)
 
 # Set plotting style

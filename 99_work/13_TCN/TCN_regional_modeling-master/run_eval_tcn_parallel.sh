@@ -6,13 +6,16 @@
 
 set -e
 
+
+loc="US"  # Options: JP, GB, US
+
 # Default parameters
 RUN_DIR=""
 MODEL_EPOCH=50
 TOTAL_PROCESSES=15
 PYTHON_PATH="/data0/funato/hsp/.venv/bin/python"
 STAGE="all"  # Options: finetune, evaluate, all
-START_CORE=16  # 0-indexed (for taskset -c)
+START_CORE=1  # 0-indexed (for taskset -c)
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -77,7 +80,7 @@ fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 EVAL_SCRIPT="$SCRIPT_DIR/eval_adapted_parallel.py"
-OUTPUT_DIR="/data0/funato/hsp2/0_out/TCN/GB/adapted"
+OUTPUT_DIR="/data0/funato/hsp2/0_out/TCN/$loc/adapted"
 
 echo "=========================================="
 echo "Parallel TCN Adapted Evaluation"
@@ -265,4 +268,4 @@ echo "Done!"
 
 ## RUN using 
 # chmod +x /data0/funato/hsp2/99_work/13_TCN/TCN_regional_modeling-master/run_eval_tcn_parallel.sh
-# nohup /data0/funato/hsp2/99_work/13_TCN/TCN_regional_modeling-master/run_eval_tcn_parallel.sh --run_dir /data0/funato/hsp2/99_work/13_TCN/TCN_regional_modeling-master/runs_tcn/tcn_run_0116_1739_seed309 > output_eval_tcn_adapt_parallel.log 2>&1 &
+# nohup /data0/funato/hsp2/99_work/13_TCN/TCN_regional_modeling-master/run_eval_tcn_parallel.sh --run_dir /data0/funato/hsp2/99_work/13_TCN/TCN_regional_modeling-master/runs_tcn/tcn_run_0301_2015_seed309 > output_eval_tcn_adapt_parallel.log 2>&1 &

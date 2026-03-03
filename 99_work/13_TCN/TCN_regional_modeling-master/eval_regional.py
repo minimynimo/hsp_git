@@ -60,17 +60,18 @@ DEVICE = torch.device("cpu")  # Force CPU for debugging
 
 if GLOBAL_SETTINGS['loc'] == "JP":
     file_tot_num = 87
-    attribute_size = 196
     output_mean = np.array([3.8526752089320553])
+    file_num_list = list(map(str, range(1, file_tot_num + 1)))
 elif GLOBAL_SETTINGS['loc'] == "GB":
     file_tot_num = 424
-    attribute_size = 209
     output_mean = np.array([1.838397528976445])
+    file_num_list = list(map(str, range(1, file_tot_num + 1)))
 elif GLOBAL_SETTINGS['loc'] == "US":
-    file_tot_num = 614
-    attribute_size = 215
     output_mean = np.array([1.6033382557458762])  # Placeholder mean for US basins
-file_num_list = list(map(str, range(1, file_tot_num + 1)))
+    # Load small basins list (area < 1000 km²) for US
+    small_basins_csv = "/data0/funato/hsp2/3_gis_data/US/0_data/river_basin/dataset_US/small_basins_1000.csv"
+    small_basins_df = pd.read_csv(small_basins_csv)
+    file_num_list = small_basins_df['basin_id'].astype(str).tolist()
 
 def file_name(input_num, total_len):
     """Generate zero-padded filename"""
@@ -214,7 +215,7 @@ class TCNModel(nn.Module):
         
         return out
 
-def evaluate_basin_period(model, basin, start_date, end_date, run_cfg, static_attrs=None):
+def evaluate_basin_period(model, basin, start_date, end_date, run_cfg, static_attrs=None, global_scalers=None):
     """Evaluate the model on a basin for a specific period"""
     # Load data for this basin
     df = load_data_for_basin(int(basin))
@@ -230,13 +231,22 @@ def evaluate_basin_period(model, basin, start_date, end_date, run_cfg, static_at
     input_cols = ['Precip', 'PET', 'Temp', 'Obs flow']
     input_data = period_data[input_cols].values
     
-    # Calculate basin-specific normalization statistics
+    # Use global normalization statistics (matching LSTM approach)
+    if global_scalers is None:
+        # Default global scalers from LSTM
+        global_scalers = {
+            'dynamic_means': np.array([3.0267525200819776, 13.110970171836367, 10.81853041139944]),
+            'dynamic_stds': np.array([1.085855688036388, 5.04530884159448, 5.45962822094668]),
+            'q_mean': 1.6033382557458762,
+            'q_std': 1.6091810953328294
+        }
+    
     basin_stats = {
-        'mean': np.nanmean(input_data, axis=0),
-        'std': np.nanstd(input_data, axis=0)
+        'mean': np.concatenate([global_scalers['dynamic_means'], [global_scalers['q_mean']]]),
+        'std': np.concatenate([global_scalers['dynamic_stds'], [global_scalers['q_std']]])
     }
     
-    # Normalize the data per basin
+    # Normalize the data using global statistics
     input_data_norm = normalize_basin_data(input_data, basin_stats)
     
     # Create sequences
@@ -273,7 +283,7 @@ def evaluate_basin_period(model, basin, start_date, end_date, run_cfg, static_at
     targets_rescaled = denormalize_predictions(targets, basin_stats)
     return predictions_rescaled, targets_rescaled, dates
 
-def evaluate_synthetic_basin_period(model, basin, scenario_col, start_date, end_date, run_cfg, static_attrs=None):
+def evaluate_synthetic_basin_period(model, basin, scenario_col, start_date, end_date, run_cfg, static_attrs=None, global_scalers=None):
     """Evaluate the model on synthetic data for a basin"""
     # Load data for this basin
     df = load_data_for_basin(int(basin))
@@ -302,14 +312,22 @@ def evaluate_synthetic_basin_period(model, basin, scenario_col, start_date, end_
     input_cols = ['Precip', 'PET', 'Temp', 'Obs_flow_at_peak']  # Use synthetic target
     input_data_syn = period_data_syn[input_cols].values
     
-    # Calculate basin-specific normalization statistics from original data
-    original_data = df[warmup_start:end_date][['Precip', 'PET', 'Temp', 'Obs flow']].values
+    # Use global normalization statistics (matching LSTM approach)
+    if global_scalers is None:
+        # Default global scalers from LSTM
+        global_scalers = {
+            'dynamic_means': np.array([3.0267525200819776, 13.110970171836367, 10.81853041139944]),
+            'dynamic_stds': np.array([1.085855688036388, 5.04530884159448, 5.45962822094668]),
+            'q_mean': 1.6033382557458762,
+            'q_std': 1.6091810953328294
+        }
+    
     basin_stats = {
-        'mean': np.nanmean(original_data, axis=0),
-        'std': np.nanstd(original_data, axis=0)
+        'mean': np.concatenate([global_scalers['dynamic_means'], [global_scalers['q_mean']]]),
+        'std': np.concatenate([global_scalers['dynamic_stds'], [global_scalers['q_std']]])
     }
     
-    # Normalize the synthetic data using original data statistics
+    # Normalize the synthetic data using global statistics
     input_data_norm = normalize_basin_data(input_data_syn, basin_stats)
     
     # Create sequences
@@ -646,12 +664,18 @@ def main():
     model.load_state_dict(torch.load(model_file, map_location=DEVICE))
     
     # Load static attributes if needed
+    # Define the 18 valid basin attributes to use
+    VALID_ATTR = [
+        'p_mean', 'pet_mean', 'aridity', 'seasonality', 'frac_snow', 'high_prec_freq',
+        'high_prec_dur', 'low_prec_freq', 'low_prec_dur', 'ele_mt_smn', 'slp_dg_sav', 'area',
+        'for_pc_sse', 'snd_pc_sav', 'slt_pc_sav', 'cly_pc_sav','soc_th_sav', 'swc_pc_syr']
+    
     static_attrs = None
     if not run_cfg.get("no_static", False):
         try:
             db_path = run_dir / "attributes.db"
             attrs = load_attributes(db_path, basins=file_num_list, 
-                                  drop_na=True, loc=GLOBAL_SETTINGS['loc'])
+                                  drop_na=True, keep_features=VALID_ATTR, loc=GLOBAL_SETTINGS['loc'])
             # Convert to dictionary for easier access
             static_attrs = {}
             for basin in file_num_list:

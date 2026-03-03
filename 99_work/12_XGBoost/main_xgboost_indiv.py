@@ -11,7 +11,9 @@ from datetime import datetime
 benchmark_list = ["KGE","NSE","E1", "VE", "d","RMSE","MAE"]
 
 #loc, ver = "JP", 2
-loc, ver = "GB", 2
+#loc, ver = "GB", 2
+loc, ver = "US", 2
+
 
 ver_name = "ver1_1" if ver == 1 else "ver2_0"   
 
@@ -20,7 +22,10 @@ if loc == "JP" and ver == 2:
     varssim_dir = f"/data0/funato/2_MERV/{loc}/varssim_nocal/{ver_name}"
 elif loc == "GB" and ver == 2:
     file_tot_num = 424
-    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim"
+    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim_GB"
+elif loc == "US" and ver == 2:
+    file_tot_num = 614
+    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim_US"
 
 file_list = list(range(1, file_tot_num+1))
 #file_list = list(range(20,30))

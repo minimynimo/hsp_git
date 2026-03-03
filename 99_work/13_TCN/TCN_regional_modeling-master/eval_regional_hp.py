@@ -613,6 +613,8 @@ def main():
     print("Regional TCN Evaluation")
     print(f"Model directory: {run_dir}")
     print(f"Using model from epoch: {args.model_epoch}")
+    print(f"DEBUG: Config keys: {run_cfg.keys()}")
+    print(f"DEBUG: num_filters={run_cfg.get('num_filters')}, num_levels={run_cfg.get('num_levels')}")
     
     # Limit number of basins for testing if specified
     global file_num_list
@@ -646,14 +648,28 @@ def main():
     input_size_dyn = 3 + input_size_stat
     
     # Handle different parameter formats
-    if 'nb_filters' in run_cfg and 'nb_stacks' in run_cfg:
-        # New format: nb_filters and nb_stacks
-        nb_filters = run_cfg.get("nb_filters", 128)
-        nb_stacks = run_cfg.get("nb_stacks", 3)
+    if 'num_channels' in run_cfg:
+        # Direct num_channels list from config
+        num_channels = run_cfg["num_channels"]
+        print(f"DEBUG: Using num_channels from config: {num_channels}")
+    elif 'num_filters' in run_cfg and 'num_levels' in run_cfg:
+        # Hyperparameter format: num_filters and num_levels
+        num_filters = run_cfg["num_filters"]
+        num_levels = run_cfg["num_levels"]
+        num_channels = [num_filters] * num_levels
+        print(f"DEBUG: Constructed num_channels from num_filters={num_filters}, num_levels={num_levels}: {num_channels}")
+    elif 'nb_filters' in run_cfg and 'nb_stacks' in run_cfg:
+        # Alternative format: nb_filters and nb_stacks
+        nb_filters = run_cfg["nb_filters"]
+        nb_stacks = run_cfg["nb_stacks"]
         num_channels = [nb_filters] * nb_stacks
+        print(f"DEBUG: Constructed num_channels from nb_filters={nb_filters}, nb_stacks={nb_stacks}: {num_channels}")
     else:
-        # Old format: num_channels list
-        num_channels = run_cfg.get("num_channels", [25, 50, 100])
+        # Default fallback
+        num_channels = [25, 50, 100]
+        print(f"DEBUG: Using default num_channels: {num_channels}")
+    
+    print(f"Model architecture: num_channels={num_channels}, kernel_size={run_cfg.get('kernel_size', 2)}, dropout={run_cfg.get('dropout', 0.2)}")
     
     model = TCNModel(input_size_dyn=input_size_dyn,
                      input_size_stat=input_size_stat,

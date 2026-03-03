@@ -4,13 +4,21 @@ import pandas as pd
 import numpy as np  
 import os   
 
-#model_list = ["RF", "XGB", "TCN", "LSTM"]
+model_list = ["RF", "XGB", "TCN", "LSTM"]
 #model_list = ["RF"]
-model_list = ["TCN"]
+#model_list = ["TCN"]
 #model_list = ["XGB"]
 #model_list = ["LSTM"]
 
-file_tot_num = 424
+#loc = "GB"
+loc = "US"
+
+# Load small basin list
+basin_ids_file = f"/data0/funato/hsp2/3_gis_data/{loc}/0_data/river_basin/dataset_{loc}/small_basins_1000.csv"
+basin_ids_df = pd.read_csv(basin_ids_file, index_col=None, header=0)
+basin_ids = basin_ids_df["basin_id"].tolist()
+print(f"Loaded {len(basin_ids)} small basins for {loc}")
+
 
 pred_discharge_cols = ['og', 'no_precip',
                        'peak1_rate0','peak1_rate10', 'peak1_rate30', 'peak1_rate50',
@@ -25,28 +33,28 @@ param_tag_dict = {
     "RF": "_n100_d5_s2_l1_mf0.7_ms0.5_w270",
     "XGB": "",
     "TCN": "",
-    "LSTM": "_hs256_do0.2_e30"
+    "LSTM": "_hs256_do0.4_e30"
 }
 
 param_synthetic_tag_dict = {
     "RF": "_n100_d5_s2_l1_mf0.7_ms0.5_w270",
     "XGB": "",
     "TCN": "_n64_k4_d0.4",
-    "LSTM": "_hs256_do0.2_e30"
+    "LSTM": "_hs256_do0.4_e30"
 }
 
 
-base_input_dir = "/data0/funato/hsp2/2_MERV/varssim"
+base_input_dir = f"/data0/funato/hsp2/2_MERV/varssim_{loc}"
 for model_name in model_list:
-    input_dir = f"/data0/funato/hsp2/0_out/{model_name}/GB/regional/predict/synthetic"
-    output_dir = f"/data0/funato/hsp2/0_out/{model_name}/GB/regional/varssim_{model_name}"
+    input_dir = f"/data0/funato/hsp2/0_out/{model_name}/{loc}/regional/predict/synthetic"
+    output_dir = f"/data0/funato/hsp2/0_out/{model_name}/{loc}/regional/varssim_{model_name}"
     os.makedirs(output_dir, exist_ok=True)
 
     print(f"Processing model: {model_name}")
     param_tag = param_tag_dict.get(model_name, "")
     param_synthetic_tag = param_synthetic_tag_dict.get(model_name, "")
 
-    for file_num in range(1, file_tot_num + 1):
+    for file_num in basin_ids:
         print(f"Processing file {file_num} for model {model_name}")
         base_file = f"{base_input_dir}/varssim{file_num:03d}.csv"
         base_df = pd.read_csv(base_file, parse_dates=['Date'])
@@ -144,8 +152,8 @@ for model_name in model_list:
             #print(f"Processing synthetic column: {sim_col}")
             if sim_col == 'og':
                 # Read combined files for original predictions (cal and eva)
-                input_file_cal = f"/data0/funato/hsp2/0_out/{model_name}/GB/regional/predict/{model_name}_predict{param_tag}_cal.csv"
-                input_file_eva = f"/data0/funato/hsp2/0_out/{model_name}/GB/regional/predict/{model_name}_predict{param_tag}_eva.csv"
+                input_file_cal = f"/data0/funato/hsp2/0_out/{model_name}/{loc}/regional/predict/{model_name}_predict{param_tag}_cal.csv"
+                input_file_eva = f"/data0/funato/hsp2/0_out/{model_name}/{loc}/regional/predict/{model_name}_predict{param_tag}_eva.csv"
                 
                 series_list = []
                 col_name = "Prediction"

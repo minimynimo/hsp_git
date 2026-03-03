@@ -24,7 +24,7 @@ syn_precip_cols = ['syn_no_precip', 'syn_p_pet',
                    'syn_peak5_rate0', 'syn_peak5_rate10', 'syn_peak5_rate30', 'syn_peak5_rate50']
 
 GLOBAL_SETTINGS = {
-    'loc': 'GB',
+    'loc': 'US',
     'ver': 2,
     'seq_length': 270,
     'train_start': pd.to_datetime('1993-01-01', format='%Y-%m-%d'),
@@ -43,7 +43,7 @@ def file_name(input_num, total_len):
     return str(input_num).zfill(total_len)
 
 def load_data_for_basin(file_num):
-    varssim_dir = "/data0/funato/hsp2/2_MERV/varssim"
+    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim_{GLOBAL_SETTINGS['loc']}"
     df = pd.read_csv(f"{varssim_dir}/varssim{file_name(file_num, 3)}.csv")
     df['Date'] = pd.to_datetime(df['Date'])
     df.set_index('Date', inplace=True)
@@ -124,15 +124,13 @@ def evaluate_period(model, basins, cfg, scalers, attributes, start_date, end_dat
     seq_length = cfg['seq_length']
 
     for basin in tqdm(basins, desc="Processing basins"):
-        if basin not in scalers['basin_scalers']: continue
-
         df = load_data_for_basin(int(basin))
         warmup_start = start_date - pd.DateOffset(days=seq_length - 1)
         df_period = df.loc[warmup_start:end_date]
         
-        # ## MODIFICATION START: Use per-basin scaler ##
-        bscaler = scalers['basin_scalers'][basin]
-        dyn_data_scaled = (df_period[dyn_cols].values - bscaler['dynamic_means']) / bscaler['dynamic_stds']
+        # ## MODIFICATION: Use global scaler instead of per-basin ##
+        gscaler = scalers['global_scalers']
+        dyn_data_scaled = (df_period[dyn_cols].values - gscaler['dynamic_means']) / gscaler['dynamic_stds']
         # ## MODIFICATION END ##
         
         q_data_raw = df_period[q_col].values
@@ -190,8 +188,8 @@ def evaluate_period(model, basins, cfg, scalers, attributes, start_date, end_dat
     })
     
     def rescale_row(row):
-        bscaler = scalers['basin_scalers'][row['basin']]
-        return (row['pred_scaled'] * bscaler['q_std']) + bscaler['q_mean']
+        gscaler = scalers['global_scalers']
+        return (row['pred_scaled'] * gscaler['q_std']) + gscaler['q_mean']
         
     results_df['prediction'] = results_df.apply(rescale_row, axis=1)
     results_df['prediction'] = results_df['prediction'].clip(lower=0)
@@ -220,9 +218,6 @@ def evaluate_synthetic_period(model, basins, cfg, scalers, attributes, scenario_
     seq_length = cfg['seq_length']
 
     for basin in tqdm(basins, desc=f"Processing basins for {scenario_col}"):
-        if basin not in scalers['basin_scalers']:
-            continue
-
         df = load_data_for_basin(int(basin))
         warmup_start = start_date - pd.DateOffset(days=seq_length - 1)
         df_period = df.loc[warmup_start:end_date]
@@ -242,9 +237,9 @@ def evaluate_synthetic_period(model, basins, cfg, scalers, attributes, scenario_
             if 'PET_at_peak' in df_syn.columns:
                 df_syn['PET'] = df_syn['PET_at_peak']
         
-        # Use per-basin scaler from original data
-        bscaler = scalers['basin_scalers'][basin]
-        dyn_data_scaled = (df_syn[dyn_cols].values - bscaler['dynamic_means']) / bscaler['dynamic_stds']
+        # Use global scaler
+        gscaler = scalers['global_scalers']
+        dyn_data_scaled = (df_syn[dyn_cols].values - gscaler['dynamic_means']) / gscaler['dynamic_stds']
         
         static_data_scaled = None
         if not cfg["no_static"]:
@@ -299,8 +294,8 @@ def evaluate_synthetic_period(model, basins, cfg, scalers, attributes, scenario_
     })
     
     def rescale_row(row):
-        b_scaler = scalers['basin_scalers'][row['basin']]
-        return row['pred_scaled'] * b_scaler['q_std'] + b_scaler['q_mean']
+        gscaler = scalers['global_scalers']
+        return row['pred_scaled'] * gscaler['q_std'] + gscaler['q_mean']
         
     results_df['prediction'] = results_df.apply(rescale_row, axis=1)
     results_df['prediction'] = results_df['prediction'].clip(lower=0)
@@ -321,7 +316,12 @@ def main():
         cfg = json.load(fp)
     with open(run_dir / 'scalers.json', 'r') as fp:
         scalers = json.load(fp)
-        # Convert nested numpy arrays
+        # Convert nested numpy arrays for global_scalers
+        if 'global_scalers' in scalers:
+            for key, val in scalers['global_scalers'].items():
+                if isinstance(val, list):
+                    scalers['global_scalers'][key] = np.array(val)
+        # Legacy support: convert basin_scalers if they exist (shouldn't be used anymore)
         if 'basin_scalers' in scalers:
             for b_id, b_scaler in scalers['basin_scalers'].items():
                 for key, val in b_scaler.items():
@@ -341,17 +341,31 @@ def main():
     model = xgb.XGBRegressor()
     model.load_model(model_file)
     
-    if GLOBAL_SETTINGS['loc'] == "JP": file_tot_num = 87
-    else: file_tot_num = 424
-    basins = list(map(str, range(1, file_tot_num + 1)))
+    if GLOBAL_SETTINGS['loc'] == "JP":
+        file_tot_num = 87
+        basins = list(map(str, range(1, file_tot_num + 1)))
+    elif GLOBAL_SETTINGS['loc'] == "GB":
+        file_tot_num = 424
+        basins = list(map(str, range(1, file_tot_num + 1)))
+    elif GLOBAL_SETTINGS['loc'] == "US":
+        # Load small basins list (area < 1000 km²) for US
+        small_basins_csv = "/data0/funato/hsp2/3_gis_data/US/0_data/river_basin/dataset_US/small_basins_1000.csv"
+        small_basins_df = pd.read_csv(small_basins_csv)
+        basins = small_basins_df['basin_id'].astype(str).tolist()
     if args.n_basins:
         basins = basins[:args.n_basins]
         print(f"Processing only first {args.n_basins} basins for testing.")
         
+    # Define the 18 valid basin attributes to use
+    VALID_ATTR = [
+        'p_mean', 'pet_mean', 'aridity', 'seasonality', 'frac_snow', 'high_prec_freq',
+        'high_prec_dur', 'low_prec_freq', 'low_prec_dur', 'ele_mt_smn', 'slp_dg_sav', 'area',
+        'for_pc_sse', 'snd_pc_sav', 'slt_pc_sav', 'cly_pc_sav','soc_th_sav', 'swc_pc_syr']
+    
     attributes = None
     if not cfg.get("no_static", True):
         db_path = str(run_dir / 'attributes.db')
-        attributes = load_attributes(db_path=db_path, basins=basins, drop_lat_lon=True)
+        attributes = load_attributes(db_path=db_path, basins=basins, drop_lat_lon=True, keep_features=VALID_ATTR)
 
     train_start = pd.to_datetime(cfg['train_start'])
     train_end = pd.to_datetime(cfg['train_end'])

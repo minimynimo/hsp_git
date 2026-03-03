@@ -11,8 +11,8 @@ RUN_DIR="/data0/funato/hsp2/99_work/12_XGBoost/XGB_regional_modeling-master"
 N_BASINS=""
 PYTHON_PATH="/data0/funato/hsp/.venv/bin/python"
 
-START_CORE=3 # 1 indexed
-CORES=2
+START_CORE=12 # 1 indexed
+CORES=1
 END_CORE=$((START_CORE + CORES - 1))
 
 # Parse command line arguments
@@ -127,11 +127,11 @@ echo ""
 echo "Output files created with parameter string: $PARAM_STRING"
 echo ""
 echo "Regional evaluation:"
-echo "  - Predictions: /data0/funato/hsp2/0_out/XGB/GB/regional/predict/"
+echo "  - Predictions: /data0/funato/hsp2/0_out/XGB/loc/regional/predict/"
 echo "    - XGB_predict_${PARAM_STRING}_cal.csv (calibration period)"
 echo "    - XGB_predict_${PARAM_STRING}_eva.csv (evaluation period)"
 echo "    - synthetic/XGB_predict_${PARAM_STRING}_*_eva.csv (synthetic scenarios)"
-echo "  - Results: /data0/funato/hsp2/0_out/XGB/GB/regional/results/"
+echo "  - Results: /data0/funato/hsp2/0_out/XGB/loc/regional/results/"
 echo "    - XGB_results_${PARAM_STRING}_cal.csv (calibration period)"
 echo "    - XGB_results_${PARAM_STRING}_eva.csv (evaluation period)"
 echo ""
@@ -139,4 +139,4 @@ echo ""
 ###RUN USING####
 # chmod +x /data0/funato/hsp2/99_work/12_XGBoost/XGB_regional_modeling-master/run_eval_xgb.sh
 # /data0/funato/hsp2/99_work/12_XGBoost/XGB_regional_modeling-master/run_eval_xgb.sh --run_dir /data0/funato/hsp2/99_work/12_XGBoost/XGB_regional_modeling-master/runs_xgb/xgb_run_1016_1614_seed300 --n_basins 2  # For testing with 2 basins
-# nohup /data0/funato/hsp2/99_work/12_XGBoost/XGB_regional_modeling-master/run_eval_xgb.sh --run_dir /data0/funato/hsp2/99_work/12_XGBoost/XGB_regional_modeling-master/runs_xgb/xgb_run_0117_0217_seed300 > output_eval_xgb.log 2>&1 &
+# nohup /data0/funato/hsp2/99_work/12_XGBoost/XGB_regional_modeling-master/run_eval_xgb.sh --run_dir /data0/funato/hsp2/99_work/12_XGBoost/XGB_regional_modeling-master/runs_xgb/US/xgb_run_0301_2014_seed300 > output_eval_xgb.log 2>&1 &

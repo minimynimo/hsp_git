@@ -2,8 +2,8 @@
 
 # Wrapper script to run TCN hyperparameter tuning in background
 # Usage: ./start_tcn_hp_tuning.sh <StartCore> <NumCores> <ModelType>
-#/data0/funato/hsp2/99_work/13_TCN/start_tcn_hp_tuning.sh 26 2 regional
-#/data0/funato/hsp2/99_work/13_TCN/start_tcn_hp_tuning.sh 12 4 individual
+#/data0/funato/hsp2/99_work/13_TCN/start_tcn_hp_tuning.sh 2 1 regional
+#/data0/funato/hsp2/99_work/13_TCN/start_tcn_hp_tuning.sh 1 4 individual
 
 if [ "$#" -ne 3 ]; then
     echo "Usage: $0 <StartCore> <NumCores> <ModelType>"

@@ -2,10 +2,13 @@ import pandas as pd
 import os
 import matplotlib.pyplot as plt
 
+loc = "US"
+#loc = "GB"
+
 MODEL_TYPES = ["regional", "individual"]
 
 # Updated output directory for TCN
-output_dir = "/data0/funato/hsp2/0_out/1_fig/benchmark/hyperparameter_analysis/TCN/GB/"
+output_dir = f"/data0/funato/hsp2/0_out/1_fig/{loc}/benchmark/hyperparameter_analysis/TCN"
 os.makedirs(output_dir, exist_ok=True)
 
 benchmark_list = ["KGE", "NSE", "RMSE", "MAE"]
@@ -22,8 +25,8 @@ for MODEL_TYPE in MODEL_TYPES:
 
     # --- 1. Define Hyperparameters based on model type ---
     if MODEL_TYPE == "regional":
-        NUM_FILTERS = [32, 64] #64??
-        KERNEL_SIZES = [2, 4] #4
+        NUM_FILTERS = [64,128] #64??
+        KERNEL_SIZES = [3, 5] #4
         DROPOUTS = [0.2, 0.4] #0.4
     elif MODEL_TYPE == "individual":
         NUM_FILTERS = [16, 32] #32
@@ -39,17 +42,17 @@ for MODEL_TYPE in MODEL_TYPES:
                 
                 # --- 3. Construct File Paths ---
                 if MODEL_TYPE == "regional":
-                    # Pattern: /data0/funato/hsp2/0_out/TCN/GB/regional/hp/results/TCN_results_f32_k2_d0.2_cal.csv
+                    # Pattern: /data0/funato/hsp2/0_out/TCN/US/regional/hp/results/TCN_results_f32_k2_d0.2_cal.csv
                     input_path = (
-                        f"/data0/funato/hsp2/0_out/TCN/GB/{MODEL_TYPE}/hp/results/"
+                        f"/data0/funato/hsp2/0_out/TCN/{loc}/{MODEL_TYPE}/hp/results/"
                         f"TCN_results_f{NUM_FILTER}_k{KERNEL_SIZE}_d{DROPOUT}_cal.csv"
                     )
                 
                 elif MODEL_TYPE == "individual":
-                    # Pattern: /data0/funato/hsp2/0_out/TCN/GB/individual/hp/f16_k2_d0.4/results/TCN_results_eva.csv
+                    # Pattern: /data0/funato/hsp2/0_out/TCN/US/individual/hp/f16_k2_d0.2_w90/results/TCN_results_eva.csv
                     input_path = (
-                        f"/data0/funato/hsp2/0_out/TCN/GB/{MODEL_TYPE}/hp/"
-                        f"f{NUM_FILTER}_k{KERNEL_SIZE}_d{DROPOUT}/results/"
+                        f"/data0/funato/hsp2/0_out/TCN/{loc}/{MODEL_TYPE}/hp/"
+                        f"f{NUM_FILTER}_k{KERNEL_SIZE}_d{DROPOUT}_w90/results/"
                         f"TCN_results_eva.csv"
                     )
 
@@ -80,7 +83,7 @@ for MODEL_TYPE in MODEL_TYPES:
         continue
 
     # Save combined CSV
-    output_path = os.path.join(output_dir, f"TCN_GB_{MODEL_TYPE}_hp_eva.csv")
+    output_path = os.path.join(output_dir, f"TCN_{loc}_{MODEL_TYPE}_hp_eva.csv")
     df.to_csv(output_path)
     print(f"Saved combined results to {output_path}")
 
@@ -134,7 +137,7 @@ for MODEL_TYPE in MODEL_TYPES:
         plt.grid(axis='y', linestyle='--', alpha=0.7)
         plt.tight_layout()
         
-        plot_path = os.path.join(output_dir, f"TCN_GB_{MODEL_TYPE}_{benchmark}_hp_analysis.png")
+        plot_path = os.path.join(output_dir, f"TCN_{loc}_{MODEL_TYPE}_{benchmark}_hp_analysis.png")
         plt.savefig(plot_path, dpi=300, bbox_inches='tight')
         plt.close()
         print(f"Saved boxplot to {plot_path}")

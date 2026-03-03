@@ -33,7 +33,7 @@ else
     log_name="master_log_RF_nostatic.log"
 fi
 
-loc="GB"
+loc="US"
 
 end_core=$((start_core + cores))  # Calculate end core based on core count
 
@@ -59,9 +59,9 @@ for (( seed = $firstseed ; seed < $((nseeds+$firstseed)) ; seed++ )); do
 
     if [ "$model" = "rf" ]; then
         if [ "$static_bool" = true ]; then
-            outfile="/data0/funato/hsp2/0_out/RF/GB/reports_static/rf.$seed.$(date +%Y-%m-%d_%H-%M-%S).out"
+            outfile="/data0/funato/hsp2/0_out/RF/$loc/reports_static/rf.$seed.$(date +%Y-%m-%d_%H-%M-%S).out"
         else
-            outfile="/data0/funato/hsp2/0_out/RF/GB/reports_nostatic/rf.$seed.$(date +%Y-%m-%d_%H-%M-%S).out"
+            outfile="/data0/funato/hsp2/0_out/RF/$loc/reports_nostatic/rf.$seed.$(date +%Y-%m-%d_%H-%M-%S).out"
         fi
         
         mkdir -p "$(dirname "$outfile")" # Create output directory if it doesn't exist

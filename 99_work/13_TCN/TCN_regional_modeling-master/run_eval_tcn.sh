@@ -12,8 +12,8 @@ MODEL_EPOCH=50
 N_BASINS=""
 PYTHON_PATH="/data0/funato/hsp/.venv/bin/python"
 
-START_CORE=1 # 1 indexed
-CORES=3
+START_CORE=30 # 1 indexed
+CORES=1
 END_CORE=$((START_CORE + CORES - 1))
 
 # Parse command line arguments
@@ -148,24 +148,23 @@ echo ""
 echo "Output files created with parameter string: $PARAM_STRING"
 echo ""
 echo "Regional evaluation:"
-echo "  - Predictions: /data0/funato/hsp2/0_out/TCN/GB/regional/predict/"
+echo "  - Predictions: /data0/funato/hsp2/0_out/TCN/LOC/regional/predict/"
 echo "    - TCN_predict_${PARAM_STRING}_cal.csv (calibration period)"
 echo "    - TCN_predict_${PARAM_STRING}_eva.csv (evaluation period)"
 echo "    - synthetic/TCN_predict_${PARAM_STRING}_*_eva.csv (synthetic scenarios)"
-echo "  - Results: /data0/funato/hsp2/0_out/TCN/GB/regional/results/"
+echo "  - Results: /data0/funato/hsp2/0_out/TCN/LOC/regional/results/"
 echo "    - TCN_results_${PARAM_STRING}_cal.csv (calibration period)"
 echo "    - TCN_results_${PARAM_STRING}_eva.csv (evaluation period)"
 echo ""
 echo "Adapted evaluation:"
-echo "  - Predictions: /data0/funato/hsp2/0_out/TCN/GB/adapted/predict/"
+echo "  - Predictions: /data0/funato/hsp2/0_out/TCN/LOC/adapted/predict/"
 echo "    - TCN_predict_${PARAM_STRING}_cal.csv (calibration period)"
 echo "    - TCN_predict_${PARAM_STRING}_eva.csv (evaluation period)"
-echo "  - Results: /data0/funato/hsp2/0_out/TCN/GB/adapted/results/"
+echo "  - Results: /data0/funato/hsp2/0_out/TCN/LOC/adapted/results/"
 echo "    - TCN_results_${PARAM_STRING}_cal.csv (calibration period)"
 echo "    - TCN_results_${PARAM_STRING}_eva.csv (evaluation period)"
 echo ""
 
 ###RUN USING####
 # chmod +x /data0/funato/hsp2/99_work/13_TCN/TCN_regional_modeling-master/run_eval_tcn.sh
-# /data0/funato/hsp2/99_work/13_TCN/TCN_regional_modeling-master/run_eval_tcn.sh --run_dir /data0/funato/hsp2/99_work/13_TCN/TCN_regional_modeling-master/runs_tcn/tcn_run_1015_1800_seed300 --n_basins 2  # For testing with 2 basins
-# nohup /data0/funato/hsp2/99_work/13_TCN/TCN_regional_modeling-master/run_eval_tcn.sh --run_dir /data0/funato/hsp2/99_work/13_TCN/TCN_regional_modeling-master/runs_tcn/tcn_run_0116_1739_seed309 > output_eval_tcn_regional.log 2>&1 &
+# nohup /data0/funato/hsp2/99_work/13_TCN/TCN_regional_modeling-master/run_eval_tcn.sh --run_dir /data0/funato/hsp2/99_work/13_TCN/TCN_regional_modeling-master/runs_tcn/tcn_run_0301_2015_seed309 > output_eval_tcn_regional.log 2>&1 &

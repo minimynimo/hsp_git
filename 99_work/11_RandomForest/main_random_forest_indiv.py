@@ -13,7 +13,8 @@ benchmark_list = ["KGE","NSE","E1", "VE", "d","RMSE","MAE"]
 
 
 #loc, ver = "JP", 2
-loc, ver = "GB", 2
+#loc, ver = "GB", 2
+loc, ver = "US", 2
 
 ver_name = "ver1_1" if ver == 1 else "ver2_0"   
 
@@ -24,8 +25,12 @@ if loc == "JP" and ver == 2:
     varssim_dir = f"/data0/funato/2_MERV/{loc}/varssim_nocal/{ver_name}"
 elif loc == "GB" and ver == 2:
     file_tot_num = 424
-    columns_drop = ['grdc_no','river','station','WaterArea','ForestArea','ForestAreaRatio','WaterAreaRatio','lat_org','long_org', 'land_GolfCourse','land_GolfCourse_Ratio']
-    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim"
+    columns_drop = ['gauge_id','gauge_name','country','gauge_lat','gauge_lon']
+    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim_GB"
+elif loc == "US" and ver == 2:
+    file_tot_num = 614
+    columns_drop = ['gauge_id','gauge_name','country','gauge_lat','gauge_lon']
+    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim_US"
 
 
 file_list = list(range(1, file_tot_num+1))

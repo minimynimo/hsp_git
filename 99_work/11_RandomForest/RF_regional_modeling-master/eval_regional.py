@@ -32,7 +32,7 @@ from papercode.utils import create_h5_files, get_basin_list
 
 # Global Settings (matching main.py)
 GLOBAL_SETTINGS = {
-    'loc': 'GB',
+    'loc': 'US',
     'ver': 2,
     'seq_length': 270,
     'train_start': pd.to_datetime('1993-01-01', format='%Y-%m-%d'),
@@ -53,14 +53,15 @@ ver_name = "ver1_1" if GLOBAL_SETTINGS['ver'] == 1 else "ver2_0"
 
 if GLOBAL_SETTINGS['loc'] == "JP":
     file_tot_num = 87
-    attribute_size = 196
-    output_mean = np.array([3.8526752089320553])
+    file_num_list = list(map(str, range(1, file_tot_num + 1)))
 elif GLOBAL_SETTINGS['loc'] == "GB":
     file_tot_num = 424
-    attribute_size = 209
-    output_mean = np.array([1.838397528976445])
-
-file_num_list = list(map(str, range(1, file_tot_num + 1)))
+    file_num_list = list(map(str, range(1, file_tot_num + 1)))
+else:  # US
+    # Load small basins list (area < 1000 km²) for US
+    small_basins_csv = "/data0/funato/hsp2/3_gis_data/US/0_data/river_basin/dataset_US/small_basins_1000.csv"
+    small_basins_df = pd.read_csv(small_basins_csv)
+    file_num_list = small_basins_df['basin_id'].astype(str).tolist()
 
 def file_name(input_num, total_len):
     """Generate zero-padded filename"""
@@ -70,7 +71,7 @@ def file_name(input_num, total_len):
 
 def load_data_for_basin(file_num):
     """Load data for a specific basin"""
-    varssim_dir = "/data0/funato/hsp2/2_MERV/varssim"
+    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim_{GLOBAL_SETTINGS['loc']}"
     df = pd.read_csv(f"{varssim_dir}/varssim{file_name(file_num, 3)}.csv")
     df['Date'] = pd.to_datetime(df['Date'])
     df.set_index('Date', inplace=True)
@@ -115,7 +116,7 @@ def create_sequences_rf(data, seq_length, static_features=None):
         
     return np.array(sequences), np.array(targets)
 
-def evaluate_basin_period(model, basin, start_date, end_date, run_cfg, static_attrs=None):
+def evaluate_basin_period(model, basin, start_date, end_date, run_cfg, static_attrs=None, global_scalers=None):
     """Evaluate the model on a basin for a specific period"""
     # Load data for this basin
     df = load_data_for_basin(int(basin))
@@ -131,13 +132,22 @@ def evaluate_basin_period(model, basin, start_date, end_date, run_cfg, static_at
     input_cols = ['Precip', 'PET', 'Temp', 'Obs flow']
     input_data = period_data[input_cols].values
     
-    # Calculate basin-specific normalization statistics
+    # Use global normalization statistics (matching LSTM approach)
+    if global_scalers is None:
+        # Default global scalers from LSTM
+        global_scalers = {
+            'dynamic_means': np.array([3.0267525200819776, 13.110970171836367, 10.81853041139944]),
+            'dynamic_stds': np.array([1.085855688036388, 5.04530884159448, 5.45962822094668]),
+            'q_mean': 1.6033382557458762,
+            'q_std': 1.6091810953328294
+        }
+    
     basin_stats = {
-        'mean': np.nanmean(input_data, axis=0),
-        'std': np.nanstd(input_data, axis=0)
+        'mean': np.concatenate([global_scalers['dynamic_means'], [global_scalers['q_mean']]]),
+        'std': np.concatenate([global_scalers['dynamic_stds'], [global_scalers['q_std']]])
     }
     
-    # Normalize the data per basin
+    # Normalize the data using global statistics
     input_data_norm = normalize_basin_data(input_data, basin_stats)
     
     # Create sequences (excluding the target variable for input)
@@ -168,7 +178,7 @@ def evaluate_basin_period(model, basin, start_date, end_date, run_cfg, static_at
     
     return predictions_rescaled, targets_rescaled, dates
 
-def evaluate_synthetic_basin_period(model, basin, scenario_col, start_date, end_date, run_cfg, static_attrs=None):
+def evaluate_synthetic_basin_period(model, basin, scenario_col, start_date, end_date, run_cfg, static_attrs=None, global_scalers=None):
     """Evaluate the model on synthetic data for a basin"""
     # Load data for this basin
     df = load_data_for_basin(int(basin))
@@ -197,14 +207,22 @@ def evaluate_synthetic_basin_period(model, basin, scenario_col, start_date, end_
     input_cols = ['Precip', 'PET', 'Temp', 'Obs_flow_at_peak']  # Use synthetic target
     input_data_syn = period_data_syn[input_cols].values
     
-    # Calculate basin-specific normalization statistics from original data
-    original_data = df[warmup_start:end_date][['Precip', 'PET', 'Temp', 'Obs flow']].values
+    # Use global normalization statistics (matching LSTM approach)
+    if global_scalers is None:
+        # Default global scalers from LSTM
+        global_scalers = {
+            'dynamic_means': np.array([3.0267525200819776, 13.110970171836367, 10.81853041139944]),
+            'dynamic_stds': np.array([1.085855688036388, 5.04530884159448, 5.45962822094668]),
+            'q_mean': 1.6033382557458762,
+            'q_std': 1.6091810953328294
+        }
+    
     basin_stats = {
-        'mean': np.nanmean(original_data, axis=0),
-        'std': np.nanstd(original_data, axis=0)
+        'mean': np.concatenate([global_scalers['dynamic_means'], [global_scalers['q_mean']]]),
+        'std': np.concatenate([global_scalers['dynamic_stds'], [global_scalers['q_std']]])
     }
     
-    # Normalize the synthetic data using original data statistics
+    # Normalize the synthetic data using global statistics
     input_data_norm = normalize_basin_data(input_data_syn, basin_stats)
     
     # Create sequences
@@ -241,7 +259,7 @@ def evaluate_original_data(model, run_cfg, basins, static_attrs=None):
         'eva': (GLOBAL_SETTINGS["val_start"], GLOBAL_SETTINGS["val_end"])
     }
     
-    output_dir = Path("/data0/funato/hsp2/0_out/RF/GB/regional")
+    output_dir = Path(f"/data0/funato/hsp2/0_out/RF/{GLOBAL_SETTINGS['loc']}/regional")
     
     for period_name, (start_date, end_date) in periods.items():
         print(f"\nEvaluating {period_name.upper()} period ({start_date.date()} to {end_date.date()})")
@@ -254,7 +272,7 @@ def evaluate_original_data(model, run_cfg, basins, static_attrs=None):
         for basin in tqdm(basins, desc=f"Processing basins for {period_name}"):
             try:
                 predictions, targets, dates = evaluate_basin_period(
-                    model, basin, start_date, end_date, run_cfg, static_attrs)
+                    model, basin, start_date, end_date, run_cfg, static_attrs, run_cfg.get("global_scalers"))
                 
                 if predictions is not None:
                     basin_predictions[basin] = predictions
@@ -337,7 +355,7 @@ def evaluate_synthetic_data(model, run_cfg, basins, static_attrs=None):
     """Evaluate on synthetic scenarios (evaluation period only)"""
     print("\n--- Evaluating Synthetic Scenarios ---")
     
-    output_dir = Path("/data0/funato/hsp2/0_out/RF/GB/regional")
+    output_dir = Path(f"/data0/funato/hsp2/0_out/RF/{GLOBAL_SETTINGS['loc']}/regional")
     start_date = GLOBAL_SETTINGS["val_start"]
     end_date = GLOBAL_SETTINGS["val_end"]
     
@@ -350,7 +368,7 @@ def evaluate_synthetic_data(model, run_cfg, basins, static_attrs=None):
         for basin in tqdm(basins, desc=f"Processing basins for {scenario_col}"):
             try:
                 predictions, dates = evaluate_synthetic_basin_period(
-                    model, basin, scenario_col, start_date, end_date, run_cfg, static_attrs)
+                    model, basin, scenario_col, start_date, end_date, run_cfg, static_attrs, run_cfg.get("global_scalers"))
                 
                 if predictions is not None:
                     basin_predictions[basin] = predictions
@@ -479,6 +497,25 @@ def main():
     
     run_cfg["run_dir"] = run_dir  # Add run_dir to config
     
+    # Load scalers if available (should contain global_scalers)
+    global_scalers = None
+    scalers_file = run_dir / 'scalers.json'
+    if scalers_file.exists():
+        with open(scalers_file, 'r') as fp:
+            scalers = json.load(fp)
+            if 'global_scalers' in scalers:
+                # Convert lists to numpy arrays
+                global_scalers = {}
+                for key, val in scalers['global_scalers'].items():
+                    global_scalers[key] = np.array(val) if isinstance(val, list) else val
+                print(f"Loaded global scalers from {scalers_file}")
+            else:
+                print(f"Warning: scalers.json found but no global_scalers key")
+    else:
+        print(f"Warning: No scalers.json found, will use default global scalers")
+    
+    run_cfg["global_scalers"] = global_scalers  # Add to config for passing to functions
+    
     print("Regional Random Forest Evaluation")
     print(f"Model directory: {run_dir}")
     
@@ -496,13 +533,19 @@ def main():
     print(f"Loading model from: {model_file}")
     model = joblib.load(model_file)
     
+    # Define the 18 valid basin attributes to use
+    VALID_ATTR = [
+        'p_mean', 'pet_mean', 'aridity', 'seasonality', 'frac_snow', 'high_prec_freq',
+        'high_prec_dur', 'low_prec_freq', 'low_prec_dur', 'ele_mt_smn', 'slp_dg_sav', 'area',
+        'for_pc_sse', 'snd_pc_sav', 'slt_pc_sav', 'cly_pc_sav','soc_th_sav', 'swc_pc_syr']
+    
     # Load static attributes if needed
     static_attrs = None
     if not run_cfg.get("no_static", False):
         try:
             db_path = run_dir / "attributes.db"
             attrs = load_attributes(db_path, basins=[int(b) for b in file_num_list], 
-                                  loc=GLOBAL_SETTINGS['loc'])
+                                  keep_features=VALID_ATTR, loc=GLOBAL_SETTINGS['loc'])
             print(f"Loaded {len(attrs)} basin attributes with {attrs.shape[1]} features each")
             # Convert to dictionary for easier access
             static_attrs = {}

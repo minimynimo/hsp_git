@@ -32,7 +32,8 @@ import sys
 benchmark_list = ["KGE","NSE","E1", "VE", "d","RMSE","MAE"]
 
 #loc, ver = "JP", 2
-loc, ver = "GB", 2
+#loc, ver = "GB", 2
+loc, ver = "US", 2
 
 ver_name = "ver1_1" if ver == 1 else "ver2_0"
 
@@ -44,31 +45,40 @@ syn_precip_cols = ['syn_no_precip',
                    'syn_peak3_rate0','syn_peak3_rate10', 'syn_peak3_rate30', 'syn_peak3_rate50',
                    'syn_peak5_rate0','syn_peak5_rate10', 'syn_peak5_rate30', 'syn_peak5_rate50']
 
+# Define the 18 valid basin attributes
+VALID_ATTR = [
+    'p_mean', 'pet_mean', 'aridity', 'seasonality', 'frac_snow', 'high_prec_freq',
+    'high_prec_dur', 'low_prec_freq', 'low_prec_dur', 'ele_mt_smn', 'slp_dg_sav', 'area',
+    'for_pc_sse', 'snd_pc_sav', 'slt_pc_sav', 'cly_pc_sav','soc_th_sav', 'swc_pc_syr']
+
 if loc == "JP" and ver == 2:
     file_tot_num = 87
+    file_list = list(range(1, file_tot_num + 1))
     columns_drop = ['grdc_no','river','station','WaterArea','ForestArea','ForestAreaRatio','WaterAreaRatio','lat_org','long_org', 'land_GolfCourse','land_GolfCourse_Ratio']
     attribute_values = pd.read_csv(f'{attribute_dir}/basin_data_limited_met&soil&geology&land_{ver_name}.csv', encoding= 'UTF-8', index_col=0, header=0)
     varssim_dir = f"/data0/funato/2_MERV/{loc}/varssim_nocal/{ver_name}"
 elif loc == "GB" and ver == 2:
-    file_tot_num = 424 # Using 20 for consistency with other models
-    columns_drop = ['gauge_id']
+    file_tot_num = 424
+    file_list = list(range(1, file_tot_num + 1))
+    columns_drop = ['gauge_id', 'gauge_name', 'country']
     attribute_values = pd.read_csv(f'{attribute_dir}/camelsgb_attribute_combined.csv', encoding= 'UTF-8', index_col=0, header=0)
     varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim_GB"
 elif loc == "US" and ver == 2:
-    file_tot_num = 614
-    columns_drop = ['gauge_id']
+    # Load small basins list (area < 1000 km²) for US
+    small_basins_csv = "/data0/funato/hsp2/3_gis_data/US/0_data/river_basin/dataset_US/small_basins_1000.csv"
+    small_basins_df = pd.read_csv(small_basins_csv)
+    file_list = small_basins_df['basin_id'].tolist()
+    columns_drop = ['gauge_id', 'gauge_name', 'country']
     attribute_values = pd.read_csv(f'{attribute_dir}/camels_attribute_combined.csv', encoding= 'UTF-8', index_col=0, header=0)
     varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim_US"
 
-file_list = list(range(1, file_tot_num+1))
-
-# --- Updated LSTM parameters ---
-epochs = 50 
-hidden_size = 20 # Number of LSTM cells (lstm_units)
+# --- Updated LSTM parameters (matching regional code) ---
+epochs = 30
+hidden_size = 256 # Number of LSTM cells (lstm_units)
 learning_rate = 1e-3 # Learning rate used to update the weights
-window_size = 60 # Length of the meteorological record provided to the network (timesteps)
-batch_size = 16 #512 # Use larger batch size if GPU is available
-dropout_rate = 0.1 # Dropout rate of the final fully connected Layer [0.0, 1.0]
+window_size = 270 # Length of the meteorological record provided to the network (timesteps) - matches regional
+batch_size = 256 # Match regional code batch size
+dropout_rate = 0.4 # Dropout rate matching regional code [0.0, 1.0]
 timesteps = window_size # For clarity in the rest of the script
 
 start_date_cal = '1993-01-01'
@@ -90,6 +100,12 @@ os.makedirs(output_dir_shap, exist_ok=True)
 
 # clean attribute values and normalize
 attribute_values_dropped = attribute_values.drop(columns=[col for col in columns_drop if col in attribute_values.columns])
+
+# Keep only valid attributes (File_num if it exists as column, plus VALID_ATTR)
+keep_cols = [col for col in VALID_ATTR if col in attribute_values_dropped.columns]
+if 'File_num' in attribute_values_dropped.columns:
+    keep_cols = ['File_num'] + keep_cols
+attribute_values_dropped = attribute_values_dropped[keep_cols]
 
 cols_to_numeric = [col for col in attribute_values_dropped.columns if col != 'File_num']
 attribute_values_dropped[cols_to_numeric] = attribute_values_dropped[cols_to_numeric].apply(pd.to_numeric, errors='coerce')
@@ -353,7 +369,10 @@ if X_sample.shape[0] > 0:
         force_plot = shap.force_plot(explainer.expected_value, shap_values[i,:], X_sample_df.iloc[i,:])
         shap.save_html(f"{output_dir_shap}/LSTM_force_plot_sample_{i}.html", force_plot)
 
-print("--- Evaluating Model and Generating Outputs ---")
+print("--- SHAP Analysis Complete ---")
+log_file.write("SHAP analysis completed successfully.\n")
+log_file.close()
+print("DONE")
 results_cal, results_eva = [], []
 syn_predict_dfs_combined = {col: {} for col in syn_precip_cols}
 

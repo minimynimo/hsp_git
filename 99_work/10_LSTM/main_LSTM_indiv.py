@@ -32,17 +32,11 @@ batch_size = 256 # Number of samples in each batch
 dropout_rate = 0.2 # Dropout rate of the final fully connected Layer [0.0, 1.0]
 
 #loc, ver = "JP", 2
-#loc, ver = "US", 2
-loc, ver = "GB", 2
+loc, ver = "US", 2
+#loc, ver = "GB", 2
 #loc, ver = "AUS", 2
 
 benchmark_list = ["KGE","NSE","E1", "VE", "d","RMSE","MAE"]
-
-# Define synthetic precipitation columns
-syn_precip_cols = ['syn_no_precip', 
-                   'syn_peak1_rate0', 'syn_peak1_rate10', 'syn_peak1_rate30', 'syn_peak1_rate50',
-                   'syn_peak3_rate0', 'syn_peak3_rate10', 'syn_peak3_rate30', 'syn_peak3_rate50',
-                   'syn_peak5_rate0', 'syn_peak5_rate10', 'syn_peak5_rate30', 'syn_peak5_rate50']
 
 file_tag = f"_h{hidden_size}_lr{learning_rate}_e{num_epochs}_w{window_size}_b{batch_size}_d{dropout_rate}"
 
@@ -80,7 +74,6 @@ output_dir = f"/data0/funato/hsp2/0_out/LSTM/{loc}/individual/"
 os.makedirs(output_dir, exist_ok=True)
 os.makedirs(output_dir + '/predict', exist_ok=True)
 os.makedirs(output_dir + '/results', exist_ok=True)
-os.makedirs(output_dir + '/predict/synthetic', exist_ok=True)
 
 if os.path.exists(output_dir + f'/LSTM_log.txt'):
     open(output_dir + f'/LSTM_log.txt', 'w').close()
@@ -90,7 +83,6 @@ log_file = open(output_dir + f'/LSTM_log.txt', 'a')
 
 results_cal = []
 results_eva = []
-syn_predict_dfs_combined = {col: {} for col in syn_precip_cols}
 
 for file_num in range(1, file_tot_num + 1):
     start_time = datetime.now()
@@ -225,58 +217,6 @@ for file_num in range(1, file_tot_num + 1):
     # Prepare normalization arrays for inputs (Precip, Temp, PET)
     mean_inputs = np.array([means_dict['Precip'], means_dict['Temp'], means_dict['PET']])
     std_inputs = np.array([stds_dict['Precip'], stds_dict['Temp'], stds_dict['PET']])
-    
-    for syn_precip_col in syn_precip_cols:
-        if syn_precip_col.startswith('syn_peak'):
-            end_date_eva_syn = '2001-02-10'
-        else:
-            end_date_eva_syn = '2006-12-31'
-        
-        df_syn = df_current_basin['1993-01-01':end_date_eva_syn].copy()
-        
-        syn_temp_col = 'Temp_at_peak' if 'peak' in syn_precip_col else 'Temp'
-        syn_pet_col = 'PET_at_peak' if 'peak' in syn_precip_col else 'PET'
-        syn_obs_flow_col = 'Obs_flow_at_peak' if 'peak' in syn_precip_col else 'Obs flow'
-        syn_dyn_cols = [syn_precip_col, syn_temp_col, syn_pet_col]
-        
-        # Get synthetic data
-        input_dyn_syn = df_syn[syn_dyn_cols].values
-        mask_syn = ~np.isnan(input_dyn_syn).any(axis=1) & ~np.isnan(df_syn[syn_obs_flow_col].values)
-        input_syn = input_dyn_syn[mask_syn]
-        target_syn = df_syn[syn_obs_flow_col].values[mask_syn]
-        
-        # Apply normalization using training statistics
-        input_syn_normalized = (input_syn - mean_inputs) / std_inputs
-        
-        # Reshape for LSTM - target_syn needs to be 2D for reshape_data
-        target_syn_2d = target_syn.reshape(-1, 1)
-        input_seq_syn, _ = reshape_data(input_syn_normalized, target_syn_2d, window_size)
-        
-        # Convert to tensor and predict
-        input_seq_syn_tensor = torch.from_numpy(input_seq_syn.astype(np.float32)).to(DEVICE)
-        
-        with torch.no_grad():
-            predict_syn_tensor = model(input_seq_syn_tensor)
-            predict_syn = predict_syn_tensor.cpu().numpy().flatten()
-        
-        # Rescale predictions
-        predict_syn = ds_train.local_rescale(predict_syn, variable='output')
-        predict_syn[predict_syn < 0] = 0
-        
-        # Get dates - after reshape_data, we lose (window_size - 1) samples from the beginning
-        dates_syn = df_syn.index[mask_syn]
-        dates_predict_syn = dates_syn[window_size - 1:]
-        
-        # Ensure dates and predictions have the same length
-        if len(dates_predict_syn) != len(predict_syn):
-            print(f"Warning: Length mismatch for {syn_precip_col} in file {file_num}: dates={len(dates_predict_syn)}, predictions={len(predict_syn)}")
-            min_len = min(len(dates_predict_syn), len(predict_syn))
-            dates_predict_syn = dates_predict_syn[:min_len]
-            predict_syn = predict_syn[:min_len]
-        
-        # Store predictions for this basin and synthetic column
-        temp_syn_df = pd.DataFrame({'Date': dates_predict_syn, 'prediction': predict_syn}).set_index('Date')
-        syn_predict_dfs_combined[syn_precip_col][file_num] = temp_syn_df
 
     # Save results to CSV after each file
     df_results_cal = pd.DataFrame(results_cal)
@@ -303,38 +243,6 @@ df_results_cal.to_csv(output_dir + f'/results/LSTM_results{file_tag}_cal.csv', i
 
 df_results_eva = pd.DataFrame(results_eva)
 df_results_eva.to_csv(output_dir + f'/results/LSTM_results{file_tag}_eva.csv', index=False, header=True)
-
-# Save synthetic predictions
-print("--- Saving Synthetic Predictions ---")
-for syn_precip_col, basin_preds_dict in syn_predict_dfs_combined.items():
-    if not basin_preds_dict:
-        continue
-    
-    combined_syn_df = pd.DataFrame()
-    for file_num, df_preds in basin_preds_dict.items():
-        df_preds = df_preds.rename(columns={'prediction': f'file_{file_num}'})
-        if combined_syn_df.empty:
-            combined_syn_df = df_preds
-        else:
-            combined_syn_df = combined_syn_df.join(df_preds, how='outer')
-    
-    if syn_precip_col.startswith('syn_peak'):
-        end_date_syn_final = '2001-02-10'
-        combined_syn_df = combined_syn_df.loc[:end_date_syn_final]
-    
-    combined_syn_df.sort_index(inplace=True)
-    
-    # Transpose to match RF format: basins as rows, dates as columns
-    combined_syn_df_transposed = combined_syn_df.T
-    combined_syn_df_transposed.index = combined_syn_df_transposed.index.str.replace('file_', '')
-    combined_syn_df_transposed.index.name = 'basin'
-    
-    # Column names should be dates as strings
-    combined_syn_df_transposed.columns = combined_syn_df_transposed.columns.astype(str).str.split(' ').str[0]
-    
-    output_file = f"{output_dir}/predict/synthetic/LSTM_predict_{syn_precip_col.replace('syn_','')}.csv"
-    combined_syn_df_transposed.to_csv(output_file)
-    print(f"Saved {output_file}")
 
 print(f"LSTM{file_tag}")
 print("DONE")

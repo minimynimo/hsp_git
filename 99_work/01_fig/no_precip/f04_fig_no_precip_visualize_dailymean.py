@@ -6,12 +6,13 @@ import seaborn as sns
 from scipy import stats
 from scipy.stats import gaussian_kde
 
+loc = "US"
 fs = 20
 
 # Configuration
 model_list = ["HBV", "HYPER","RF", "XGB", "TCN", "LSTM"]  # Can be expanded if needed
-input_dir = "/data0/funato/hsp2/0_out/analysis/no_precip_discharge"
-output_fig_dir = "/data0/funato/hsp2/0_out/1_fig/no_precip_discharge_dailymean_use"
+input_dir = f"/data0/funato/hsp2/0_out/analysis/no_precip_discharge"
+output_fig_dir = f"/data0/funato/hsp2/0_out/1_fig/{loc}/no_precip_discharge_dailymean_use"
 
 # Ensure output directory exists
 os.makedirs(output_fig_dir, exist_ok=True)

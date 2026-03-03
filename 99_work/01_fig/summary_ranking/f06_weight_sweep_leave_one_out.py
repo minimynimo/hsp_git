@@ -7,9 +7,11 @@ import os
 from collections import defaultdict
 from matplotlib.colors import ListedColormap
 
+loc = "US"
+
 # --- Configuration ---
 # Directory to save the output figures
-output_dir = "/data0/funato/hsp2/0_out/1_fig/summary_ranking_multi/sensitivity_analysis"
+output_dir = f"/data0/funato/hsp2/0_out/1_fig/{loc}/summary_ranking_multi/sensitivity_analysis"
 os.makedirs(output_dir, exist_ok=True)
 
 # Number of random weight combinations for the Top-1 Frequency analysis

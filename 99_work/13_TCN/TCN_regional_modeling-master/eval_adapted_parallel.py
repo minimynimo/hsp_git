@@ -28,7 +28,7 @@ import pickle
 # ####################### #
 
 GLOBAL_SETTINGS = {
-    'loc': 'GB',
+    'loc': 'US',
     'ver': 2,
     'seq_length': 270,
     'train_start': pd.to_datetime('1993-01-01', format='%Y-%m-%d'),
@@ -49,7 +49,8 @@ DEVICE = torch.device("cpu")  # Force CPU for debugging
 
 
 if GLOBAL_SETTINGS['loc'] == "JP": file_tot_num = 87
-else: file_tot_num = 424
+elif GLOBAL_SETTINGS['loc'] == "GB": file_tot_num = 424
+elif GLOBAL_SETTINGS['loc'] == "US": file_tot_num = 614
 file_num_list = list(map(str, range(1, file_tot_num + 1)))
 
 # ####################### #
@@ -113,7 +114,7 @@ class TCNModel(nn.Module):
 def file_name(input_num, total_len): return str(input_num).zfill(total_len)
 
 def load_data_for_basin(file_num):
-    varssim_dir = "/data0/funato/hsp2/2_MERV/varssim"
+    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim_{GLOBAL_SETTINGS['loc']}"
     df = pd.read_csv(f"{varssim_dir}/varssim{file_name(file_num, 3)}.csv", index_col='Date', parse_dates=True)
     return df
 

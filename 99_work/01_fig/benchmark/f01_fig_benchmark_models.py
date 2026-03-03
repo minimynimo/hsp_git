@@ -3,19 +3,24 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
+loc = "US"
+
 # create a png file for each benchmark metric. each png should include two figures next to each other, each representing calibration and evaluation results. 
 # for each figure, plot the benchmark metric on the y-axis and the model on the x-axis bt using a box plot 
 # also plot the cdf of the benchmark metric as another set with the x axis as the benchmark metric and the y-axis as the cdf value with labels with different colors for each model
-model_list = ["SACSMA","HYPER", "RF", "XGB", "TCN", "LSTM"]
+model_list = ["HBV","HYPER", "RF", "XGB", "TCN", "LSTM"]
 
-output_dir_box = "/data0/funato/hsp2/0_out/1_fig/benchmark/box"
-output_dir_cdf = "/data0/funato/hsp2/0_out/1_fig/benchmark/cdf"
+output_dir_box = f"/data0/funato/hsp2/0_out/1_fig/{loc}/benchmark/box"
+output_dir_cdf = f"/data0/funato/hsp2/0_out/1_fig/{loc}/benchmark/cdf"
 os.makedirs(output_dir_box, exist_ok=True)
 os.makedirs(output_dir_cdf, exist_ok=True)
 
 fontsize = 20
 
 benchmark_list = ["KGE", "NSE", "E1", "VE", "d", "RMSE", "MAE"]
+
+basin_ids = pd.read_csv("/data0/funato/hsp2/3_gis_data/US/0_data/river_basin/dataset_US/small_basins_2000.csv", index_col=None, header=0)["basin_id"].tolist()
+
 
 benchmark_limits = {
     'KGE': {'min': 0, 'max': 1},
@@ -40,7 +45,7 @@ benchmark_limits_cdf = {
 }
 
 color_list = {
-    "SACSMA": "#7B7B7B",    # Kept as requested (Medium Grey)
+    "HBV": "#7B7B7B",    # Kept as requested (Medium Grey)
     "HYPER": "#628AE8",     # Kept as requested (Steel Blue)
     "RF":   "#FF7F00",   # Red
     "XGB":  "#9C4803",   # Bright Orange
@@ -52,7 +57,7 @@ param_tag_dict = {
     "RF": "_n100_d5_s2_l1_mf0.7_ms0.5_w270",
     "XGB": "",
     "TCN": "_n64_k4_d0.4",
-    "LSTM": "_hs256_do0.2_e30"
+    "LSTM": "_hs256_do0.4_e30"
 }
 
 
@@ -65,22 +70,22 @@ for benchmark in benchmark_list:
     for model in model_list:
         print(f"Processing model: {model}")
 
-        base_path = f"/data0/funato/hsp2/0_out/{model}/GB/regional/results"  
+        base_path = f"/data0/funato/hsp2/0_out/{model}/{loc}/regional/results"  
 
         if model == "HYPER":
-            input_file_cal = f"/data0/funato/hsp2/0_out/BC/results/BC_results_cal.csv"
-            input_file_eva = f"/data0/funato/hsp2/0_out/BC/results/BC_results_eva.csv"
-            # Use BC for column names since that's what's in the files
-            col_name_cal = f"BC_{benchmark}_cal"
-            col_name_eva = f"BC_{benchmark}_eva"
-        elif model == "SACSMA":
-            input_file_cal = f"/data0/funato/hsp2/0_out/SACSMA/GB/results/SACSMA_results_cal.csv"
-            input_file_eva = f"/data0/funato/hsp2/0_out/SACSMA/GB/results/SACSMA_results_eva.csv"
-            col_name_cal = f"SACSMA_{benchmark}_cal"
-            col_name_eva = f"SACSMA_{benchmark}_eva"
+            input_file_cal = f"/data0/funato/hsp2/0_out/HYPER/{loc}/results/HYPER_results_cal.csv"
+            input_file_eva = f"/data0/funato/hsp2/0_out/HYPER/{loc}/results/HYPER_results_eva.csv"
+            # Use HYPER for column names since that's what's in the files
+            col_name_cal = f"HYPER_{benchmark}_cal"
+            col_name_eva = f"HYPER_{benchmark}_eva"
+        elif model == "HBV":
+            input_file_cal = f"/data0/funato/hsp2/0_out/HBV/{loc}/results/HBV_results_cal.csv"
+            input_file_eva = f"/data0/funato/hsp2/0_out/HBV/{loc}/results/HBV_results_eva.csv"
+            col_name_cal = f"HBV_{benchmark}_cal"
+            col_name_eva = f"HBV_{benchmark}_eva"
         else:
-            input_file_cal = f"/data0/funato/hsp2/0_out/{model}/GB/regional/results/{model}_results{param_tag_dict.get(model, '')}_cal.csv"
-            input_file_eva = f"/data0/funato/hsp2/0_out/{model}/GB/regional/results/{model}_results{param_tag_dict.get(model, '')}_eva.csv"
+            input_file_cal = f"/data0/funato/hsp2/0_out/{model}/{loc}/regional/results/{model}_results{param_tag_dict.get(model, '')}_cal.csv"
+            input_file_eva = f"/data0/funato/hsp2/0_out/{model}/{loc}/regional/results/{model}_results{param_tag_dict.get(model, '')}_eva.csv"
             col_name_cal = benchmark
             col_name_eva = benchmark
 
@@ -94,6 +99,12 @@ for benchmark in benchmark_list:
         try:
             cal_df = pd.read_csv(input_file_cal)
             eva_df = pd.read_csv(input_file_eva)
+
+            # Filter to only include basins in basin_ids list
+            if 'basin' in cal_df.columns:
+                cal_df = cal_df[cal_df['basin'].isin(basin_ids)]
+            if 'basin' in eva_df.columns:
+                eva_df = eva_df[eva_df['basin'].isin(basin_ids)]
 
             if col_name_cal not in cal_df.columns or col_name_eva not in eva_df.columns:
                 print(f"Benchmark {benchmark} not found in {model} data. Skipping model {model}.")

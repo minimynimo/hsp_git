@@ -2,7 +2,7 @@
 
 # Wrapper script to run LSTM hyperparameter tuning in background
 # Usage: ./start_lstm_hp_tuning.sh <StartCore> <NumCores> <ModelType>
-# /data0/funato/hsp2/99_work/10_LSTM/start_lstm_hp_tuning.sh 1 4 regional
+# /data0/funato/hsp2/99_work/10_LSTM/start_lstm_hp_tuning.sh 2 1 regional
 # /data0/funato/hsp2/99_work/10_LSTM/start_lstm_hp_tuning.sh 5 4 individual
 
 if [ "$#" -ne 3 ]; then
