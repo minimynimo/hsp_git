@@ -9,52 +9,35 @@ import xgboost as xgb
 
 from datetime import datetime
 
-import shap
 
 benchmark_list = ["KGE", "NSE", "E1", "VE", "d", "RMSE", "MAE"]
 
 # loc, ver = "JP", 2
-#loc, ver = "GB", 2
-loc, ver = "US", 2
+loc, ver = "GB", 2
 
 ver_name = "ver1_1" if ver == 1 else "ver2_0"
 
-attribute_dir = f'/data0/funato/hsp2/3_gis_data/{loc}/0_data/river_basin/dataset_{loc}'
 
 # Define synthetic precipitation columns
-syn_precip_cols = ['syn_no_precip', 
-                   'syn_peak1_rate0','syn_peak1_rate10', 'syn_peak1_rate30', 'syn_peak1_rate50',
-                   'syn_peak3_rate0','syn_peak3_rate10', 'syn_peak3_rate30', 'syn_peak3_rate50',
-                   'syn_peak5_rate0','syn_peak5_rate10', 'syn_peak5_rate30', 'syn_peak5_rate50']
+syn_precip_cols = ['syn_no_precip', 'syn_p_pet', 
+                   'syn_peak1_rate0', 'syn_peak1_rate10', 'syn_peak1_rate30', 'syn_peak1_rate50',
+                   'syn_peak3_rate0', 'syn_peak3_rate10', 'syn_peak3_rate30', 'syn_peak3_rate50',
+                   'syn_peak5_rate0', 'syn_peak5_rate10', 'syn_peak5_rate30', 'syn_peak5_rate50']
 
 dynamic_features = ["Precip", "Temp", "PET"]
 
-# Define the 18 valid basin attributes
-VALID_ATTR = [
-    'p_mean', 'pet_mean', 'aridity', 'seasonality', 'frac_snow', 'high_prec_freq',
-    'high_prec_dur', 'low_prec_freq', 'low_prec_dur', 'ele_mt_smn', 'slp_dg_sav', 'area',
-    'for_pc_sse', 'snd_pc_sav', 'slt_pc_sav', 'cly_pc_sav','soc_th_sav', 'swc_pc_syr']
-
 if loc == "JP" and ver == 2:
     file_tot_num = 87
-    file_list = list(range(1, file_tot_num + 1))
-    columns_drop = ['grdc_no', 'river', 'station', 'WaterArea', 'ForestArea', 'ForestAreaRatio', 'WaterAreaRatio', 'lat_org', 'long_org', 'land_GolfCourse', 'land_GolfCourse_Ratio']
-    attribute_values = pd.read_csv(f'{attribute_dir}/basin_data_limited_met&soil&geology&land_{ver_name}.csv', encoding='UTF-8', index_col=0, header=0)
+elif loc == "JP" and ver == 2:
+    file_tot_num = 87
     varssim_dir = f"/data0/funato/2_MERV/{loc}/varssim_nocal/{ver_name}"
 elif loc == "GB" and ver == 2:
+    # Adjusted file_tot_num to 20 as in the RF script for consistency. Change if needed.
     file_tot_num = 424
-    file_list = list(range(1, file_tot_num + 1))
-    columns_drop = ['gauge_id', 'gauge_name', 'country']
-    attribute_values = pd.read_csv(f'{attribute_dir}/camelsgb_attribute_combined.csv', encoding='UTF-8', index_col=0, header=0)
-    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim_GB"
-elif loc == "US" and ver == 2:
-    # Load small basins list (area < 1000 km²) for US
-    small_basins_csv = "/data0/funato/hsp2/3_gis_data/US/0_data/river_basin/dataset_US/small_basins_1000.csv"
-    small_basins_df = pd.read_csv(small_basins_csv)
-    file_list = small_basins_df['basin_id'].tolist()
-    columns_drop = ['gauge_id', 'gauge_name', 'country']
-    attribute_values = pd.read_csv(f'{attribute_dir}/camels_attribute_combined.csv', encoding='UTF-8', index_col=0, header=0)
-    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim_US"
+    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim"
+    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim"
+
+file_list = list(range(1, file_tot_num + 1))
 # file_list = list(range(20,22)) # Uncomment for quick test
 
 start_date_cal = '1993-01-01'
@@ -62,43 +45,20 @@ end_date_cal = '2000-12-31'
 start_date_eva = '2001-01-01'
 end_date_eva = '2006-12-31'
 
-# XGBoost Parameters (matching regional code)
-timesteps = 270  # seq_length from regional code
+# XGBoost Parameters
 n_estimators = 500
-learning_rate = 0.05  # Matching regional code
-max_depth = 7  # Matching regional code
+learning_rate = 0.1
+max_depth = 4
 
-output_dir = f"/data0/funato/hsp2/0_out/XGB/{loc}/shap/regional"
+output_dir = f"/data0/funato/hsp2/0_out/XGB/{loc}/regional"
 os.makedirs(output_dir, exist_ok=True)
 os.makedirs(output_dir + "/predict/og", exist_ok=True)
 os.makedirs(output_dir + "/results", exist_ok=True)
 os.makedirs(output_dir + "/predict/synthetic", exist_ok=True)
 
-output_dir_shap = f"0_out/1_fig/shap/XGB/{loc}/regional_424"
-os.makedirs(output_dir_shap, exist_ok=True)
 
 # Clean attribute values and normalize
-attribute_values_dropped = attribute_values.drop(columns=[col for col in columns_drop if col in attribute_values.columns])
-
-# Keep only valid attributes (File_num if it exists as column, plus VALID_ATTR)
-keep_cols = [col for col in VALID_ATTR if col in attribute_values_dropped.columns]
-if 'File_num' in attribute_values_dropped.columns:
-    keep_cols = ['File_num'] + keep_cols
-attribute_values_dropped = attribute_values_dropped[keep_cols]
-
-cols_to_numeric = [col for col in attribute_values_dropped.columns if col != 'File_num']
-attribute_values_dropped[cols_to_numeric] = attribute_values_dropped[cols_to_numeric].apply(pd.to_numeric, errors='coerce')
-
-attribute_values_numeric = attribute_values_dropped.drop(columns=['File_num']) if 'File_num' in attribute_values_dropped.columns else attribute_values_dropped
-
-for col in attribute_values_numeric.columns:
-    if attribute_values_numeric[col].dtype == 'int64':
-        attribute_values_numeric[col] = attribute_values_numeric[col].astype('float64')
-
-attribute_mean = attribute_values_numeric.mean()
-attribute_std = attribute_values_numeric.std()
-attribute_values_normalized = attribute_values_dropped.copy()
-attribute_values_normalized.loc[:, attribute_values_numeric.columns] = (attribute_values_numeric - attribute_mean) / attribute_std
+# Static attributes removed - using only dynamic features
 
 def file_name(input_num, total_len):
     car_len = len(str(input_num))
@@ -115,14 +75,6 @@ def load_data(file_num):
     full_date_range = pd.date_range(start=start_date_cal, end=end_date_eva)
     df = df.reindex(full_date_range)
     return df
-
-def load_attribute_values_for_basin(basin_dynamic_data, file_num):
-    attribute_row = attribute_values_normalized[attribute_values_normalized.index == file_num]
-    attribute_list = attribute_row.iloc[0]
-    attribute_list = attribute_list.drop('File_num') if 'File_num' in attribute_list.index else attribute_list
-    static_attributes_array = np.array([attribute_list.values] * basin_dynamic_data.shape[0])
-    combined_data = np.hstack((basin_dynamic_data, static_attributes_array))
-    return combined_data
 
 def BMK(obs_data, sim_data, benchmark):
     if benchmark == "NSE":
@@ -249,8 +201,8 @@ for file_num in file_list:
     basin_cal_dynamic = all_input_cal_normalized_dynamic[current_cal_idx : current_cal_idx + cal_len]
     basin_eva_dynamic = all_input_eva_normalized_dynamic[current_eva_idx : current_eva_idx + eva_len]
 
-    X_train_final_list.append(load_attribute_values_for_basin(basin_cal_dynamic, file_num))
-    X_eval_final_list.append(load_attribute_values_for_basin(basin_eva_dynamic, file_num))
+    X_train_final_list.append(basin_cal_dynamic)  # Only dynamic features
+    X_eval_final_list.append(basin_eva_dynamic)  # Only dynamic features
 
     current_cal_idx += cal_len
     current_eva_idx += eva_len
@@ -259,7 +211,7 @@ X_train_final = np.vstack(X_train_final_list)
 X_eval_final = np.vstack(X_eval_final_list)
 
 print("Training the regional XGBoost model...")
-all_feature_names = dynamic_features + [col for col in attribute_values_normalized.columns if col != 'File_num']
+all_feature_names = dynamic_features  # Only dynamic features
 
 assert X_train_final.shape[1] == len(all_feature_names), "Feature mismatch"
 
@@ -277,85 +229,15 @@ xgb_model = xgb.XGBRegressor(
 xgb_model.fit(X_train_final, all_target_cal_stacked)
 print("Regional XGBoost model trained.")
 
-# Save the trained model
-import joblib
-model_save_path = os.path.join(output_dir, "XGB_model.pkl")
-joblib.dump(xgb_model, model_save_path)
-log_file.write(f"Model saved to: {model_save_path}\n")
-log_file.flush()
-print(f"Model saved to: {model_save_path}")
-
 predict_cal_aggregated = xgb_model.predict(X_train_final)
 predict_eva_aggregated = xgb_model.predict(X_eval_final)
 
 predict_cal_aggregated[predict_cal_aggregated < 0] = 0
 predict_eva_aggregated[predict_eva_aggregated < 0] = 0
 
-print("Performing SHAP analysis...")
-# For XGBoost, it's more efficient to explain a subset if the data is very large
-explain_size = 5000
-if X_train_final.shape[0] > explain_size:
-    explain_indices = np.random.choice(X_train_final.shape[0], explain_size, replace=False)
-    X_explain = X_train_final[explain_indices]
-    X_explain_df = pd.DataFrame(X_explain, columns=all_feature_names)
-else:
-    X_explain_df = pd.DataFrame(X_train_final, columns=all_feature_names)
-
-explainer = shap.Explainer(xgb_model)
-shap_values = explainer(X_explain_df)
-
-# --- Save SHAP results for later analysis ---
-print("Saving SHAP objects for later analysis...")
-shap_results_dir = os.path.join(output_dir, "shap_objects")
-os.makedirs(shap_results_dir, exist_ok=True)
-
-# Save the SHAP values (as numpy array)
-np.save(os.path.join(shap_results_dir, "shap_values.npy"), shap_values.values)
-
-# Save the expected value (base value)
-np.save(os.path.join(shap_results_dir, "expected_value.npy"), shap_values.base_values)
-
-# Save the corresponding feature data
-X_explain_df.to_csv(os.path.join(shap_results_dir, "X_sample.csv"))
-
-print("SHAP objects saved.")
 
 
-shap.summary_plot(shap_values, X_explain_df, plot_type="bar", show=False)
-plt.savefig(f"{output_dir_shap}/XGB_shap_regional_summary_bar.png")
-plt.close()
-
-shap.summary_plot(shap_values, X_explain_df, show=False)
-plt.savefig(f"{output_dir_shap}/XGB_shap_regional_summary.png")
-plt.close()
-
-shap_values_array = shap_values.values
-
-for i in range(min(3, X_explain_df.shape[1])):
-    shap.dependence_plot(i, shap_values_array, X_explain_df, show=False)
-    plt.savefig(f"{output_dir_shap}/XGB_shap_regional_dependence_{X_explain_df.columns[i]}.png")
-    plt.close()
-
-
-print("SHAP analysis complete.")
-print("Saving SHAP force plots...")
-# Ensure the base value is passed as the first parameter and generate the JS visualizer
-for i in range(min(3, X_explain_df.shape[0])):
-    # Create the plot object first
-    force_plot = shap.force_plot(
-        explainer.expected_value,
-        shap_values_array[i],
-        X_explain_df.iloc[i]
-    )
-    # Now save the plot object to an HTML file
-    shap.save_html(
-        f"{output_dir_shap}/force_plot_regional_sample_{i}.html",
-        force_plot
-    )
-print("SHAP force plots saved.")
-print("SHAP analysis complete.")
-print("DONE")
-
+print("Saving per-basin predictions, results, and evaluating synthetic data...")
 results_cal = []
 results_eva = []
 syn_predict_dfs_combined = {col: {} for col in syn_precip_cols}
@@ -383,8 +265,8 @@ for file_num in file_list:
     file_results_cal = {'file_num': file_num}
     file_results_eva = {'file_num': file_num}
     for benchmark in benchmark_list:
-        file_results_cal[f'XGB_{benchmark}_cal'] = BMK(basin_target_cal, basin_predict_cal, benchmark)
-        file_results_eva[f'XGB_{benchmark}_eva'] = BMK(basin_target_eva, basin_predict_eva, benchmark)
+        file_results_cal[f'{benchmark}'] = BMK(basin_target_cal, basin_predict_cal, benchmark)
+        file_results_eva[f'{benchmark}'] = BMK(basin_target_eva, basin_predict_eva, benchmark)
     results_cal.append(file_results_cal)
     results_eva.append(file_results_eva)
 
@@ -404,8 +286,8 @@ for file_num in file_list:
 
         df_current = df_current_basin[start_date_cal:end_date_eva_syn].copy()
         
-        syn_temp_col = 'Temp_at_peak' if syn_precip_col not in ['syn_no_precip'] else 'Temp'
-        syn_pet_col = 'PET_at_peak' if syn_precip_col not in ['syn_no_precip'] else 'PET'
+        syn_temp_col = 'Temp_at_peak' if syn_precip_col not in ['syn_no_precip', 'syn_p_pet'] else 'Temp'
+        syn_pet_col = 'PET_at_peak' if syn_precip_col not in ['syn_no_precip', 'syn_p_pet'] else 'PET'
 
         syn_input_dyn = np.hstack([df_current[syn_precip_col].shift(1).values.reshape(-1, 1), df_current[syn_temp_col].shift(1).values.reshape(-1, 1), df_current[syn_pet_col].shift(1).values.reshape(-1, 1)])[1:]
         
@@ -415,7 +297,7 @@ for file_num in file_list:
 
         syn_input_norm = (syn_input_clean - mean_dynamic_features) / std_dynamic_features
 
-        syn_input_final = load_attribute_values_for_basin(syn_input_norm, file_num)
+        syn_input_final = syn_input_norm  # Only dynamic features
 
         syn_predict = xgb_model.predict(syn_input_final)
         syn_predict[syn_predict < 0] = 0
@@ -425,6 +307,8 @@ for file_num in file_list:
 
 # --- Final Save Operations ---
 for syn_precip_col, basin_preds_dict in syn_predict_dfs_combined.items():
+    if not basin_preds_dict: continue
+    
     combined_syn_df = pd.DataFrame()
     for file_num, df_preds in basin_preds_dict.items():
         df_preds = df_preds.rename(columns={'prediction': f'file_{file_num}'})
@@ -439,16 +323,17 @@ for syn_precip_col, basin_preds_dict in syn_predict_dfs_combined.items():
     
     combined_syn_df.sort_index(inplace=True)
     
-    # Transpose to get basins as rows (index) and dates as columns
+    # Transpose to match RF format: basins as rows, dates as columns
     combined_syn_df_transposed = combined_syn_df.T
-    
-    # Clean up basin names (remove 'file_' prefix)
     combined_syn_df_transposed.index = combined_syn_df_transposed.index.str.replace('file_', '')
     combined_syn_df_transposed.index.name = 'basin'
     
-    # Save with correct format
-    combined_syn_df_transposed.to_csv(f"{output_dir}/predict/synthetic/XGB_predict_{syn_precip_col.replace('syn_','')}.csv")
-    log_file.write(f"Saved {syn_precip_col} with shape: {combined_syn_df_transposed.shape} (basins × dates)\n")
+    # Column names should be dates as strings
+    combined_syn_df_transposed.columns = combined_syn_df_transposed.columns.astype(str).str.split(' ').str[0]
+    
+    output_file = f"{output_dir}/predict/synthetic/XGB_predict_{syn_precip_col.replace('syn_','')}.csv"
+    combined_syn_df_transposed.to_csv(output_file)
+    print(f"Saved {output_file}")
 
 df_results_cal = pd.DataFrame(results_cal).set_index('file_num')
 df_results_cal.to_csv(output_dir + f'/results/XGB_results_cal.csv')

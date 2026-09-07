@@ -9,7 +9,7 @@ set -e  # Exit on any error
 # Default parameters
 RUN_DIR="/data0/funato/hsp2/99_work/12_XGBoost/XGB_regional_modeling-master"
 N_BASINS=""
-PYTHON_PATH="/data0/funato/hsp/.venv/bin/python"
+PYTHON_PATH="/data0/funato/.venv/bin/python"
 
 START_CORE=12 # 1 indexed
 CORES=1
@@ -68,7 +68,12 @@ if [[ ! -f "$RUN_DIR/cfg.json" ]]; then
 fi
 
 # Extract parameters from config file to create naming convention
+# NOTE: this PARAM_STRING must stay in sync with the `run_tag` computed inside
+# eval_regional.py's main() -- it is only used here for the informational echo below, the
+# actual output filenames are computed independently in Python. If these two drift apart this
+# printed message will describe the wrong filenames without erroring.
 echo "Extracting model parameters from config..."
+NO_STATIC=$(python3 -c "import json; print(json.load(open('$RUN_DIR/cfg.json')).get('no_static', True))")
 N_ESTIMATORS=$(python3 -c "import json; print(json.load(open('$RUN_DIR/cfg.json')).get('n_estimators', 100))")
 MAX_DEPTH=$(python3 -c "import json; print(json.load(open('$RUN_DIR/cfg.json')).get('max_depth', 6))")
 LEARNING_RATE=$(python3 -c "import json; print(json.load(open('$RUN_DIR/cfg.json')).get('learning_rate', 0.1))")
@@ -76,8 +81,9 @@ SUBSAMPLE=$(python3 -c "import json; print(json.load(open('$RUN_DIR/cfg.json')).
 COLSAMPLE_BYTREE=$(python3 -c "import json; print(json.load(open('$RUN_DIR/cfg.json')).get('colsample_bytree', 1.0))")
 SEQ_LENGTH=$(python3 -c "import json; print(json.load(open('$RUN_DIR/cfg.json')).get('seq_length', 270))")
 
-# Create parameter string for file naming
-PARAM_STRING="n${N_ESTIMATORS}_d${MAX_DEPTH}_lr${LEARNING_RATE}_sub${SUBSAMPLE}_col${COLSAMPLE_BYTREE}_w${SEQ_LENGTH}"
+# Create parameter string for file naming (must match eval_regional.py's run_tag)
+if [ "$NO_STATIC" = "True" ]; then NS_TAG="ns1"; else NS_TAG="ns0"; fi
+PARAM_STRING="${NS_TAG}_n${N_ESTIMATORS}_d${MAX_DEPTH}_lr${LEARNING_RATE}_sub${SUBSAMPLE}_col${COLSAMPLE_BYTREE}_sl${SEQ_LENGTH}"
 
 echo "Model parameters: $PARAM_STRING"
 

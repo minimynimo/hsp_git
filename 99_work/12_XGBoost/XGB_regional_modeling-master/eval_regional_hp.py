@@ -13,6 +13,8 @@ import pandas as pd
 import xgboost as xgb
 from tqdm import tqdm
 from sklearn.metrics import mean_squared_error
+from papercode.datautils import VALID_ATTR
+from papercode.utils import get_basin_list
 
 # ####################### #
 # Global Definitions      #
@@ -24,13 +26,15 @@ syn_precip_cols = ['syn_no_precip', 'syn_p_pet',
                    'syn_peak5_rate0', 'syn_peak5_rate10', 'syn_peak5_rate30', 'syn_peak5_rate50']
 
 GLOBAL_SETTINGS = {
-    'loc': 'GB',
+    'loc': 'US',
     'ver': 2,
     'seq_length': 270,
-    'train_start': pd.to_datetime('1993-01-01', format='%Y-%m-%d'),
-    'train_end': pd.to_datetime('2000-12-31', format='%Y-%m-%d'),
-    'val_start': pd.to_datetime('2001-01-01', format='%Y-%m-%d'),
-    'val_end': pd.to_datetime('2006-12-31', format='%Y-%m-%d')
+    # HP-search calibration/validation split -- must not touch the real held-out test period
+    # (2001-01-01..2006-12-31): calibration is 1990-1998, validation is 1999-2000.
+    'train_start': pd.to_datetime('1990-01-01', format='%Y-%m-%d'),
+    'train_end': pd.to_datetime('1998-12-31', format='%Y-%m-%d'),
+    'val_start': pd.to_datetime('1999-01-01', format='%Y-%m-%d'),
+    'val_end': pd.to_datetime('2000-12-31', format='%Y-%m-%d')
 }
 
 benchmark_list = ["NSE", "KGE", "E1", "VE", "d", "RMSE", "MAE"]
@@ -39,19 +43,20 @@ benchmark_list = ["NSE", "KGE", "E1", "VE", "d", "RMSE", "MAE"]
 # Utility Functions       #
 # ####################### #
 
-def file_name(input_num, total_len):
-    return str(input_num).zfill(total_len)
-
-def load_data_for_basin(file_num):
-    varssim_dir = "/data0/funato/hsp2/2_MERV/varssim"
-    df = pd.read_csv(f"{varssim_dir}/varssim{file_name(file_num, 3)}.csv")
+def load_data_for_basin(gauge_id):
+    # NOTE: was hardcoded to the stale "/data0/funato/hsp2/2_MERV/varssim" (pre-rename path,
+    # no longer exists) -- fixed to match GLOBAL_SETTINGS['loc'], mirroring main_xgb_hp.py /
+    # eval_regional.py. See DEBUG_README.md for the stale-path bug class.
+    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim_{GLOBAL_SETTINGS['loc']}"
+    df = pd.read_csv(f"{varssim_dir}/varssim_{gauge_id}.csv")
     df['Date'] = pd.to_datetime(df['Date'])
     df.set_index('Date', inplace=True)
     return df
 
-def load_attributes(db_path: str, basins: list, drop_lat_lon: bool = True) -> pd.DataFrame:
+def load_attributes(db_path: str, basins: list, drop_lat_lon: bool = True, keep_features: list = None) -> pd.DataFrame:
+    # Same dropped-kwarg bug as eval_regional.py's wrapper -- see DEBUG_README.md.
     from papercode.datautils import load_attributes as load_attributes_from_lib
-    return load_attributes_from_lib(db_path, basins, drop_lat_lon)
+    return load_attributes_from_lib(db_path, basins, drop_lat_lon, keep_features=keep_features)
 
 def BMK(obs_data, sim_data, benchmark):    
     """Calculate benchmark metrics"""
@@ -126,7 +131,7 @@ def evaluate_period(model, basins, cfg, scalers, attributes, start_date, end_dat
     for basin in tqdm(basins, desc="Processing basins"):
         if basin not in scalers['basin_scalers']: continue
 
-        df = load_data_for_basin(int(basin))
+        df = load_data_for_basin(basin)
         warmup_start = start_date - pd.DateOffset(days=seq_length - 1)
         df_period = df.loc[warmup_start:end_date]
         
@@ -139,7 +144,7 @@ def evaluate_period(model, basins, cfg, scalers, attributes, start_date, end_dat
         
         static_data_scaled = None
         if not cfg["no_static"]:
-            static_data = attributes.loc[int(basin)].values
+            static_data = attributes.loc[basin].values
             # Static attributes use global scaler
             static_data_scaled = (static_data - scalers['static_means']) / scalers['static_stds']
         
@@ -223,7 +228,7 @@ def evaluate_synthetic_period(model, basins, cfg, scalers, attributes, scenario_
         if basin not in scalers['basin_scalers']:
             continue
 
-        df = load_data_for_basin(int(basin))
+        df = load_data_for_basin(basin)
         warmup_start = start_date - pd.DateOffset(days=seq_length - 1)
         df_period = df.loc[warmup_start:end_date]
         
@@ -248,7 +253,7 @@ def evaluate_synthetic_period(model, basins, cfg, scalers, attributes, scenario_
         
         static_data_scaled = None
         if not cfg["no_static"]:
-            static_data = attributes.loc[int(basin)].values
+            static_data = attributes.loc[basin].values
             static_data_scaled = (static_data - scalers['static_means']) / scalers['static_stds']
         
         # Check for NaN in synthetic data
@@ -311,7 +316,7 @@ def main():
     parser = argparse.ArgumentParser(description='Regional XGBoost Evaluation')
     parser.add_argument('--run_dir', type=str, required=True)
     parser.add_argument('--n_basins', type=int, default=None)
-    parser.add_argument('--output_dir', type=str, default="/data0/funato/hsp2/0_out/XGB/GB/regional",
+    parser.add_argument('--output_dir', type=str, default="/data0/funato/hsp2/0_out/XGB/US/regional",
                         help='Output directory for predictions and results')
     parser.add_argument('--hp_string', type=str, default=None,
                         help='Hyperparameter string for output filenames')
@@ -347,17 +352,18 @@ def main():
     model = xgb.XGBRegressor()
     model.load_model(model_file)
     
-    if GLOBAL_SETTINGS['loc'] == "JP": file_tot_num = 87
-    else: file_tot_num = 424
-    basins = list(map(str, range(1, file_tot_num + 1)))
+    basins = get_basin_list(GLOBAL_SETTINGS['loc'])
     if args.n_basins:
         basins = basins[:args.n_basins]
         print(f"Processing only first {args.n_basins} basins for testing.")
         
+    # Same static-attribute set (VALID_ATTR, imported from papercode.datautils) used by
+    # main_xgb_hp.py (training) / main_xgb.py / eval_regional.py -- must match what the
+    # checkpoint was actually trained on.
     attributes = None
     if not cfg.get("no_static", True):
         db_path = str(run_dir / 'attributes.db')
-        attributes = load_attributes(db_path=db_path, basins=basins, drop_lat_lon=True)
+        attributes = load_attributes(db_path=db_path, basins=basins, drop_lat_lon=True, keep_features=VALID_ATTR)
 
     train_start = pd.to_datetime(cfg['train_start'])
     train_end = pd.to_datetime(cfg['train_end'])
@@ -377,9 +383,9 @@ def main():
             pred_path = pred_dir / f"XGB_predict{hp_suffix}_{period_name}.csv"
             
             pivot_df = predictions_df.pivot_table(index='basin', columns='date', values='prediction')
-            # Sort basins numerically
-            basin_ids_sorted = sorted([int(b) for b in pivot_df.index])
-            pivot_df = pivot_df.loc[[str(b) for b in basin_ids_sorted]]
+            # Sort basins as strings -- avoids losing leading zeros in gauge ids (e.g. US)
+            # that int()/str() round-tripping would strip.
+            pivot_df = pivot_df.sort_index()
             pivot_df.to_csv(pred_path, index_label='basin')
             print(f"Pivoted predictions for {period_name} period saved to {pred_path}")
             
@@ -405,7 +411,10 @@ def main():
     for scenario_col in syn_precip_cols:
         # Use evaluation period for synthetic scenarios
         # For peak scenarios, use shorter period
-        syn_end = pd.to_datetime('2001-02-10') if 'peak' in scenario_col else val_end
+        # Short window for peak scenarios stays within the HP val period (1999-2000) --
+        # analogous offset-from-val_start to the old 2001-01-01..2001-02-10 window, but must not
+        # spill into the real 2001-2006 held-out test period.
+        syn_end = pd.to_datetime('1999-02-10') if 'peak' in scenario_col else val_end
         
         predictions_df = evaluate_synthetic_period(
             model, basins, cfg, scalers, attributes, scenario_col, val_start, syn_end)
@@ -416,9 +425,8 @@ def main():
             pred_path = pred_dir / f"XGB_predict_{scenario_col}_eva.csv"
             
             pivot_df = predictions_df.pivot_table(index='basin', columns='date', values='prediction')
-            # Sort basins numerically
-            basin_ids_sorted = sorted([int(b) for b in pivot_df.index])
-            pivot_df = pivot_df.loc[[str(b) for b in basin_ids_sorted]]
+            # Sort basins as strings -- see note above about leading-zero gauge ids.
+            pivot_df = pivot_df.sort_index()
             pivot_df.to_csv(pred_path, index_label='basin')
             print(f"Pivoted synthetic predictions for '{scenario_col}' saved to {pred_path}")
     

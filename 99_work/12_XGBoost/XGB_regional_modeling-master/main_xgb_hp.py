@@ -23,40 +23,50 @@ import torch
 
 import matplotlib.pyplot as plt
 
-from papercode.datautils import add_basin_attributes, load_attributes
+from papercode.datautils import add_basin_attributes, load_attributes, VALID_ATTR
+from papercode.utils import get_basin_list
+from papercode.xgb_run_registry import find_completed_run
 
 # Global Settings
+# HP-search calibration/validation split -- intentionally does NOT touch the real held-out
+# test period (2001-01-01..2006-12-31): calibration is 1990-1998, validation is 1999-2000.
 GLOBAL_SETTINGS = {
-    'loc': 'GB',
+    'loc': 'US',
     'ver': 2,
     'seq_length': 270,
-    'train_start': pd.to_datetime('1993-01-01', format='%Y-%m-%d'),
-    'train_end': pd.to_datetime('2000-12-31', format='%Y-%m-%d'),
-    'val_start': pd.to_datetime('2001-01-01', format='%Y-%m-%d'),
-    'val_end': pd.to_datetime('2006-12-31', format='%Y-%m-%d')
+    'train_start': pd.to_datetime('1990-01-01', format='%Y-%m-%d'),
+    'train_end': pd.to_datetime('1998-12-31', format='%Y-%m-%d'),
+    'val_start': pd.to_datetime('1999-01-01', format='%Y-%m-%d'),
+    'val_end': pd.to_datetime('2000-12-31', format='%Y-%m-%d')
 }
 
 ver_name = "ver1_1" if GLOBAL_SETTINGS['ver'] == 1 else "ver2_0"
 
 # Basin configuration
-if GLOBAL_SETTINGS['loc'] == "JP":
-    file_tot_num = 87
-elif GLOBAL_SETTINGS['loc'] == "GB":
-    file_tot_num = 424
+gauge_id_list = get_basin_list(GLOBAL_SETTINGS['loc'])
 
-file_num_list = list(map(str, range(1, file_tot_num + 1)))
-
-def file_name(input_num, total_len):
-    """Generate zero-padded filename"""
-    return str(input_num).zfill(total_len)
-
-def load_data_for_basin(file_num):
+def load_data_for_basin(gauge_id):
     """Load data for a specific basin"""
-    varssim_dir = "/data0/funato/hsp2/2_MERV/varssim"
-    df = pd.read_csv(f"{varssim_dir}/varssim{file_name(file_num, 3)}.csv")
+    # NOTE: this used to be "/data0/funato/hsp2/2_MERV/varssim" -- stale after the data directory
+    # was renamed varssim_{loc}. Old runs under runs_xgb/hp/ that predate this fix were trained
+    # while the old path was still valid; a fresh run with the stale path would fail to find any
+    # data at all. See DEBUG_README.md for the identical class of bug (stale path after rename).
+    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim_{GLOBAL_SETTINGS['loc']}"
+    df = pd.read_csv(f"{varssim_dir}/varssim_{gauge_id}.csv")
     df['Date'] = pd.to_datetime(df['Date'])
     df.set_index('Date', inplace=True)
     return df
+
+def str2bool(v):
+    """Proper boolean argparse parser (type=bool is broken: bool("False") == True)."""
+    if isinstance(v, bool):
+        return v
+    if v.lower() in ('yes', 'true', 't', 'y', '1'):
+        return True
+    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+        return False
+    else:
+        raise argparse.ArgumentTypeError(f'Boolean value expected, got {v!r}.')
 
 def get_args() -> Dict:
     """Parse input arguments"""
@@ -64,26 +74,38 @@ def get_args() -> Dict:
     parser.add_argument('mode', choices=["train"])
     parser.add_argument('--seed', type=int, required=False, default=np.random.randint(10000000))
     parser.add_argument('--run_dir', type=str, help="For evaluation mode.")
-    parser.add_argument('--no_static', type=bool, default=True)
+    parser.add_argument('--no_static', type=str2bool, default=False)
     
-    # XGBoost hyperparameters - tunable via command line
+    # XGBoost hyperparameters - all tunable via command line. Grid per HYPERPARAMETERS.md
+    # (regional): N_ESTIMATORS{500,1000}, SUBSAMPLE{0.7,0.8,1.0}, COLSAMPLE_BY_TREE{0.7,0.8,1.0},
+    # LEARNING_RATE{0.01,0.05,0.1}, MAX_DEPTH{3,5,7}, MIN_CHILD_WEIGHT{1,3,5}. These args were
+    # already CLI-overridable before this fix (only the docstrings claimed subsample/
+    # colsample_bytree/min_child_weight were "fixed") -- the actual bug was that
+    # run_xgb_hp_tuning.sh (the launcher) never passed them, so they never varied across HP runs.
     parser.add_argument('--n_estimators', type=int, default=500, help='Number of boosting rounds (R: 500/1000)')
-    parser.add_argument('--max_depth', type=int, default=7, help='Maximum tree depth (R: 5/7)') 
-    parser.add_argument('--learning_rate', type=float, default=0.05, help='Learning rate (R: 0.05/0.1)')
-    
-    # Fixed hyperparameters
-    parser.add_argument('--subsample', type=float, default=0.8, help='Row sampling ratio (fixed: 0.8)')
-    parser.add_argument('--colsample_bytree', type=float, default=0.8, help='Column sampling ratio (fixed: 0.8)')
-    parser.add_argument('--min_child_weight', type=int, default=1, help='Minimum child weight (fixed: 1)')
+    parser.add_argument('--max_depth', type=int, default=7, help='Maximum tree depth (R: 3/5/7)')
+    parser.add_argument('--learning_rate', type=float, default=0.05, help='Learning rate (R: 0.01/0.05/0.1)')
+    parser.add_argument('--subsample', type=float, default=0.8, help='Row sampling ratio (R: 0.7/0.8/1.0)')
+    parser.add_argument('--colsample_bytree', type=float, default=0.8, help='Column sampling ratio (R: 0.7/0.8/1.0)')
+    parser.add_argument('--min_child_weight', type=int, default=1, help='Minimum child weight (R: 1/3/5)')
     
     cfg = vars(parser.parse_args())
     cfg.update(GLOBAL_SETTINGS)
     return cfg
 
+def _hp_str(cfg: Dict) -> str:
+    # Tag must encode every hyperparameter dimension actually swept by run_xgb_hp_tuning.sh (and
+    # looked up by run_eval_hp.sh's find_run_dir) or two runs differing only in e.g. subsample
+    # would land in the same directory and silently overwrite each other -- see DEBUG_README.md.
+    return (
+        f"n{cfg['n_estimators']}_d{cfg['max_depth']}_lr{cfg['learning_rate']}"
+        f"_ss{cfg['subsample']}_cbt{cfg['colsample_bytree']}_mcw{cfg['min_child_weight']}"
+    )
+
 def _setup_run(cfg: Dict) -> Dict:
     """Create folder structure for this run"""
     now = datetime.now()
-    hp_str = f"n{cfg['n_estimators']}_d{cfg['max_depth']}_lr{cfg['learning_rate']}"
+    hp_str = _hp_str(cfg)
     run_name = f'{hp_str}/xgb_run_{now.strftime("%m%d_%H%M")}_seed{cfg["seed"]}'
     cfg['run_dir'] = Path(__file__).parent / "runs_xgb" / "hp" /run_name
     cfg['run_dir'].mkdir(parents=True, exist_ok=True)
@@ -104,7 +126,25 @@ def train(cfg):
     random.seed(cfg["seed"])
     np.random.seed(cfg["seed"])
     
-    basins = file_num_list
+    basins = gauge_id_list
+
+    # run_xgb_hp_tuning.sh launches one process per hyperparameter combination;
+    # a restart after a kill would otherwise retrain every combination from
+    # scratch since _setup_run's leaf directory is timestamped. Skip if a
+    # completed run with this exact HP combination already exists under
+    # runs_xgb/hp/{hp_str}/. 'seed' is deliberately NOT a match key -- get_args()
+    # defaults --seed to a random draw when omitted (same convention as the
+    # upstream EA-LSTM reference implementation, which logs that random seed in
+    # the run folder name purely for traceability), so requiring it to match
+    # would defeat resumability for any invocation that doesn't pin --seed.
+    match_keys = ['n_estimators', 'max_depth', 'learning_rate', 'subsample',
+                  'colsample_bytree', 'min_child_weight', 'no_static']
+    search_root = Path(__file__).parent / "runs_xgb" / "hp" / _hp_str(cfg)
+    existing_run = find_completed_run(search_root, cfg, match_keys)
+    if existing_run is not None:
+        print(f"Skipping: a completed run with these exact hyperparameters already exists at {existing_run}")
+        return
+
     cfg = _setup_run(cfg)
     for key, val in cfg.items(): print(f"{key}: {val}")
 
@@ -114,7 +154,7 @@ def train(cfg):
     basin_scalers = {}
 
     for basin in tqdm(basins, desc="Loading basin data for scaling"):
-        df = load_data_for_basin(int(basin))
+        df = load_data_for_basin(basin)
         df_period = df.loc[cfg['train_start']:cfg['train_end']]
         
         # ## MODIFICATION START: Calculate scalers ONLY from clean, contiguous data ##
@@ -147,11 +187,15 @@ def train(cfg):
     
     db_path = str(cfg['run_dir'] / 'attributes.db')
     add_basin_attributes(db_path=db_path, loc=GLOBAL_SETTINGS['loc'], ver_name=ver_name)
-    
+
+    # Same static-attribute set (VALID_ATTR, imported from papercode.datautils) as main_xgb.py
+    # (the production regional trainer) -- previously this call omitted keep_features, so it
+    # fell back to load_attributes()'s own default feature set (a different column count),
+    # meaning HP-search checkpoints had a different static-attribute layout than production
+    # checkpoints. See DEBUG_README.md.
     attributes = None
     if not cfg["no_static"]:
-        # Convert string basins to integers for attributes DataFrame
-        attributes = load_attributes(db_path=db_path, basins=[int(b) for b in basins], drop_lat_lon=True)
+        attributes = load_attributes(db_path=db_path, basins=basins, drop_lat_lon=True, keep_features=VALID_ATTR)
         # Calculate global mean/std for static attributes only
         scalers['static_means'] = attributes.mean().values
         scalers['static_stds'] = attributes.std().values
@@ -178,7 +222,7 @@ def train(cfg):
     for basin in tqdm(basins, desc="Processing basins for training"):
         if basin not in scalers['basin_scalers']: continue # Skip if no scalers were generated
 
-        df = load_data_for_basin(int(basin))
+        df = load_data_for_basin(basin)
         df_period = df.loc[cfg['train_start']:cfg['train_end']]
         bscaler = scalers['basin_scalers'][basin]
         
@@ -187,8 +231,7 @@ def train(cfg):
 
         static_data_scaled = None
         if not cfg["no_static"]:
-            # basin is string but attributes has integer index, convert for lookup
-            static_data = attributes.loc[int(basin)].values
+            static_data = attributes.loc[basin].values
             static_data_scaled = (static_data - scalers['static_means']) / scalers['static_stds']
 
         is_nan = df_period[dyn_cols + [q_col]].isnull().any(axis=1)
@@ -302,7 +345,7 @@ def train(cfg):
         ax2.grid(True, linestyle='--', alpha=0.6)
 
         ax3.set_title('Original Input Data (Training Period)', fontsize=14)
-        df_basin_raw = load_data_for_basin(int(basin_id))
+        df_basin_raw = load_data_for_basin(basin_id)
         df_basin_period = df_basin_raw.loc[cfg['train_start']:cfg['train_end']]
 
         ax3.plot(df_basin_period.index.values, df_basin_period['PET'].values, label='PET', color='orange')

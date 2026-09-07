@@ -26,14 +26,16 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
-from papercode.datautils import add_basin_attributes, load_attributes
+from papercode.datautils import add_basin_attributes, load_attributes, VALID_ATTR
+from papercode.utils import get_basin_list
+from papercode.xgb_run_registry import find_completed_run
 
 # Global Settings
 GLOBAL_SETTINGS = {
     'loc': 'US',
     'ver': 2,
     'seq_length': 270,
-    'train_start': pd.to_datetime('1993-01-01', format='%Y-%m-%d'),
+    'train_start': pd.to_datetime('1990-01-01', format='%Y-%m-%d'),
     'train_end': pd.to_datetime('2000-12-31', format='%Y-%m-%d'),
     'val_start': pd.to_datetime('2001-01-01', format='%Y-%m-%d'),
     'val_end': pd.to_datetime('2006-12-31', format='%Y-%m-%d')
@@ -42,29 +44,32 @@ GLOBAL_SETTINGS = {
 ver_name = "ver1_1" if GLOBAL_SETTINGS['ver'] == 1 else "ver2_0"
 
 # Basin configuration
-if GLOBAL_SETTINGS['loc'] == "JP":
-    file_tot_num = 87
-    file_num_list = list(map(str, range(1, file_tot_num + 1)))
-elif GLOBAL_SETTINGS['loc'] == "GB":
-    file_tot_num = 424
-    file_num_list = list(map(str, range(1, file_tot_num + 1)))
-elif GLOBAL_SETTINGS['loc'] == "US":
-    # Load small basins list (area < 1000 km²) for US
-    small_basins_csv = "/data0/funato/hsp2/3_gis_data/US/0_data/river_basin/dataset_US/small_basins_1000.csv"
-    small_basins_df = pd.read_csv(small_basins_csv)
-    file_num_list = small_basins_df['basin_id'].astype(str).tolist()
+gauge_id_list = get_basin_list(GLOBAL_SETTINGS['loc'])
 
-def file_name(input_num, total_len):
-    """Generate zero-padded filename"""
-    return str(input_num).zfill(total_len)
-
-def load_data_for_basin(file_num):
+def load_data_for_basin(gauge_id):
     """Load data for a specific basin"""
     varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim_{GLOBAL_SETTINGS['loc']}"
-    df = pd.read_csv(f"{varssim_dir}/varssim{file_name(file_num, 3)}.csv")
+    df = pd.read_csv(f"{varssim_dir}/varssim_{gauge_id}.csv")
     df['Date'] = pd.to_datetime(df['Date'])
     df.set_index('Date', inplace=True)
     return df
+
+def str2bool(v):
+    """Proper boolean argparse parser.
+
+    NOTE: `type=bool` is a classic argparse trap: bool("False") == True, because any
+    non-empty string is truthy. That meant `--no_static=False` on the command line was
+    silently ignored and always evaluated to True -- which is why every saved run in
+    runs_xgb/ has no_static=true regardless of what run_main_xgb.sh intended to pass.
+    """
+    if isinstance(v, bool):
+        return v
+    if v.lower() in ('yes', 'true', 't', 'y', '1'):
+        return True
+    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+        return False
+    else:
+        raise argparse.ArgumentTypeError(f'Boolean value expected, got {v!r}.')
 
 def get_args() -> Dict:
     """Parse input arguments"""
@@ -72,14 +77,20 @@ def get_args() -> Dict:
     parser.add_argument('mode', choices=["train"])
     parser.add_argument('--seed', type=int, required=False, default=np.random.randint(10000000))
     parser.add_argument('--run_dir', type=str, help="For evaluation mode.")
-    parser.add_argument('--no_static', type=bool, default=True)
+    parser.add_argument('--no_static', type=str2bool, default=False)
     
-    # XGBoost specific arguments
-    parser.add_argument('--n_estimators', type=int, default=500)
-    parser.add_argument('--max_depth', type=int, default=7) 
+    # XGBoost specific arguments. Defaults are the selected regional combo from the full
+    # 486-combo HP grid (614 basins, NSE_median=0.399) -- see SELECTED_HYPERPARAMETERS.md and
+    # DEBUG_README.md §16.8. --min_child_weight was previously entirely absent from this
+    # production script's argparse (only main_xgb_hp.py had it), even though the selected combo
+    # depends on it -- same "eval/hp side expects a hyperparameter the production train side
+    # never exposed" bug already found in RF's main_rf.py (see DEBUG_README.md §15.9).
+    parser.add_argument('--n_estimators', type=int, default=1000)
+    parser.add_argument('--max_depth', type=int, default=7)
     parser.add_argument('--learning_rate', type=float, default=0.05)
     parser.add_argument('--subsample', type=float, default=0.8)
-    parser.add_argument('--colsample_bytree', type=float, default=0.8)
+    parser.add_argument('--colsample_bytree', type=float, default=0.7)
+    parser.add_argument('--min_child_weight', type=int, default=5)
     
     parser.add_argument(
         '--peak_weight', 
@@ -126,35 +137,67 @@ def train(cfg):
     random.seed(cfg["seed"])
     np.random.seed(cfg["seed"])
     
-    basins = file_num_list
+    basins = gauge_id_list
+
+    # _setup_run's run_dir is timestamped, so a restart after a kill would
+    # otherwise retrain from scratch. Skip if a completed run with these exact
+    # hyperparameters already exists under runs_xgb/{loc}/. 'seed' is deliberately NOT
+    # a match key -- get_args() defaults --seed to a random draw when omitted (same
+    # convention as the upstream EA-LSTM reference implementation, which logs that
+    # random seed in the run folder name purely for traceability), so requiring it to
+    # match would defeat resumability for any invocation that doesn't pin --seed.
+    match_keys = ['n_estimators', 'max_depth', 'learning_rate', 'subsample',
+                  'colsample_bytree', 'min_child_weight', 'peak_weight', 'no_static']
+    search_root = Path(__file__).parent / "runs_xgb" / GLOBAL_SETTINGS['loc']
+    existing_run = find_completed_run(search_root, cfg, match_keys)
+    if existing_run is not None:
+        print(f"Skipping: a completed run with these exact hyperparameters already exists at {existing_run}")
+        return
+
     cfg = _setup_run(cfg)
     for key, val in cfg.items(): print(f"{key}: {val}")
 
-    print("\nUsing global normalization scalers (matching LSTM approach)...")
+    print("\nCalculating per-basin scalers from clean data blocks...")
     dyn_cols = ['Precip', 'PET', 'Temp']
     q_col = 'Obs flow'
-    
-    # Global scalers - same as LSTM's SCALER values
-    # Maurer mean/std calculated over all basins in period 01.10.1999 until 30.09.2008
-    global_scalers = {
-        'dynamic_means': np.array([3.0267525200819776, 13.110970171836367, 10.81853041139944]),
-        'dynamic_stds': np.array([1.085855688036388, 5.04530884159448, 5.45962822094668]),
-        'q_mean': 1.6033382557458762,
-        'q_std': 1.6091810953328294
-    }
+    basin_scalers = {}
 
-    # For static attributes, we still use a global scaler
-    scalers = {'global_scalers': global_scalers}
-    
+    for basin in tqdm(basins, desc="Loading basin data for scaling"):
+        df = load_data_for_basin(basin)
+        df_period = df.loc[cfg['train_start']:cfg['train_end']]
+
+        # Calculate scalers ONLY from clean, contiguous data (mirrors main_xgb_hp.py)
+        is_nan = df_period[dyn_cols + [q_col]].isnull().any(axis=1)
+        clean_blocks = []
+        clumps = np.ma.clump_unmasked(np.ma.masked_array(df_period.index, is_nan))
+        if not isinstance(clumps, list):
+            clumps = [clumps] if clumps else []
+
+        for s in clumps:
+            start_date = df_period.index[s.start]
+            end_date = df_period.index[s.stop - 1]
+            clean_blocks.append(df_period.loc[start_date:end_date])
+
+        if not clean_blocks:
+            continue  # Skip basins with no clean data
+
+        basin_clean_df = pd.concat(clean_blocks)
+
+        basin_scalers[basin] = {
+            'q_mean': basin_clean_df[q_col].mean(),
+            'q_std': basin_clean_df[q_col].std(),
+            'dynamic_means': basin_clean_df[dyn_cols].mean().values,
+            'dynamic_stds': basin_clean_df[dyn_cols].std().values
+        }
+
+    # Per-basin scaling for dynamic inputs/target (see DEBUG_README.md §3 for why a global
+    # pooled scaler is wrong for a multi-basin regional model). Static attributes still use a
+    # global scaler since they are already basin-scale-normalized-ish physical quantities.
+    scalers = {'basin_scalers': basin_scalers}
+
     db_path = str(cfg['run_dir'] / 'attributes.db')
     add_basin_attributes(db_path=db_path, loc=GLOBAL_SETTINGS['loc'], ver_name=ver_name)
-    
-    # Define the 18 valid basin attributes to use
-    VALID_ATTR = [
-        'p_mean', 'pet_mean', 'aridity', 'seasonality', 'frac_snow', 'high_prec_freq',
-        'high_prec_dur', 'low_prec_freq', 'low_prec_dur', 'ele_mt_smn', 'slp_dg_sav', 'area',
-        'for_pc_sse', 'snd_pc_sav', 'slt_pc_sav', 'cly_pc_sav','soc_th_sav', 'swc_pc_syr']
-    
+
     attributes = None
     if not cfg["no_static"]:
         attributes = load_attributes(db_path=db_path, basins=basins, drop_lat_lon=True, keep_features=VALID_ATTR)
@@ -182,16 +225,19 @@ def train(cfg):
     sample_info = []
 
     for basin in tqdm(basins, desc="Processing basins for training"):
-        df = load_data_for_basin(int(basin))
+        if basin not in scalers['basin_scalers']:
+            continue  # Skip if no scalers were generated (no clean data)
+
+        df = load_data_for_basin(basin)
         df_period = df.loc[cfg['train_start']:cfg['train_end']]
-        gscaler = scalers['global_scalers']
-        
-        dyn_data_scaled = (df_period[dyn_cols].values - gscaler['dynamic_means']) / gscaler['dynamic_stds']
-        q_data_scaled = (df_period[q_col].values - gscaler['q_mean']) / gscaler['q_std']
+        bscaler = scalers['basin_scalers'][basin]
+
+        dyn_data_scaled = (df_period[dyn_cols].values - bscaler['dynamic_means']) / bscaler['dynamic_stds']
+        q_data_scaled = (df_period[q_col].values - bscaler['q_mean']) / bscaler['q_std']
 
         static_data_scaled = None
         if not cfg["no_static"]:
-            static_data = attributes.loc[int(basin)].values
+            static_data = attributes.loc[basin].values
             static_data_scaled = (static_data - scalers['static_means']) / scalers['static_stds']
 
         is_nan = df_period[dyn_cols + [q_col]].isnull().any(axis=1)
@@ -232,6 +278,7 @@ def train(cfg):
         'learning_rate': cfg["learning_rate"],
         'subsample': cfg["subsample"],
         'colsample_bytree': cfg["colsample_bytree"],
+        'min_child_weight': cfg["min_child_weight"],
         'random_state': cfg["seed"],
         'verbosity': 1
     }
@@ -283,13 +330,13 @@ def train(cfg):
     for basin_id in basins_to_plot:
         print(f"  Plotting basin {basin_id}...")
         basin_samples = df_samples[df_samples['basin'] == basin_id]
-        gscaler = scalers['global_scalers']
+        bscaler = scalers['basin_scalers'][basin_id]
         fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(20, 18), sharex=True)
         fig.suptitle(f'Training Debug Analysis for Basin {basin_id}', fontsize=18)
 
         ax1.set_title('Rescaled Hydrograph (Training Period)', fontsize=14)
-        obs_rescaled = (basin_samples['obs_scaled'] * gscaler['q_std']) + gscaler['q_mean']
-        pred_rescaled = (basin_samples['pred_scaled'] * gscaler['q_std']) + gscaler['q_mean']
+        obs_rescaled = (basin_samples['obs_scaled'] * bscaler['q_std']) + bscaler['q_mean']
+        pred_rescaled = (basin_samples['pred_scaled'] * bscaler['q_std']) + bscaler['q_mean']
         ax1.plot(basin_samples['date'].values, obs_rescaled.values, label='Observed', color='black')
         ax1.plot(basin_samples['date'].values, pred_rescaled.values, label='Predicted', color='red', linestyle='--')
         ax1.set_ylabel('Discharge (m³/s)')
@@ -304,7 +351,7 @@ def train(cfg):
         ax2.grid(True, linestyle='--', alpha=0.6)
 
         ax3.set_title('Original Input Data (Training Period)', fontsize=14)
-        df_basin_raw = load_data_for_basin(int(basin_id))
+        df_basin_raw = load_data_for_basin(basin_id)
         df_basin_period = df_basin_raw.loc[cfg['train_start']:cfg['train_end']]
 
         ax3.plot(df_basin_period.index, df_basin_period['PET'], label='PET', color='orange')

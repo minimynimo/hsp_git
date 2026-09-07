@@ -7,12 +7,18 @@ scaling pipeline as the training script to ensure consistency.
 
 import argparse
 import json
+import sys
 from pathlib import Path
 import numpy as np
 import pandas as pd
 import xgboost as xgb
 from tqdm import tqdm
 from sklearn.metrics import mean_squared_error
+from papercode.datautils import VALID_ATTR
+from papercode.utils import get_basin_list
+
+sys.path.insert(0, "/data0/funato/hsp2/99_work/00_analysis/data")
+from ml_predict_long_format import save_regional_predictions_long_format
 
 # ####################### #
 # Global Definitions      #
@@ -27,7 +33,7 @@ GLOBAL_SETTINGS = {
     'loc': 'US',
     'ver': 2,
     'seq_length': 270,
-    'train_start': pd.to_datetime('1993-01-01', format='%Y-%m-%d'),
+    'train_start': pd.to_datetime('1990-01-01', format='%Y-%m-%d'),
     'train_end': pd.to_datetime('2000-12-31', format='%Y-%m-%d'),
     'val_start': pd.to_datetime('2001-01-01', format='%Y-%m-%d'),
     'val_end': pd.to_datetime('2006-12-31', format='%Y-%m-%d')
@@ -39,19 +45,20 @@ benchmark_list = ["NSE", "KGE", "E1", "VE", "d", "RMSE", "MAE"]
 # Utility Functions       #
 # ####################### #
 
-def file_name(input_num, total_len):
-    return str(input_num).zfill(total_len)
-
-def load_data_for_basin(file_num):
+def load_data_for_basin(gauge_id):
     varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim_{GLOBAL_SETTINGS['loc']}"
-    df = pd.read_csv(f"{varssim_dir}/varssim{file_name(file_num, 3)}.csv")
+    df = pd.read_csv(f"{varssim_dir}/varssim_{gauge_id}.csv")
     df['Date'] = pd.to_datetime(df['Date'])
     df.set_index('Date', inplace=True)
     return df
 
-def load_attributes(db_path: str, basins: list, drop_lat_lon: bool = True) -> pd.DataFrame:
+def load_attributes(db_path: str, basins: list, drop_lat_lon: bool = True, keep_features: list = None) -> pd.DataFrame:
+    # NOTE: this local wrapper used to silently drop the keep_features kwarg that main() passes it
+    # (TypeError: unexpected keyword argument), meaning the no_static=False path here had never
+    # actually been exercised end-to-end -- same class of bug as TCN's dropped-kwargs wrapper
+    # functions, see DEBUG_README.md.
     from papercode.datautils import load_attributes as load_attributes_from_lib
-    return load_attributes_from_lib(db_path, basins, drop_lat_lon)
+    return load_attributes_from_lib(db_path, basins, drop_lat_lon, keep_features=keep_features)
 
 def BMK(obs_data, sim_data, benchmark):    
     """Calculate benchmark metrics"""
@@ -124,20 +131,22 @@ def evaluate_period(model, basins, cfg, scalers, attributes, start_date, end_dat
     seq_length = cfg['seq_length']
 
     for basin in tqdm(basins, desc="Processing basins"):
-        df = load_data_for_basin(int(basin))
+        if basin not in scalers['basin_scalers']:
+            continue
+
+        df = load_data_for_basin(basin)
         warmup_start = start_date - pd.DateOffset(days=seq_length - 1)
         df_period = df.loc[warmup_start:end_date]
-        
-        # ## MODIFICATION: Use global scaler instead of per-basin ##
-        gscaler = scalers['global_scalers']
-        dyn_data_scaled = (df_period[dyn_cols].values - gscaler['dynamic_means']) / gscaler['dynamic_stds']
-        # ## MODIFICATION END ##
-        
+
+        # Use per-basin scaler (must match training convention in main_xgb.py)
+        bscaler = scalers['basin_scalers'][basin]
+        dyn_data_scaled = (df_period[dyn_cols].values - bscaler['dynamic_means']) / bscaler['dynamic_stds']
+
         q_data_raw = df_period[q_col].values
         
         static_data_scaled = None
         if not cfg["no_static"]:
-            static_data = attributes.loc[int(basin)].values
+            static_data = attributes.loc[basin].values
             # Static attributes use global scaler
             static_data_scaled = (static_data - scalers['static_means']) / scalers['static_stds']
         
@@ -181,16 +190,16 @@ def evaluate_period(model, basins, cfg, scalers, attributes, start_date, end_dat
     print("Making predictions...")
     predictions_scaled = model.predict(X_eval)
     
-    # ## MODIFICATION START: Rescale predictions using the correct per-basin scaler for each sample ##
+    # Rescale predictions using the correct per-basin scaler for each sample
     results_df = pd.DataFrame({
         'date': date_list, 'basin': basin_list,
         'pred_scaled': predictions_scaled, 'observation': y_eval_raw
     })
-    
+
     def rescale_row(row):
-        gscaler = scalers['global_scalers']
-        return (row['pred_scaled'] * gscaler['q_std']) + gscaler['q_mean']
-        
+        bscaler = scalers['basin_scalers'][row['basin']]
+        return (row['pred_scaled'] * bscaler['q_std']) + bscaler['q_mean']
+
     results_df['prediction'] = results_df.apply(rescale_row, axis=1)
     results_df['prediction'] = results_df['prediction'].clip(lower=0)
 
@@ -218,32 +227,35 @@ def evaluate_synthetic_period(model, basins, cfg, scalers, attributes, scenario_
     seq_length = cfg['seq_length']
 
     for basin in tqdm(basins, desc=f"Processing basins for {scenario_col}"):
-        df = load_data_for_basin(int(basin))
+        if basin not in scalers['basin_scalers']:
+            continue
+
+        df = load_data_for_basin(basin)
         warmup_start = start_date - pd.DateOffset(days=seq_length - 1)
         df_period = df.loc[warmup_start:end_date]
-        
+
         # Check if synthetic column exists
         if scenario_col not in df_period.columns:
             continue
-        
+
         # Create synthetic data by replacing precipitation
         df_syn = df_period.copy()
         df_syn['Precip'] = df_syn[scenario_col]
-        
+
         # Use peak temperature and PET if it's a peak scenario
         if 'peak' in scenario_col:
             if 'Temp_at_peak' in df_syn.columns:
                 df_syn['Temp'] = df_syn['Temp_at_peak']
             if 'PET_at_peak' in df_syn.columns:
                 df_syn['PET'] = df_syn['PET_at_peak']
-        
-        # Use global scaler
-        gscaler = scalers['global_scalers']
-        dyn_data_scaled = (df_syn[dyn_cols].values - gscaler['dynamic_means']) / gscaler['dynamic_stds']
+
+        # Use per-basin scaler from original data (must match training convention)
+        bscaler = scalers['basin_scalers'][basin]
+        dyn_data_scaled = (df_syn[dyn_cols].values - bscaler['dynamic_means']) / bscaler['dynamic_stds']
         
         static_data_scaled = None
         if not cfg["no_static"]:
-            static_data = attributes.loc[int(basin)].values
+            static_data = attributes.loc[basin].values
             static_data_scaled = (static_data - scalers['static_means']) / scalers['static_stds']
         
         # Check for NaN in synthetic data
@@ -294,9 +306,9 @@ def evaluate_synthetic_period(model, basins, cfg, scalers, attributes, scenario_
     })
     
     def rescale_row(row):
-        gscaler = scalers['global_scalers']
-        return row['pred_scaled'] * gscaler['q_std'] + gscaler['q_mean']
-        
+        bscaler = scalers['basin_scalers'][row['basin']]
+        return row['pred_scaled'] * bscaler['q_std'] + bscaler['q_mean']
+
     results_df['prediction'] = results_df.apply(rescale_row, axis=1)
     results_df['prediction'] = results_df['prediction'].clip(lower=0)
 
@@ -316,17 +328,27 @@ def main():
         cfg = json.load(fp)
     with open(run_dir / 'scalers.json', 'r') as fp:
         scalers = json.load(fp)
-        # Convert nested numpy arrays for global_scalers
-        if 'global_scalers' in scalers:
-            for key, val in scalers['global_scalers'].items():
-                if isinstance(val, list):
-                    scalers['global_scalers'][key] = np.array(val)
-        # Legacy support: convert basin_scalers if they exist (shouldn't be used anymore)
+        # basin_scalers is the canonical (per-basin) normalization convention -- see
+        # DEBUG_README.md for why per-basin, not global pooled, normalization is required
+        # for a regional model. Convert its nested lists back to numpy arrays.
         if 'basin_scalers' in scalers:
             for b_id, b_scaler in scalers['basin_scalers'].items():
                 for key, val in b_scaler.items():
                     if isinstance(val, list):
                         b_scaler[key] = np.array(val)
+        else:
+            raise ValueError(
+                f"{run_dir / 'scalers.json'} has no 'basin_scalers' key -- this run was trained "
+                "with the old (buggy) global-normalization code path and is not compatible with "
+                "this evaluation script's per-basin rescaling. Retrain with the current main_xgb.py."
+            )
+        # Legacy support only: old runs may have a global_scalers key: convert it too so old
+        # run directories don't crash on load, but evaluate_period/evaluate_synthetic_period no
+        # longer read from it.
+        if 'global_scalers' in scalers:
+            for key, val in scalers['global_scalers'].items():
+                if isinstance(val, list):
+                    scalers['global_scalers'][key] = np.array(val)
         if 'static_means' in scalers and isinstance(scalers['static_means'], list):
             scalers['static_means'] = np.array(scalers['static_means'])
         if 'static_stds' in scalers and isinstance(scalers['static_stds'], list):
@@ -341,27 +363,11 @@ def main():
     model = xgb.XGBRegressor()
     model.load_model(model_file)
     
-    if GLOBAL_SETTINGS['loc'] == "JP":
-        file_tot_num = 87
-        basins = list(map(str, range(1, file_tot_num + 1)))
-    elif GLOBAL_SETTINGS['loc'] == "GB":
-        file_tot_num = 424
-        basins = list(map(str, range(1, file_tot_num + 1)))
-    elif GLOBAL_SETTINGS['loc'] == "US":
-        # Load small basins list (area < 1000 km²) for US
-        small_basins_csv = "/data0/funato/hsp2/3_gis_data/US/0_data/river_basin/dataset_US/small_basins_1000.csv"
-        small_basins_df = pd.read_csv(small_basins_csv)
-        basins = small_basins_df['basin_id'].astype(str).tolist()
+    basins = get_basin_list(GLOBAL_SETTINGS['loc'])
     if args.n_basins:
         basins = basins[:args.n_basins]
         print(f"Processing only first {args.n_basins} basins for testing.")
         
-    # Define the 18 valid basin attributes to use
-    VALID_ATTR = [
-        'p_mean', 'pet_mean', 'aridity', 'seasonality', 'frac_snow', 'high_prec_freq',
-        'high_prec_dur', 'low_prec_freq', 'low_prec_dur', 'ele_mt_smn', 'slp_dg_sav', 'area',
-        'for_pc_sse', 'snd_pc_sav', 'slt_pc_sav', 'cly_pc_sav','soc_th_sav', 'swc_pc_syr']
-    
     attributes = None
     if not cfg.get("no_static", True):
         db_path = str(run_dir / 'attributes.db')
@@ -374,25 +380,41 @@ def main():
 
     periods = {'cal': (train_start, train_end), 'eva': (val_start, val_end)}
     output_base = Path(f"/data0/funato/hsp2/0_out/XGB/{GLOBAL_SETTINGS['loc']}/regional")
-    
+
+    # Run tag: must encode every config dimension that affects the result, not just the ones
+    # currently swept in a given hp grid. Without this, two runs that differ only in no_static
+    # (or hyperparameters) but share nothing in the filename silently overwrite each other's
+    # results -- see DEBUG_README.md for the identical bug found (and fixed) in the LSTM
+    # pipeline. This also mirrors the PARAM_STRING run_eval_xgb.sh already computes/prints but
+    # never actually passed through to this script's output filenames.
+    ns_tag = "ns1" if cfg.get("no_static", True) else "ns0"
+    run_tag = (
+        f"{ns_tag}_n{cfg.get('n_estimators')}_d{cfg.get('max_depth')}"
+        f"_lr{cfg.get('learning_rate')}_sub{cfg.get('subsample')}"
+        f"_col{cfg.get('colsample_bytree')}_sl{cfg.get('seq_length')}"
+    )
+    print(f"Run tag for output filenames: {run_tag}")
+
+    og_frames = []
     for period_name, (start, end) in periods.items():
         predictions_df, metrics_df = evaluate_period(model, basins, cfg, scalers, attributes, start, end)
-        
+
         if predictions_df is not None and metrics_df is not None:
+            og_frames.append(predictions_df)
             pred_dir = output_base / "predict"
             pred_dir.mkdir(parents=True, exist_ok=True)
-            pred_path = pred_dir / f"XGB_predict_{period_name}.csv"
-            
+            pred_path = pred_dir / f"XGB_predict_{run_tag}_{period_name}.csv"
+
             pivot_df = predictions_df.pivot_table(index='basin', columns='date', values='prediction')
-            # Sort basins numerically
-            basin_ids_sorted = sorted([int(b) for b in pivot_df.index])
-            pivot_df = pivot_df.loc[[str(b) for b in basin_ids_sorted]]
+            # Sort basins (gauge_id strings, e.g. leading-zero US ids -- must sort as strings,
+            # not int() round-tripped, or the leading zero is lost and the .loc lookup KeyErrors)
+            pivot_df = pivot_df.sort_index()
             pivot_df.to_csv(pred_path, index_label='basin')
             print(f"Pivoted predictions for {period_name} period saved to {pred_path}")
-            
+
             results_dir = output_base / "results"
             results_dir.mkdir(parents=True, exist_ok=True)
-            results_path = results_dir / f"XGB_results_{period_name}.csv"
+            results_path = results_dir / f"XGB_results_{run_tag}_{period_name}.csv"
             metrics_df.to_csv(results_path, index_label='basin')
             print(f"Metrics for {period_name} period saved to {results_path}")
             
@@ -405,26 +427,43 @@ def main():
     print("Starting Synthetic Scenario Evaluation...")
     print("="*60)
     
+    scenario_predictions = {}
     for scenario_col in syn_precip_cols:
         # Use evaluation period for synthetic scenarios
         # For peak scenarios, use shorter period
         syn_end = pd.to_datetime('2001-02-10') if 'peak' in scenario_col else val_end
-        
+
         predictions_df = evaluate_synthetic_period(
             model, basins, cfg, scalers, attributes, scenario_col, val_start, syn_end)
-        
+
         if predictions_df is not None:
             pred_dir = output_base / "predict" / "synthetic"
             pred_dir.mkdir(parents=True, exist_ok=True)
-            pred_path = pred_dir / f"XGB_predict_{scenario_col}_eva.csv"
-            
+            pred_path = pred_dir / f"XGB_predict_{run_tag}_{scenario_col}_eva.csv"
+
             pivot_df = predictions_df.pivot_table(index='basin', columns='date', values='prediction')
-            # Sort basins numerically
-            basin_ids_sorted = sorted([int(b) for b in pivot_df.index])
-            pivot_df = pivot_df.loc[[str(b) for b in basin_ids_sorted]]
+            # Sort basins as strings -- see note above about leading-zero gauge ids.
+            pivot_df = pivot_df.sort_index()
             pivot_df.to_csv(pred_path, index_label='basin')
             print(f"Pivoted synthetic predictions for '{scenario_col}' saved to {pred_path}")
-    
+
+            scenario_predictions[scenario_col] = {
+                basin: g.set_index('date')['prediction']
+                for basin, g in predictions_df.groupby('basin')
+            }
+
+    # Write the long-format per-basin prediction files directly (og + all synthetic scenarios),
+    # matching reshape_ML_predict.py's old output exactly so that reshape step is no longer
+    # needed. The wide cal/eva/synthetic matrices above are still written too, for backward
+    # compatibility with anything else that reads them.
+    if og_frames:
+        og_df = pd.concat(og_frames, axis=0)
+        scenario_predictions["og"] = {
+            basin: g.set_index('date')['prediction'].sort_index()
+            for basin, g in og_df.groupby('basin')
+        }
+    save_regional_predictions_long_format("XGB", GLOBAL_SETTINGS["loc"], scenario_predictions, basins)
+
     print("\nRegional XGBoost evaluation completed successfully!")
 
 if __name__ == "__main__":

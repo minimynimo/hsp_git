@@ -6,61 +6,72 @@ import numpy as np
 import os
 import xgboost as xgb
 from sklearn.preprocessing import StandardScaler
+import sys
 
 from datetime import datetime
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "XGB_regional_modeling-master"))
+from papercode.utils import get_basin_list
+from xgb_indiv_resume import load_completed_basins, ensure_predict_header
 
 benchmark_list = ["KGE","NSE","E1", "VE", "d","RMSE","MAE"]
 
 #loc, ver = "JP", 2
-loc, ver = "GB", 2
+# loc, ver = "GB", 2
+loc, ver = "US", 2
+
 
 ver_name = "ver1_1" if ver == 1 else "ver2_0"   
 
 if loc == "JP" and ver == 2:
-    file_tot_num = 87
     varssim_dir = f"/data0/funato/2_MERV/{loc}/varssim_nocal/{ver_name}"
 elif loc == "GB" and ver == 2:
-    file_tot_num = 424
-    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim"
+    # NOTE: was hardcoded to the stale "/data0/funato/hsp2/2_MERV/varssim" (pre-rename path, no
+    # longer exists -- data now lives under varssim_GB). See DEBUG_README.md stale-path bug class.
+    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim_GB"
+elif loc == "US" and ver == 2:
+    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim_US"
 
-file_list = list(range(1, file_tot_num+1))
-#file_list = list(range(20,30))
+gauge_id_list = get_basin_list(loc)
+#gauge_id_list = gauge_id_list[20:30]
 
-start_date_cal = '1993-01-01'
-end_date_cal = '2000-12-31'
-start_date_eva = '2001-01-01'
-end_date_eva = '2006-12-31'
+# HP-search calibration/validation split -- must not touch the real held-out test period
+# (2001-01-01..2006-12-31): calibration is 1990-1998, validation is 1999-2000.
+start_date_cal = '1990-01-01'
+end_date_cal = '1998-12-31'
+start_date_eva = '1999-01-01'
+end_date_eva = '2000-12-31'
 
-# Parse hyperparameters from command line
+# Parse hyperparameters from command line. Grid per HYPERPARAMETERS.md (individual):
+# N_ESTIMATORS{500,1000}, SUBSAMPLE{0.5,0.6,0.7}, COLSAMPLE_BY_TREE{0.7,0.8,1.0},
+# LEARNING_RATE{0.01,0.05,0.1}, MAX_DEPTH{2,3,4}, MIN_CHILD_WEIGHT{5,10,20}.
+# subsample/colsample_bytree/min_child_weight were previously hardcoded constants (not CLI args
+# at all) -- extended to match the n_estimators/max_depth/learning_rate CLI pattern already here.
 parser = argparse.ArgumentParser()
-parser.add_argument('--n_estimators', type=int, default=100, help='Number of boosting rounds (I: 100/300)')
-parser.add_argument('--max_depth', type=int, default=3, help='Maximum tree depth (I: 3/4)')
-parser.add_argument('--learning_rate', type=float, default=0.05, help='Learning rate (I: 0.05/0.1)')
+parser.add_argument('--n_estimators', type=int, default=500, help='Number of boosting rounds (I: 500/1000)')
+parser.add_argument('--max_depth', type=int, default=3, help='Maximum tree depth (I: 2/3/4)')
+parser.add_argument('--learning_rate', type=float, default=0.05, help='Learning rate (I: 0.01/0.05/0.1)')
+parser.add_argument('--subsample', type=float, default=0.7, help='Row sampling ratio (I: 0.5/0.6/0.7)')
+parser.add_argument('--colsample_bytree', type=float, default=0.8, help='Column sampling ratio (I: 0.7/0.8/1.0)')
+parser.add_argument('--min_child_weight', type=int, default=10, help='Minimum child weight (I: 5/10/20)')
 args = parser.parse_args()
 
 n_estimators = args.n_estimators
 max_depth = args.max_depth
 learning_rate = args.learning_rate
+subsample = args.subsample
+colsample_bytree = args.colsample_bytree
+min_child_weight = args.min_child_weight
 
-# Fixed hyperparameters
-subsample = 0.8
-colsample_bytree = 0.8
-min_child_weight = 1
-
-hp_str = f"n{n_estimators}_d{max_depth}_lr{learning_rate}"
+hp_str = f"n{n_estimators}_d{max_depth}_lr{learning_rate}_ss{subsample}_cbt{colsample_bytree}_mcw{min_child_weight}"
 output_dir = f"/data0/funato/hsp2/0_out/XGB/{loc}/individual/hp/{hp_str}"
 os.makedirs(output_dir, exist_ok=True)
 os.makedirs(output_dir + "/predict", exist_ok=True)
 os.makedirs(output_dir + "/results", exist_ok=True)
 
 
-def file_name(input_num, total_len):
-    car_len = len(str(input_num))
-    zero_len = total_len - car_len
-    return '0' * zero_len + str(input_num)
-
-def load_data(file_num):
-    df = pd.read_csv(f"{varssim_dir}/varssim{file_name(file_num, 3)}.csv")
+def load_data(gauge_id):
+    df = pd.read_csv(f"{varssim_dir}/varssim_{gauge_id}.csv")
     
     if loc == "JP":
         df['Date'] = pd.to_datetime(df[['Year', 'Month', 'Day']])
@@ -129,22 +140,36 @@ def BMK(obs_data,sim_data,benchmark):
         return np.mean(np.abs(obs_data - sim_data))
     
 
-if os.path.exists(output_dir + f'/XGB_{hp_str}_log.txt'):
-    open(output_dir + f'/XGB_{hp_str}_log.txt', 'w').close()
+results_cal_path = output_dir + f'/results/XGB_results_cal.csv'
+results_eva_path = output_dir + f'/results/XGB_results_eva.csv'
+predict_cal_path = output_dir + f"/predict/XGB_predict_cal.csv"
+predict_eva_path = output_dir + f"/predict/XGB_predict_eva.csv"
+
+completed_basins, results_cal, results_eva = load_completed_basins(results_cal_path, results_eva_path)
+
+n_days_cal = len(pd.date_range(start=start_date_cal, end=end_date_cal)) - 1
+n_days_eva = len(pd.date_range(start=start_date_eva, end=end_date_eva)) - 1
+ensure_predict_header(predict_cal_path, pd.date_range(start=pd.to_datetime(start_date_cal) + pd.DateOffset(days=1), periods=n_days_cal))
+ensure_predict_header(predict_eva_path, pd.date_range(start=pd.to_datetime(start_date_eva) + pd.DateOffset(days=1), periods=n_days_eva))
+
 log_file = open(output_dir + f'/XGB_{hp_str}_log.txt', 'a')
+if completed_basins:
+    log_file.write(f"RESUME: {len(completed_basins)} basins already completed, skipping them.\n")
+    log_file.flush()
+    print(f"Resuming: {len(completed_basins)} basins already completed, skipping them.")
 
-results_cal = []
-results_eva = []
+for gauge_id in gauge_id_list:
+    if str(gauge_id) in completed_basins:
+        continue
 
-for file_num in file_list:
     start_time = datetime.now()
     start_time_st = start_time.strftime("%a %b %d %I:%M:%S %p JST %Y")
-    log_file.write(f"FILE_{file_num}\n")
+    log_file.write(f"BASIN_{gauge_id}\n")
     log_file.write(f"start: {start_time_st}\n")
     log_file.flush()
 
     ### INPUT DATA ###
-    df = load_data(file_num)
+    df = load_data(gauge_id)
 
     df_cal = df[start_date_cal:end_date_cal].copy()  # Use copy to avoid SettingWithCopyWarning
     df_eva = df[start_date_eva:end_date_eva].copy()
@@ -159,16 +184,27 @@ for file_num in file_list:
         df_eva['Temp'].shift(1).values.reshape(-1, 1),
         df_eva['PET'].shift(1).values.reshape(-1, 1)]) # Observed - Simulation
 
-    input_cal = input_cal[:-1] #2898
-    input_eva = input_eva[:-1] #1089
+    # shift(1) leaves a leading NaN row; align input and target on the same [1:] slice so
+    # Precip/Temp/PET at day k-1 pairs with Obs flow at day k (was previously input[:-1]
+    # vs target[1:], a 2-day misalignment plus a stray NaN row -- see DEBUG_README.md §16.13).
+    input_cal = input_cal[1:]
+    input_eva = input_eva[1:]
+
+    target_cal = df_cal['Obs flow'].values[1:]
+    target_eva = df_eva['Obs flow'].values[1:]
 
     scaler = StandardScaler()
     input_cal = scaler.fit_transform(input_cal)
     input_eva = scaler.transform(input_eva)
 
-    target_cal = df_cal['Obs flow'].values[1:] #2898
-    target_eva = df_eva['Obs flow'].values[1:] #1089
-
+    # A handful of basins (e.g. 03066000, 12141300) have a full missing year inside the
+    # calibration or evaluation period after reindex -- StandardScaler passes NaN through
+    # silently, and while XGBoost tolerates NaN in X (treated as missing), it rejects NaN in y
+    # at fit time. Fit and predict only on finite rows; leave NaN placeholders elsewhere so
+    # predict_cal/eva keep the same length as the date-range header written by
+    # ensure_predict_header (BMK() already NaN-masks for metrics).
+    valid_cal = ~(np.isnan(target_cal) | np.isnan(input_cal).any(axis=1))
+    valid_eva = ~(np.isnan(target_eva) | np.isnan(input_eva).any(axis=1))
 
     xgb_model = xgb.XGBRegressor(
         objective='reg:squarederror',
@@ -182,41 +218,29 @@ for file_num in file_list:
         random_state=42
     )
 
-    
-    xgb_model.fit(input_cal, target_cal)
-    
-    predict_cal=xgb_model.predict(input_cal)
-    predict_eva=xgb_model.predict(input_eva)
+    xgb_model.fit(input_cal[valid_cal], target_cal[valid_cal])
+
+    predict_cal = np.full(len(target_cal), np.nan)
+    predict_eva = np.full(len(target_eva), np.nan)
+    predict_cal[valid_cal] = xgb_model.predict(input_cal[valid_cal])
+    predict_eva[valid_eva] = xgb_model.predict(input_eva[valid_eva])
 
     predict_cal[predict_cal < 0] = 0
     predict_eva[predict_eva < 0] = 0
 
-    print(f"file_num: {file_num}, NSE_cal: {BMK(target_cal, predict_cal, 'NSE')}, NSE_eva: {BMK(target_eva, predict_eva, 'NSE')}")
+    print(f"gauge_id: {gauge_id}, NSE_cal: {BMK(target_cal, predict_cal, 'NSE')}, NSE_eva: {BMK(target_eva, predict_eva, 'NSE')}")
 
 
-    file_row_cal = [f'file_{file_num}_cal'] + list(predict_cal.flatten())
-    file_row_eva = [f'file_{file_num}_eva'] + list(predict_eva.flatten())
+    file_row_cal = [f'basin_{gauge_id}_cal'] + list(predict_cal.flatten())
+    file_row_eva = [f'basin_{gauge_id}_eva'] + list(predict_eva.flatten())
 
-    if file_num == 1:
-        predict_cal_dates = pd.date_range(start=pd.to_datetime(start_date_cal) + pd.DateOffset(days=1), periods=len(predict_cal))
-        predict_eva_dates = pd.date_range(start=pd.to_datetime(start_date_eva) + pd.DateOffset(days=1), periods=len(predict_eva))
-
-        date_row_cal = list(['Date'] + [str(date.date()) for date in predict_cal_dates])
-        date_row_eva = list(['Date'] + [str(date.date()) for date in predict_eva_dates])
-
-        predict_cal_df = pd.DataFrame([date_row_cal])
-        predict_eva_df = pd.DataFrame([date_row_eva])
-
-        predict_cal_df.to_csv(output_dir + f"/predict/XGB_predict_cal.csv", mode='w', index=False, header=False)
-        predict_eva_df.to_csv(output_dir + f"/predict/XGB_predict_eva.csv", mode='w', index=False, header=False)
-
-    with open(output_dir + f"/predict/XGB_predict_cal.csv", 'a') as file:
+    with open(predict_cal_path, 'a') as file:
         pd.DataFrame([file_row_cal]).to_csv(file, header=False, index=False)
-    with open(output_dir + f"/predict/XGB_predict_eva.csv", 'a') as file:
+    with open(predict_eva_path, 'a') as file:
         pd.DataFrame([file_row_eva]).to_csv(file, header=False, index=False)
 
-    file_results_cal = {'file_num': file_num}
-    file_results_eva = {'file_num': file_num}
+    file_results_cal = {'gauge_id': gauge_id}
+    file_results_eva = {'gauge_id': gauge_id}
 
     # Loop over each benchmark and add results to the current file's dictionary
     for benchmark in benchmark_list:
@@ -232,17 +256,17 @@ for file_num in file_list:
 
     # Save results to CSV after each file
     df_results_cal = pd.DataFrame(results_cal)
-    df_results_cal.to_csv(output_dir + f'/results/XGB_results_cal.csv', index=False, header=True)
+    df_results_cal.to_csv(results_cal_path, index=False, header=True)
 
     df_results_eva = pd.DataFrame(results_eva)
-    df_results_eva.to_csv(output_dir + f'/results/XGB_results_eva.csv', index=False, header=True)
+    df_results_eva.to_csv(results_eva_path, index=False, header=True)
 
     end_time = datetime.now()
     end_time_st = end_time.strftime("%a %b %d %I:%M:%S %p JST %Y")
     log_file.write(f"end: {end_time_st}\n")
     log_file.write(f"elapsed: {end_time - start_time}\n")
-    log_file.write(f"Results saved for file {file_num}\n")
-    print(f"Results saved for file {file_num}")
+    log_file.write(f"Results saved for basin {gauge_id}\n")
+    print(f"Results saved for basin {gauge_id}")
 
 log_file.write(f"DONE\n")
 log_file.close()
