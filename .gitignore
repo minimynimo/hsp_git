@@ -6,3 +6,6 @@
 **/bash_logs/
 
 **/*.pkl
+**/_archive/**/hp/
+**/_runs/
+**/cache
