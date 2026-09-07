@@ -1,0 +1,11 @@
+**/*.pyc
+**/*.pt
+**/*.db
+**/*.p
+**/*.log
+
+*/.ipynb_checkpoints/*.ipynb
+.vscode
+runs/
+
+99_work/10_LSTM/ealstm_regional_modeling-master/notebooks/*.p
