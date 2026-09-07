@@ -11,12 +11,12 @@ base_dir = "/data0/funato/hsp2/0_out"
 output_dir = f"/data0/funato/hsp2/0_out/analysis/{loc}/summary_ranking_multi/automated_ranks"
 os.makedirs(output_dir, exist_ok=True)
 
-model_list = ["HBV", "HYPER", "RF", "XGB", "TCN", "LSTM"]
-# Note: In file paths, HYPER might be labeled as BC. We handle this mapping below.
+model_list = ["HBV", "BC", "RF", "XGB", "TCN", "LSTM"]
+# Note: In file paths, BC might be labeled as BC. We handle this mapping below.
 
 """# --- Helper to map model names to file paths ---
 def get_model_path_name(model_name):
-    return "BC" if model_name == "HYPER" else model_name
+    return "BC" if model_name == "BC" else model_name
 """
 # ==========================================
 # 1. MASS CONSERVATION RANKING (Composite)
@@ -32,7 +32,7 @@ def calculate_mass_ranks():
         try:
             df_mass = pd.read_csv(mass_file)
             if 'Model' in df_mass.columns:
-                df_mass['Model'] = df_mass['Model'].astype(str).str.strip().replace({'BC': 'HYPER'})
+                df_mass['Model'] = df_mass['Model'].astype(str).str.strip().replace({'BC': 'BC'})
             
             for model in model_list:
                 model_data = df_mass[df_mass['Model'] == model]
@@ -56,7 +56,7 @@ def calculate_mass_ranks():
         try:
             df_et = pd.read_csv(et_file)
             if 'Model' in df_et.columns:
-                df_et['Model'] = df_et['Model'].astype(str).str.strip().replace({'BC': 'HYPER'})
+                df_et['Model'] = df_et['Model'].astype(str).str.strip().replace({'BC': 'BC'})
             
             # Extract Observed Data
             df_obs = df_et[df_et['Model'] == 'Observed'][['File_num', 'Daily_Mean_ET']].copy()
@@ -127,7 +127,7 @@ def calculate_drought_ranks():
              df.rename(columns={df.columns[0]: 'Model'}, inplace=True)
 
         df['Model'] = df['Model'].astype(str).str.strip()
-        df['Model'] = df['Model'].replace({'BC': 'HYPER'})
+        df['Model'] = df['Model'].replace({'BC': 'BC'})
         
         scores = {}
         for model in model_list:

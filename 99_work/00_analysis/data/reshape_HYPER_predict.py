@@ -1,5 +1,5 @@
-## reshape HYPER prediction results to match the HBV format
-## Fixed version to handle transposed HYPER prediction files
+## reshape BC prediction results to match the HBV format
+## Fixed version to handle transposed BC prediction files
 
 import pandas as pd
 import numpy as np  
@@ -18,20 +18,20 @@ peak_length_list = [1, 3, 5]
 rate_list = [0, 10, 30, 50]
 
 base_input_dir = f"/data0/funato/hsp2/2_MERV/varssim_{loc}"
-input_dir = f"/data0/funato/hsp2/0_out/HYPER/{loc}/predict"
-output_dir = f"/data0/funato/hsp2/0_out/HYPER/{loc}/varssim_HYPER"
+input_dir = f"/data0/funato/hsp2/0_out/BC/{loc}/predict"
+output_dir = f"/data0/funato/hsp2/0_out/BC/{loc}/varssim_BC"
 os.makedirs(output_dir, exist_ok=True)
 
 def load_transposed_hyper_data(sim_col, file_num):
-    """Load HYPER prediction data from transposed format files for a specific scenario and file"""
+    """Load BC prediction data from transposed format files for a specific scenario and file"""
     
     if sim_col == 'og':
         # Handle 'og' scenario with transposed files
-        cal_file = f"/data0/funato/hsp2/0_out/HYPER/{loc}/predict/HYPER_predict_cal.csv"
-        eva_file = f"/data0/funato/hsp2/0_out/HYPER/{loc}/predict/HYPER_predict_eva.csv"
+        cal_file = f"/data0/funato/hsp2/0_out/BC/{loc}/predict/BC_predict_cal.csv"
+        eva_file = f"/data0/funato/hsp2/0_out/BC/{loc}/predict/BC_predict_eva.csv"
         
         if not os.path.exists(cal_file) or not os.path.exists(eva_file):
-            print(f"Warning: HYPER files for og do not exist.")
+            print(f"Warning: BC files for og do not exist.")
             return None
         
         # Load the transposed data
@@ -79,11 +79,11 @@ def load_transposed_hyper_data(sim_col, file_num):
     
     else:
         # Handle other scenarios with transposed files
-        cal_file = os.path.join(input_dir,'synthetic', f"HYPER_predict_{sim_col}_cal.csv")
-        eva_file = os.path.join(input_dir,'synthetic', f"HYPER_predict_{sim_col}_eva.csv")
+        cal_file = os.path.join(input_dir,'synthetic', f"BC_predict_{sim_col}_cal.csv")
+        eva_file = os.path.join(input_dir,'synthetic', f"BC_predict_{sim_col}_eva.csv")
         
         if not os.path.exists(cal_file) or not os.path.exists(eva_file):
-            print(f"Warning: HYPER files for {sim_col} do not exist.")
+            print(f"Warning: BC files for {sim_col} do not exist.")
             return None
         
         # Load the transposed data
@@ -131,7 +131,7 @@ def load_transposed_hyper_data(sim_col, file_num):
 
 # Process each file
 for file_num in range(1, file_tot_num + 1):
-    print(f"Processing file {file_num} for model HYPER")
+    print(f"Processing file {file_num} for model BC")
     base_file = f"{base_input_dir}/varssim{file_num:03d}.csv"
     
     if not os.path.exists(base_file):
@@ -148,7 +148,7 @@ for file_num in range(1, file_tot_num + 1):
                 'syn_peak3_rate0','syn_peak3_rate10', 'syn_peak3_rate30', 'syn_peak3_rate50',
                 'syn_peak5_rate0','syn_peak5_rate10', 'syn_peak5_rate30', 'syn_peak5_rate50']].copy()
     
-    # Add synthetic columns for HYPER predictions
+    # Add synthetic columns for BC predictions
     for sim_col in pred_discharge_cols:
         base_df[sim_col] = np.nan
     
@@ -221,22 +221,22 @@ for file_num in range(1, file_tot_num + 1):
                 column_name = f"syn_peak{peak_length}_rate{rate}"
                 base_df[column_name] = base_df[precip_col]
     
-    # Process HYPER predictions for each scenario
+    # Process BC predictions for each scenario
     for sim_col in pred_discharge_cols:
-        print(f"  Processing HYPER predictions for scenario: {sim_col}")
+        print(f"  Processing BC predictions for scenario: {sim_col}")
         
-        # Load HYPER prediction data for this scenario and file
+        # Load BC prediction data for this scenario and file
         hyper_predictions = load_transposed_hyper_data(sim_col, file_num)
         
         if hyper_predictions is not None:
-            # Align the HYPER predictions with the base dataframe index
+            # Align the BC predictions with the base dataframe index
             hyper_predictions = hyper_predictions.reindex(base_df.index)
             
             # Fill the prediction column
             base_df[sim_col] = hyper_predictions.values
-            print(f"    Successfully loaded HYPER predictions for {sim_col}")
+            print(f"    Successfully loaded BC predictions for {sim_col}")
         else:
-            print(f"    Warning: Could not load HYPER predictions for {sim_col}, filling with NaN")
+            print(f"    Warning: Could not load BC predictions for {sim_col}, filling with NaN")
             base_df[sim_col] = np.nan
 
     # Save the reshaped DataFrame to a new CSV file

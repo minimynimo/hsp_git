@@ -19,7 +19,9 @@ fontsize = 20
 
 benchmark_list = ["KGE", "NSE", "E1", "VE", "d", "RMSE", "MAE"]
 
-basin_ids = pd.read_csv("/data0/funato/hsp2/3_gis_data/US/0_data/river_basin/dataset_US/small_basins_2000.csv", index_col=None, header=0)["basin_id"].tolist()
+# us_file_num.csv is filtered (by us_basin_filter.py) to only the basins with complete
+# Obs flow/Precip/Temp/PET data over the full calibration+evaluation period.
+basin_ids = pd.read_csv("/data0/funato/hsp2/3_gis_data/US/0_data/river_basin/dataset_US/us_file_num.csv")["gauge_id"].str.replace("camels_", "", regex=False).astype(int).tolist()
 
 
 benchmark_limits = {
@@ -46,18 +48,20 @@ benchmark_limits_cdf = {
 
 color_list = {
     "HBV": "#7B7B7B",    # Kept as requested (Medium Grey)
-    "HYPER": "#628AE8",     # Kept as requested (Steel Blue)
+    "HYPER": "#628AE8",  # Kept as requested (Steel Blue)
     "RF":   "#FF7F00",   # Red
     "XGB":  "#9C4803",   # Bright Orange
     "TCN":  "#E41A1C",   # Reddish Purple / Magenta
     "LSTM": "#9808B2"    # Purple
 }
 
+# Tags match the selected hyperparameters in SELECTED_HYPERPARAMETERS.md (Regional),
+# verified against the actual filenames present under 0_out/{model}/{loc}/regional/results.
 param_tag_dict = {
-    "RF": "_n100_d5_s2_l1_mf0.7_ms0.5_w270",
-    "XGB": "",
-    "TCN": "_n64_k4_d0.4",
-    "LSTM": "_hs256_do0.4_e30"
+    "RF": "_n500_d15_s5_l10_mfsqrt_ms0.8_w270_nsFalse",
+    "XGB": "_ns0_n1000_d7_lr0.05_sub0.8_col0.7_sl270",
+    "TCN": "_n64_k3_d0.2_nsFalse_sl270",
+    "LSTM": "_nsFalse_csFalse_hs128_do0.2_e30_sl365"
 }
 
 
@@ -70,12 +74,14 @@ for benchmark in benchmark_list:
     for model in model_list:
         print(f"Processing model: {model}")
 
-        base_path = f"/data0/funato/hsp2/0_out/{model}/{loc}/regional/results"  
+        # LSTM's canonical regional output lives under regional_ealstm (produced by
+        # ealstm_regional_modeling/eval.py), not the legacy no_static-only regional/ dir.
+        regional_dir_name = "regional_ealstm" if model == "LSTM" else "regional"
+        base_path = f"/data0/funato/hsp2/0_out/{model}/{loc}/{regional_dir_name}/results"
 
         if model == "HYPER":
             input_file_cal = f"/data0/funato/hsp2/0_out/HYPER/{loc}/results/HYPER_results_cal.csv"
             input_file_eva = f"/data0/funato/hsp2/0_out/HYPER/{loc}/results/HYPER_results_eva.csv"
-            # Use HYPER for column names since that's what's in the files
             col_name_cal = f"HYPER_{benchmark}_cal"
             col_name_eva = f"HYPER_{benchmark}_eva"
         elif model == "HBV":
@@ -84,8 +90,8 @@ for benchmark in benchmark_list:
             col_name_cal = f"HBV_{benchmark}_cal"
             col_name_eva = f"HBV_{benchmark}_eva"
         else:
-            input_file_cal = f"/data0/funato/hsp2/0_out/{model}/{loc}/regional/results/{model}_results{param_tag_dict.get(model, '')}_cal.csv"
-            input_file_eva = f"/data0/funato/hsp2/0_out/{model}/{loc}/regional/results/{model}_results{param_tag_dict.get(model, '')}_eva.csv"
+            input_file_cal = f"{base_path}/{model}_results{param_tag_dict.get(model, '')}_cal.csv"
+            input_file_eva = f"{base_path}/{model}_results{param_tag_dict.get(model, '')}_eva.csv"
             col_name_cal = benchmark
             col_name_eva = benchmark
 
@@ -100,11 +106,14 @@ for benchmark in benchmark_list:
             cal_df = pd.read_csv(input_file_cal)
             eva_df = pd.read_csv(input_file_eva)
 
-            # Filter to only include basins in basin_ids list
-            if 'basin' in cal_df.columns:
-                cal_df = cal_df[cal_df['basin'].isin(basin_ids)]
-            if 'basin' in eva_df.columns:
-                eva_df = eva_df[eva_df['basin'].isin(basin_ids)]
+            # Filter to only include basins in basin_ids list (LSTM's results use
+            # 'gauge_id' instead of 'basin' for the same id)
+            basin_col_cal = 'basin' if 'basin' in cal_df.columns else 'gauge_id' if 'gauge_id' in cal_df.columns else None
+            basin_col_eva = 'basin' if 'basin' in eva_df.columns else 'gauge_id' if 'gauge_id' in eva_df.columns else None
+            if basin_col_cal is not None:
+                cal_df = cal_df[cal_df[basin_col_cal].isin(basin_ids)]
+            if basin_col_eva is not None:
+                eva_df = eva_df[eva_df[basin_col_eva].isin(basin_ids)]
 
             if col_name_cal not in cal_df.columns or col_name_eva not in eva_df.columns:
                 print(f"Benchmark {benchmark} not found in {model} data. Skipping model {model}.")
