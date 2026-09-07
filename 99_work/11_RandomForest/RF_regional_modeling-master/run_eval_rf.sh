@@ -9,7 +9,7 @@ set -e  # Exit on any error
 # Default parameters
 RUN_DIR=""
 N_BASINS=""
-PYTHON_PATH="/data0/funato/hsp/.venv/bin/python"
+PYTHON_PATH="/data0/funato/.venv/bin/python3"
 
 loc="US"  # Location identifier
 

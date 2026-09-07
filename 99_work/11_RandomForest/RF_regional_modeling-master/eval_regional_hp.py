@@ -27,18 +27,19 @@ from sklearn.ensemble import RandomForestRegressor
 from tqdm import tqdm
 
 from papercode.datasets import CamelsH5
-from papercode.datautils import add_basin_attributes, load_attributes, rescale_features
+from papercode.datautils import add_basin_attributes, load_attributes, rescale_features, VALID_ATTR
 from papercode.utils import create_h5_files, get_basin_list
 
-# Global Settings (matching main.py)
+# Global Settings (matching main_rf_hp.py). HP-search cal/val split -- must NOT touch the
+# real 2001-01-01..2006-12-31 test period.
 GLOBAL_SETTINGS = {
-    'loc': 'GB',
+    'loc': 'US',
     'ver': 2,
     'seq_length': 270,
-    'train_start': pd.to_datetime('1993-01-01', format='%Y-%m-%d'),
-    'train_end': pd.to_datetime('2000-12-31', format='%Y-%m-%d'),
-    'val_start': pd.to_datetime('2001-01-01', format='%Y-%m-%d'),
-    'val_end': pd.to_datetime('2006-12-31', format='%Y-%m-%d')
+    'train_start': pd.to_datetime('1990-01-01', format='%Y-%m-%d'),
+    'train_end': pd.to_datetime('1998-12-31', format='%Y-%m-%d'),
+    'val_start': pd.to_datetime('1999-01-01', format='%Y-%m-%d'),
+    'val_end': pd.to_datetime('2000-12-31', format='%Y-%m-%d')
 }
 
 benchmark_list = ["NSE", "KGE", "E1", "VE", "d", "RMSE", "MAE"] 
@@ -52,26 +53,18 @@ syn_precip_cols = ['syn_no_precip', 'syn_p_pet',
 ver_name = "ver1_1" if GLOBAL_SETTINGS['ver'] == 1 else "ver2_0"
 
 if GLOBAL_SETTINGS['loc'] == "JP":
-    file_tot_num = 87
     attribute_size = 196
     output_mean = np.array([3.8526752089320553])
 elif GLOBAL_SETTINGS['loc'] == "GB":
-    file_tot_num = 424
     attribute_size = 209
     output_mean = np.array([1.838397528976445])
 
-file_num_list = list(map(str, range(1, file_tot_num + 1)))
+gauge_id_list = get_basin_list(GLOBAL_SETTINGS['loc'])
 
-def file_name(input_num, total_len):
-    """Generate zero-padded filename"""
-    car_len = len(str(input_num))
-    zero_len = total_len - car_len
-    return '0' * zero_len + str(input_num)
-
-def load_data_for_basin(file_num):
+def load_data_for_basin(gauge_id):
     """Load data for a specific basin"""
-    varssim_dir = "/data0/funato/hsp2/2_MERV/varssim"
-    df = pd.read_csv(f"{varssim_dir}/varssim{file_name(file_num, 3)}.csv")
+    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim_{GLOBAL_SETTINGS['loc']}"
+    df = pd.read_csv(f"{varssim_dir}/varssim_{gauge_id}.csv")
     df['Date'] = pd.to_datetime(df['Date'])
     df.set_index('Date', inplace=True)
     return df
@@ -115,29 +108,34 @@ def create_sequences_rf(data, seq_length, static_features=None):
         
     return np.array(sequences), np.array(targets)
 
-def evaluate_basin_period(model, basin, start_date, end_date, run_cfg, static_attrs=None):
+def evaluate_basin_period(model, basin, start_date, end_date, run_cfg, static_attrs=None, basin_scalers=None):
     """Evaluate the model on a basin for a specific period"""
     # Load data for this basin
-    df = load_data_for_basin(int(basin))
-    
+    df = load_data_for_basin(basin)
+
     # Filter by date range with warmup
     warmup_start = start_date - pd.DateOffset(days=run_cfg["seq_length"] - 1)
     period_data = df[warmup_start:end_date].copy()
-    
+
     if len(period_data) < run_cfg["seq_length"]:
         return None, None, None
-    
+
     # Prepare input data (P, PET, Temp, Obs flow for normalization)
     input_cols = ['Precip', 'PET', 'Temp', 'Obs flow']
     input_data = period_data[input_cols].values
-    
-    # Calculate basin-specific normalization statistics
+
+    # Use the per-basin normalization statistics saved at training time (NOT stats
+    # recomputed from this eval period -- that would mismatch what the model was
+    # trained on and leak eval-period statistics into the "normalization").
+    if basin_scalers is None or basin not in basin_scalers:
+        return None, None, None
+    bscaler = basin_scalers[basin]
     basin_stats = {
-        'mean': np.nanmean(input_data, axis=0),
-        'std': np.nanstd(input_data, axis=0)
+        'mean': np.concatenate([bscaler['dynamic_means'], [bscaler['q_mean']]]),
+        'std': np.concatenate([bscaler['dynamic_stds'], [bscaler['q_std']]])
     }
-    
-    # Normalize the data per basin
+
+    # Normalize the data using this basin's training-period statistics
     input_data_norm = normalize_basin_data(input_data, basin_stats)
     
     # Create sequences (excluding the target variable for input)
@@ -168,43 +166,45 @@ def evaluate_basin_period(model, basin, start_date, end_date, run_cfg, static_at
     
     return predictions_rescaled, targets_rescaled, dates
 
-def evaluate_synthetic_basin_period(model, basin, scenario_col, start_date, end_date, run_cfg, static_attrs=None):
+def evaluate_synthetic_basin_period(model, basin, scenario_col, start_date, end_date, run_cfg, static_attrs=None, basin_scalers=None):
     """Evaluate the model on synthetic data for a basin"""
     # Load data for this basin
-    df = load_data_for_basin(int(basin))
-    
+    df = load_data_for_basin(basin)
+
     # Filter by date range with warmup
     warmup_start = start_date - pd.DateOffset(days=run_cfg["seq_length"] - 1)
     period_data = df[warmup_start:end_date].copy()
-    
+
     if len(period_data) < run_cfg["seq_length"]:
         return None, None
-    
+
     # Check if synthetic column exists
     if scenario_col not in period_data.columns:
         return None, None
-    
+
     # Create synthetic data by replacing precipitation
     period_data_syn = period_data.copy()
     period_data_syn['Precip'] = period_data_syn[scenario_col]
-    
+
     # Use the same temperature and PET as the peak events
     if 'peak' in scenario_col:
         period_data_syn['Temp'] = period_data_syn['Temp_at_peak']
         period_data_syn['PET'] = period_data_syn['PET_at_peak']
-    
+
     # Prepare input data for synthetic scenario
     input_cols = ['Precip', 'PET', 'Temp', 'Obs_flow_at_peak']  # Use synthetic target
     input_data_syn = period_data_syn[input_cols].values
-    
-    # Calculate basin-specific normalization statistics from original data
-    original_data = df[warmup_start:end_date][['Precip', 'PET', 'Temp', 'Obs flow']].values
+
+    # Use the per-basin normalization statistics saved at training time
+    if basin_scalers is None or basin not in basin_scalers:
+        return None, None
+    bscaler = basin_scalers[basin]
     basin_stats = {
-        'mean': np.nanmean(original_data, axis=0),
-        'std': np.nanstd(original_data, axis=0)
+        'mean': np.concatenate([bscaler['dynamic_means'], [bscaler['q_mean']]]),
+        'std': np.concatenate([bscaler['dynamic_stds'], [bscaler['q_std']]])
     }
-    
-    # Normalize the synthetic data using original data statistics
+
+    # Normalize the synthetic data using this basin's training-period statistics
     input_data_norm = normalize_basin_data(input_data_syn, basin_stats)
     
     # Create sequences
@@ -241,7 +241,7 @@ def evaluate_original_data(model, run_cfg, basins, static_attrs=None, args=None)
         'eva': (GLOBAL_SETTINGS["val_start"], GLOBAL_SETTINGS["val_end"])
     }
     
-    output_dir = Path(args.output_dir if args and args.output_dir else "/data0/funato/hsp2/0_out/RF/GB/regional")
+    output_dir = Path(args.output_dir if args and args.output_dir else "/data0/funato/hsp2/0_out/RF/US/regional")
     
     for period_name, (start_date, end_date) in periods.items():
         print(f"\nEvaluating {period_name.upper()} period ({start_date.date()} to {end_date.date()})")
@@ -254,7 +254,7 @@ def evaluate_original_data(model, run_cfg, basins, static_attrs=None, args=None)
         for basin in tqdm(basins, desc=f"Processing basins for {period_name}"):
             try:
                 predictions, targets, dates = evaluate_basin_period(
-                    model, basin, start_date, end_date, run_cfg, static_attrs)
+                    model, basin, start_date, end_date, run_cfg, static_attrs, run_cfg.get("basin_scalers"))
                 
                 if predictions is not None:
                     basin_predictions[basin] = predictions
@@ -342,7 +342,7 @@ def evaluate_synthetic_data(model, run_cfg, basins, static_attrs=None, args=None
     
     print("\n--- Evaluating Synthetic Scenarios ---")
     
-    output_dir = Path(args.output_dir if args and args.output_dir else "/data0/funato/hsp2/0_out/RF/GB/regional/hp")
+    output_dir = Path(args.output_dir if args and args.output_dir else "/data0/funato/hsp2/0_out/RF/US/regional/hp")
     start_date = GLOBAL_SETTINGS["val_start"]
     end_date = GLOBAL_SETTINGS["val_end"]
     
@@ -355,7 +355,7 @@ def evaluate_synthetic_data(model, run_cfg, basins, static_attrs=None, args=None
         for basin in tqdm(basins, desc=f"Processing basins for {scenario_col}"):
             try:
                 predictions, dates = evaluate_synthetic_basin_period(
-                    model, basin, scenario_col, start_date, end_date, run_cfg, static_attrs)
+                    model, basin, scenario_col, start_date, end_date, run_cfg, static_attrs, run_cfg.get("basin_scalers"))
                 
                 if predictions is not None:
                     basin_predictions[basin] = predictions
@@ -474,7 +474,7 @@ def main():
                         help='Path to the trained model directory')
     parser.add_argument('--n_basins', type=int, default=None,
                         help='Number of basins to process (for testing)')
-    parser.add_argument('--output_dir', type=str, default="/data0/funato/hsp2/0_out/RF/GB/regional/hp",
+    parser.add_argument('--output_dir', type=str, default="/data0/funato/hsp2/0_out/RF/US/regional/hp",
                         help='Output directory for predictions and results')
     parser.add_argument('--hp_string', type=str, default="",
                         help='Hyperparameter string to append to filenames')
@@ -492,14 +492,29 @@ def main():
         run_cfg = json.load(fp)
     
     run_cfg["run_dir"] = run_dir  # Add run_dir to config
-    
+
+    # Load the per-basin scalers saved at training time (required: eval must use the
+    # exact same basin-specific normalization the model was trained on).
+    scalers_file = run_dir / 'scalers.json'
+    if not scalers_file.exists():
+        raise ValueError(f"scalers.json not found in {run_dir}; cannot evaluate without training scalers")
+    with open(scalers_file, 'r') as fp:
+        scalers = json.load(fp)
+    if 'basin_scalers' not in scalers:
+        raise ValueError(f"{scalers_file} has no 'basin_scalers' key -- was this run trained with an old version of main_rf_hp.py?")
+    basin_scalers = {}
+    for basin, bscaler in scalers['basin_scalers'].items():
+        basin_scalers[basin] = {k: (np.array(v) if isinstance(v, list) else v) for k, v in bscaler.items()}
+    print(f"Loaded per-basin scalers for {len(basin_scalers)} basins from {scalers_file}")
+    run_cfg["basin_scalers"] = basin_scalers
+
     print("Regional Random Forest Evaluation")
     print(f"Model directory: {run_dir}")
     
     # Limit number of basins for testing if specified
-    global file_num_list
+    global gauge_id_list
     if args.n_basins is not None:
-        file_num_list = file_num_list[:args.n_basins]
+        gauge_id_list = gauge_id_list[:args.n_basins]
         print(f"Processing only first {args.n_basins} basins for testing")
     
     # Load the trained Random Forest model
@@ -515,21 +530,20 @@ def main():
     if not run_cfg.get("no_static", False):
         try:
             db_path = run_dir / "attributes.db"
-            attrs = load_attributes(db_path, basins=[int(b) for b in file_num_list], 
-                                  loc=GLOBAL_SETTINGS['loc'])
+            attrs = load_attributes(db_path, basins=gauge_id_list,
+                                  keep_features=VALID_ATTR, loc=GLOBAL_SETTINGS['loc'])
             print(f"Loaded {len(attrs)} basin attributes with {attrs.shape[1]} features each")
             # Convert to dictionary for easier access
             static_attrs = {}
-            for basin in file_num_list:
-                basin_int = int(basin)
-                if basin_int in attrs.index:
-                    static_attrs[basin] = attrs.loc[basin_int].values
+            for basin in gauge_id_list:
+                if basin in attrs.index:
+                    static_attrs[basin] = attrs.loc[basin].values
         except Exception as e:
             print(f"Warning: Could not load static attributes: {e}")
             run_cfg["no_static"] = True
-    
+
     # Evaluate on original data
-    evaluate_original_data(model, run_cfg, file_num_list, static_attrs, args)
+    evaluate_original_data(model, run_cfg, gauge_id_list, static_attrs, args)
 
     print("\nRegional evaluation completed successfully!")
 

@@ -19,48 +19,40 @@ import pandas as pd
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_squared_error
 import joblib
-from tqdm import tqdm
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
-from papercode.datautils import add_basin_attributes, load_attributes
+from papercode.datautils import add_basin_attributes, load_attributes, VALID_ATTR
+from papercode.utils import get_basin_list
+from papercode.rf_features import load_or_build_dataset
+from papercode.rf_run_registry import find_completed_run
+
+DATASET_CACHE_ROOT = Path(__file__).parent / "cache" / "hp"
 
 # ####################### #
 # Global Definitions      #
 # ####################### #
 
 
+# HP-search cal/val split -- must NOT touch the real 2001-01-01..2006-12-31 test period.
 GLOBAL_SETTINGS = {
-    'loc': 'GB',
+    'loc': 'US',
     'ver': 2,
     'seq_length': 270,
-    'train_start': pd.to_datetime('1993-01-01', format='%Y-%m-%d'),
-    'train_end': pd.to_datetime('2000-12-31', format='%Y-%m-%d'),
-    'val_start': pd.to_datetime('2001-01-01', format='%Y-%m-%d'),
-    'val_end': pd.to_datetime('2006-12-31', format='%Y-%m-%d')
+    'train_start': pd.to_datetime('1990-01-01', format='%Y-%m-%d'),
+    'train_end': pd.to_datetime('1998-12-31', format='%Y-%m-%d'),
+    'val_start': pd.to_datetime('1999-01-01', format='%Y-%m-%d'),
+    'val_end': pd.to_datetime('2000-12-31', format='%Y-%m-%d')
 }
 
 ver_name = "ver1_1" if GLOBAL_SETTINGS['ver'] == 1 else "ver2_0"
 
-if GLOBAL_SETTINGS['loc'] == "JP":
-    file_tot_num = 87
-elif GLOBAL_SETTINGS['loc'] == "GB":
-    file_tot_num = 424
-
-file_num_list = list(map(str, range(1, file_tot_num + 1)))
+gauge_id_list = get_basin_list(GLOBAL_SETTINGS['loc'])
 
 # ####################### #
 # Utility Functions       #
 # ####################### #
-
-def file_name(input_num, total_len):
-    return str(input_num).zfill(total_len)
-
-def load_data_for_basin(file_num):
-    varssim_dir = "/data0/funato/hsp2/2_MERV/varssim"
-    df = pd.read_csv(f"{varssim_dir}/varssim{file_name(file_num, 3)}.csv")
-    df['Date'] = pd.to_datetime(df['Date'])
-    df.set_index('Date', inplace=True)
-    return df
 
 def str2bool(v):
     if isinstance(v, bool): return v
@@ -85,6 +77,7 @@ def get_args() -> Dict:
     parser.add_argument('--max_depth', type=int, default=None, help='Maximum depth (None for unlimited)')
     parser.add_argument('--min_samples_leaf', type=int, default=2, help='Minimum samples at leaf node')
     parser.add_argument('--max_features', type=str, default='sqrt', help='Max features: sqrt, 1/3, or float')
+    parser.add_argument('--n_jobs', type=int, default=1, help='Threads used by RandomForestRegressor (tree-level parallelism)')
     
     cfg = vars(parser.parse_args())
     
@@ -102,11 +95,14 @@ def get_args() -> Dict:
     cfg.update(GLOBAL_SETTINGS)
     return cfg
 
+def _hp_str(cfg: Dict) -> str:
+    max_feat_str = cfg['max_features'] if isinstance(cfg['max_features'], str) else f"{cfg['max_features']:.2f}"
+    return f"n{cfg['n_estimators']}_d{cfg['max_depth'] if cfg['max_depth'] is not None else 'None'}_l{cfg['min_samples_leaf']}_f{max_feat_str}"
+
 def _setup_run(cfg: Dict) -> Dict:
     """Create folder structure for this run"""
     now = datetime.now()
-    max_feat_str = cfg['max_features'] if isinstance(cfg['max_features'], str) else f"{cfg['max_features']:.2f}"
-    hp_str = f"n{cfg['n_estimators']}_d{cfg['max_depth'] if cfg['max_depth'] is not None else 'None'}_l{cfg['min_samples_leaf']}_f{max_feat_str}"
+    hp_str = _hp_str(cfg)
     run_name = f'{hp_str}/rf_run_{now.strftime("%m%d_%H%M")}_seed{cfg["seed"]}'
     cfg['run_dir'] = Path(__file__).parent / "runs_rf" / "hp" / run_name
     cfg['run_dir'].mkdir(parents=True, exist_ok=True)
@@ -125,106 +121,57 @@ def train(cfg):
     random.seed(cfg["seed"])
     np.random.seed(cfg["seed"])
     
-    basins = file_num_list
+    basins = gauge_id_list
+
+    # run_rf_hp_tuning.sh launches one process per (n_estimators, max_depth,
+    # min_samples_leaf, max_features) combination; a restart after a kill would
+    # otherwise retrain every combination from scratch since _setup_run's leaf
+    # directory is timestamped. Skip if a completed run with this exact HP
+    # combination already exists under runs_rf/hp/{hp_str}/. 'seed' is deliberately
+    # NOT a match key -- get_args() defaults --seed to a random draw when omitted
+    # (same convention as the upstream reference implementation, which logs that
+    # random seed in the run folder name purely for traceability), so requiring it
+    # to match would defeat resumability for any invocation that doesn't pin --seed.
+    match_keys = ['n_estimators', 'max_depth', 'min_samples_leaf', 'max_features', 'no_static']
+    search_root = Path(__file__).parent / "runs_rf" / "hp" / _hp_str(cfg)
+    existing_run = find_completed_run(search_root, cfg, match_keys)
+    if existing_run is not None:
+        print(f"Skipping: a completed run with these exact hyperparameters already exists at {existing_run}")
+        return
+
     cfg = _setup_run(cfg)
     for key, val in cfg.items(): print(f"{key}: {val}")
 
-    print("\nCalculating per-basin scalers from clean data blocks...")
-    dyn_cols = ['Precip', 'PET', 'Temp']
-    q_col = 'Obs flow'
-    basin_scalers = {}
-
-    for basin in tqdm(basins, desc="Loading basin data for scaling"):
-        df = load_data_for_basin(int(basin))
-        df_period = df.loc[cfg['train_start']:cfg['train_end']]
-        
-        is_nan = df_period[dyn_cols + [q_col]].isnull().any(axis=1)
-        clean_blocks = []
-        clumps = np.ma.clump_unmasked(np.ma.masked_array(df_period.index, is_nan))
-        if not isinstance(clumps, list): clumps = [clumps] if clumps else []
-
-        for s in clumps:
-            clean_blocks.append(df_period.iloc[s])
-        
-        if not clean_blocks: continue
-            
-        basin_clean_df = pd.concat(clean_blocks)
-        
-        basin_scalers[basin] = {
-            'q_mean': basin_clean_df[q_col].mean(),
-            'q_std': basin_clean_df[q_col].std(),
-            'dynamic_means': basin_clean_df[dyn_cols].mean().values,
-            'dynamic_stds': basin_clean_df[dyn_cols].std().values
-        }
-
-    scalers = {'basin_scalers': basin_scalers}
-    
     db_path = str(cfg['run_dir'] / 'attributes.db')
     add_basin_attributes(db_path=db_path, loc=GLOBAL_SETTINGS['loc'], ver_name=ver_name)
-    
+
     attributes = None
     if not cfg["no_static"]:
-        # Convert string basins to integers for attributes DataFrame
-        attributes = load_attributes(db_path=db_path, basins=[int(b) for b in basins], drop_lat_lon=True)
-        scalers['static_means'] = attributes.mean().values
-        scalers['static_stds'] = attributes.std().values
+        attributes = load_attributes(db_path=db_path, basins=basins, drop_lat_lon=True,
+                                      keep_features=VALID_ATTR)
+
+    # X/y/scalers depend only on (loc, ver, seq_length, train period, no_static, basins) --
+    # not on any RF hyperparameter -- so they are cached once under DATASET_CACHE_ROOT and
+    # reused by every hyperparameter job launched by run_rf_hp_tuning.sh instead of being
+    # rebuilt (via a slow per-sample Python loop) in each of the parallel processes.
+    X, y, sample_info_df, basin_scalers, static_means, static_stds = load_or_build_dataset(
+        cfg, basins, DATASET_CACHE_ROOT, attributes)
+    print(f"Data prepared: X shape {X.shape}, y shape {y.shape}")
+
+    scalers = {'basin_scalers': basin_scalers}
+    if static_means is not None:
+        scalers['static_means'] = static_means
+        scalers['static_stds'] = static_stds
 
     def convert_for_json(obj):
         if isinstance(obj, dict): return {k: convert_for_json(v) for k, v in obj.items()}
         elif isinstance(obj, np.ndarray): return obj.tolist()
         elif isinstance(obj, np.generic): return obj.item()
         else: return obj
-            
+
     with (cfg['run_dir'] / 'scalers.json').open('w') as fp:
         json.dump(convert_for_json(scalers), fp, indent=4)
-    print(f"\nScalers successfully calculated and saved to {cfg['run_dir'] / 'scalers.json'}")
-
-    print("\nPreparing training data for Random Forest from clean contiguous blocks...")
-    X_list, y_list, sample_info = [], [], []
-
-    for basin in tqdm(basins, desc="Processing basins for training"):
-        if basin not in scalers['basin_scalers']: continue
-
-        df = load_data_for_basin(int(basin))
-        df_period = df.loc[cfg['train_start']:cfg['train_end']]
-        bscaler = scalers['basin_scalers'][basin]
-        
-        dyn_data_scaled = (df_period[dyn_cols].values - bscaler['dynamic_means']) / bscaler['dynamic_stds']
-        q_data_scaled = (df_period[q_col].values - bscaler['q_mean']) / bscaler['q_std']
-
-        static_data_scaled = None
-        if not cfg["no_static"]:
-            # basin is string but attributes has integer index, convert for lookup
-            static_data = attributes.loc[int(basin)].values
-            static_data_scaled = (static_data - scalers['static_means']) / scalers['static_stds']
-
-        is_nan = df_period[dyn_cols + [q_col]].isnull().any(axis=1)
-        clumps = np.ma.clump_unmasked(np.ma.masked_array(is_nan, is_nan))
-        if not isinstance(clumps, list): clumps = [clumps] if clumps else []
-
-        for s in clumps:
-            start_loc, end_loc = s.start, s.stop
-            block_len = end_loc - start_loc
-            if block_len < cfg['seq_length']: continue
-
-            block_dyn_scaled = dyn_data_scaled[start_loc:end_loc]
-            block_q_scaled = q_data_scaled[start_loc:end_loc]
-            
-            for i in range(block_len - cfg['seq_length'] + 1):
-                target_idx_in_block = i + cfg['seq_length'] - 1
-                dyn_seq_flat = block_dyn_scaled[i:target_idx_in_block + 1].flatten()
-                
-                final_features = dyn_seq_flat
-                if not cfg["no_static"]:
-                    final_features = np.concatenate([dyn_seq_flat, static_data_scaled])
-                
-                X_list.append(final_features)
-                y_list.append(block_q_scaled[target_idx_in_block])
-                sample_info.append({'basin': basin, 'date': df_period.index[start_loc + target_idx_in_block]})
-
-    X = np.array(X_list, dtype=np.float32)
-    y = np.array(y_list, dtype=np.float32).flatten()
-    print(f"Data prepared: X shape {X.shape}, y shape {y.shape}")
+    print(f"\nScalers successfully saved to {cfg['run_dir'] / 'scalers.json'}")
 
     print("\nTraining Random Forest model...")
     model = RandomForestRegressor(
@@ -236,7 +183,7 @@ def train(cfg):
         bootstrap=True,
         min_samples_split=2,
         random_state=cfg["seed"],
-        n_jobs=1,  # Use single core as specified
+        n_jobs=cfg["n_jobs"],
         verbose=1
     )
     
@@ -248,14 +195,11 @@ def train(cfg):
 
     y_pred_scaled = model.predict(X)
     
-    y_pred_rescaled = np.zeros_like(y_pred_scaled)
-    y_rescaled = np.zeros_like(y)
-    for i, info in enumerate(sample_info):
-        basin = info['basin']
-        bscaler = scalers['basin_scalers'][basin]
-        y_pred_rescaled[i] = (y_pred_scaled[i] * bscaler['q_std']) + bscaler['q_mean']
-        y_rescaled[i] = (y[i] * bscaler['q_std']) + bscaler['q_mean']
-        
+    basin_q_mean = sample_info_df['basin'].map(lambda b: scalers['basin_scalers'][b]['q_mean']).values
+    basin_q_std = sample_info_df['basin'].map(lambda b: scalers['basin_scalers'][b]['q_std']).values
+    y_pred_rescaled = (y_pred_scaled * basin_q_std) + basin_q_mean
+    y_rescaled = (y * basin_q_std) + basin_q_mean
+
     train_rmse = np.sqrt(mean_squared_error(y_rescaled, y_pred_rescaled))
     print(f"\nTraining RMSE (rescaled): {train_rmse:.6f}")
 
@@ -263,7 +207,7 @@ def train(cfg):
     plot_dir = cfg['run_dir'] / "debug_plots"
     plot_dir.mkdir(exist_ok=True)
     
-    df_samples = pd.DataFrame(sample_info)
+    df_samples = sample_info_df.copy()
     df_samples['pred_scaled'] = y_pred_scaled
     df_samples['obs_scaled'] = y
     

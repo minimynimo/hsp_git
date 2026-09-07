@@ -18,6 +18,26 @@ import pandas as pd
 from numba import njit
 import os
 
+# The 27-attribute CAMELS-US catchment-attribute set from
+# /data0/funato/hsp2/CATCHMENT_ATTRIBUTE.md (climate/topo/vegetation/soil/geol), using the
+# original camels_attributes_v2.0 names (e.g. 'p_seasonality' not 'p_seasonaility', 'frac_snow'
+# not 'frac_snow_daily', 'frac_forest' not 'forest_frac', 'clay_frac' not 'caly_frac',
+# 'carbonate_rocks_frac' not 'carb_rocks_frac' -- the .md file's names are typos of these). For
+# US, all 27 columns are present in camels_original_attribute_combined.csv (see US branch of
+# add_basin_attributes below). GB (camelsgb_attribute_combined.csv) uses CAMELS-GB-native
+# attributes and only happens to share 11 of these 27 names outright (p_mean, pet_mean,
+# aridity, p_seasonality, frac_snow, high_prec_freq, high_prec_dur, low_prec_freq,
+# low_prec_dur, elev_mean, soil_depth_pelletier); load_attributes' keep_features intersects
+# with whatever is actually present, so callers passing VALID_ATTR silently get that subset
+# for GB rather than erroring.
+VALID_ATTR = [
+    'p_mean', 'pet_mean', 'aridity', 'p_seasonality', 'frac_snow', 'high_prec_freq',
+    'high_prec_dur', 'low_prec_freq', 'low_prec_dur', 'elev_mean', 'slope_mean', 'area_gages2',
+    'frac_forest', 'lai_max', 'lai_diff', 'gvf_max', 'gvf_diff', 'soil_depth_pelletier',
+    'soil_depth_statsgo', 'soil_porosity', 'soil_conductivity', 'max_water_content',
+    'sand_frac', 'silt_frac', 'clay_frac', 'carbonate_rocks_frac', 'geol_permeability'
+]
+
 SCALER = {
     "JP": {
         'input_means': np.array([4.749130900644258, 9.637227892152021, 1.9068619713226833]),
@@ -60,21 +80,24 @@ def add_basin_attributes(db_path: str = None, loc :str=None, ver_name:str = None
     attribute_dir = f'/data0/funato/hsp/3_gis_data/{loc}/0_data/river_basin/dataset_{loc}'
 
     if loc == "JP":
-        attribute_values = pd.read_csv(f'{attribute_dir}/basin_data_limited_met&soil&geology&land_{ver_name}.csv', encoding= 'UTF-8', index_col=0, header=0)
+        attribute_values = pd.read_csv(f'{attribute_dir}/basin_data_limited_met&soil&geology&land_{ver_name}.csv', encoding= 'UTF-8', index_col='gauge_id', header=0, dtype={'gauge_id': str})
         INVALID_ATTR = [
-            'grdc_no','river','station','WaterArea','ForestArea','ForestAreaRatio','WaterAreaRatio','lat_org','long_org', 'land_GolfCourse','land_GolfCourse_Ratio'
+            'grdc_no','river','station','WaterArea','ForestArea','ForestAreaRatio','WaterAreaRatio','lat_org','long_org', 'land_GolfCourse','land_GolfCourse_Ratio','File_num'
         ]
     elif loc == "GB":
-        attribute_values = pd.read_csv(f'{attribute_dir}/camelsgb_attribute_combined.csv', encoding= 'UTF-8', index_col=0, header=0)
+        attribute_values = pd.read_csv(f'{attribute_dir}/camelsgb_attribute_combined.csv', encoding= 'UTF-8', index_col='gauge_id', header=0, dtype={'gauge_id': str})
         INVALID_ATTR = [
-            'gauge_id','gauge_name','country'
+            'gauge_id','gauge_name','country','File_num'
         ]
     elif loc == "US":
-        # Use the attribute file from hsp2 directory for US
-        us_attribute_dir = '/data0/funato/hsp2/hsp_git/3_gis_data/US/0_data/river_basin/dataset_US'
-        attribute_values = pd.read_csv(f'{us_attribute_dir}/camels_attribute_combined.csv', encoding= 'UTF-8', index_col=0, header=0)
+        # Use the 27-attribute CAMELS-original combined CSV (built from the raw
+        # camels_clim/topo/vege/soil/geol.txt files; see VALID_ATTR above) rather than the old
+        # HydroATLAS-derived camels_attribute_combined.csv, which does not contain any of
+        # VALID_ATTR's names.
+        us_attribute_dir = '/data0/funato/hsp2/3_gis_data/US/0_data/river_basin/dataset_US'
+        attribute_values = pd.read_csv(f'{us_attribute_dir}/camels_original_attribute_combined.csv', encoding= 'UTF-8', index_col='gauge_id', header=0, dtype={'gauge_id': str})
         INVALID_ATTR = [
-            'gauge_id','gauge_name','country'
+            'gauge_id','gauge_name','country','File_num'
         ]
     else:
         raise ValueError(f"Unsupported location: {loc}. Supported locations are: JP, GB, US")
@@ -133,10 +156,16 @@ def load_attributes(db_path: str,
         ]
 
     with sqlite3.connect(db_path) as conn:
-        df = pd.read_sql("SELECT * FROM 'basin_attributes'", conn, index_col='File_num')
+        df = pd.read_sql("SELECT * FROM 'basin_attributes'", conn, index_col='gauge_id')
+    df.index = df.index.astype(str)
 
     # drop rows of basins not contained in data set
-    drop_basins = [b for b in df.index if b not in basins]
+    # NOTE: `basins` is commonly a list of str, while df.index (gauge_id from sqlite) is now
+    # forced to str above. Comparing across types here silently matched nothing and dropped
+    # every basin -- same bug class already fixed in the TCN/XGB audits' papercode/datautils.py,
+    # see DEBUG_README.md.
+    basins_str = {str(b) for b in basins}
+    drop_basins = [b for b in df.index if str(b) not in basins_str]
     df = df.drop(drop_basins, axis=0)
 
     # drop lat/lon col
@@ -258,13 +287,8 @@ def reshape_data(x: np.ndarray, y: np.ndarray, seq_length: int) -> Tuple[np.ndar
     return x_new, y_new
 
 
-def file_name(input_num, total_len):
-    car_len = len(str(input_num))
-    zero_len = total_len - car_len
-    return '0' * zero_len + str(input_num)
-
-def load_data(file_num, varssim_dir, loc):
-    file_path = f"{varssim_dir}/varssim{file_name(file_num, 3)}.csv"
+def load_data(gauge_id, varssim_dir, loc):
+    file_path = f"{varssim_dir}/varssim_{gauge_id}.csv"
     
     # Check if the file exists
     if not os.path.exists(file_path):
