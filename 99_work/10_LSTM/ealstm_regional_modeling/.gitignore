@@ -1,7 +1,0 @@
-**/*.pyc
-**/*.pt
-**/*.db
-
-*/.ipynb_checkpoints/*.ipynb
-.vscode
-runs/
