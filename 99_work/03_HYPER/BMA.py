@@ -9,7 +9,7 @@ import pandas as pd
 #######
 benchmark_list = ["KGE","NSE","E1","VE", "d","RMSE","MAE"]
 
-loc, file_tot_num = "US", 614
+loc = "US"
 
 #ver = 1
 ver = 2
@@ -19,13 +19,22 @@ ver_name = 'ver1_1' if ver == 1 else 'ver2_0' if ver == 2 else 'ver3_0'
 
 varssim_dir = f"/data0/funato/hsp2/2_MERV/HYPER/{loc}"
 
-precip_cols = ['no_precip',  
+# Basin list, keyed by gauge_id: /2_MERV/HYPER/{loc}/{scenario}/{ver_name}/ stores its per-basin
+# CSVs as varssim_{gauge_id}.csv (not the old sequential varssim{NNN}.csv), matching what
+# main_HYPER.py / hparam_main_HYPER.py already load from. This script's own output
+# (BMA_weights.csv, BMA_predict_*.csv, BMA_results_*.csv) is now keyed by gauge_id too --
+# main_HYPER.py/hparam_main_HYPER.py look up a basin's 'Sim flow' by gauge_id, not file_num.
+basin_list_csv = f"/data0/funato/hsp2/3_gis_data/{loc}/0_data/river_basin/dataset_{loc}/{loc.lower()}_file_num.csv"
+basin_df = pd.read_csv(basin_list_csv, dtype={'gauge_id': str})
+basins = [g.split('_')[-1] for g in basin_df['gauge_id']]
+
+precip_cols = ['no_precip',
                'peak1_rate0','peak1_rate10', 'peak1_rate30', 'peak1_rate50',
                'peak3_rate0','peak3_rate10', 'peak3_rate30', 'peak3_rate50',
                'peak5_rate0', 'peak5_rate10', 'peak5_rate30', 'peak5_rate50']
 
 # Define the calibration and evaluation periods
-start_date_cal = '1993-01-01'
+start_date_cal = '1990-01-01'
 end_date_cal = '2000-12-31'
 start_date_eva = '2001-01-01'
 end_date_eva = '2006-12-31'
@@ -46,12 +55,6 @@ os.makedirs(output_dir + '/weights', exist_ok=True)
 #model_list = ["m34"]
 #buf = "m34"
 buf = ""
-
-# Helper function to format file names
-def file_name(input_num, total_len):
-    car_len = len(str(input_num))
-    zero_len = total_len - car_len
-    return '0' * zero_len + str(input_num)
 
 def BMK(obs_data,sim_data,benchmark):
     """
@@ -95,8 +98,8 @@ def BMK(obs_data,sim_data,benchmark):
         return np.mean(np.abs(obs_data - sim_data))
 
 # Function to load and preprocess data
-def load_data(data_name, file_num):
-    df = pd.read_csv(f"{varssim_dir}/{data_name}/{ver_name}/varssim{file_name(file_num, 3)}.csv")
+def load_data(data_name, gauge_id):
+    df = pd.read_csv(f"{varssim_dir}/{data_name}/{ver_name}/varssim_{gauge_id}.csv")
 
     if loc == "JP":
         df['Date'] = pd.to_datetime(df[['Year', 'Month', 'Day']])
@@ -114,6 +117,9 @@ def load_data(data_name, file_num):
 
 # Log-likelihood function
 def log_likelihood(obs, sim):
+    mask = ~np.isnan(obs) & ~np.isnan(sim)
+    obs = obs[mask]
+    sim = sim[mask]
     obs = np.where(obs == 0, 1e-6, obs)
     sim = np.where(sim == 0, 1e-6, sim)
     residuals = obs - sim
@@ -133,9 +139,9 @@ results_cal = []
 results_eva = []
 
 # Run BMA for each dataset
-for file_num in range(1, file_tot_num + 1):  #range(1, file_tot_num + 1):
+for gauge_id in basins:
     # Load the data
-    df = load_data("varssim_nocal_og", file_num)
+    df = load_data("varssim_nocal_og", gauge_id)
 
     df_cal = df[start_date_cal:end_date_cal].copy()  # Use copy to avoid SettingWithCopyWarning
     df_eva = df[start_date_eva:end_date_eva].copy()
@@ -155,32 +161,30 @@ for file_num in range(1, file_tot_num + 1):  #range(1, file_tot_num + 1):
     posterior_cal = weights_cal * priors
     posterior_cal /= np.sum(posterior_cal) ##turn the weight sum into 1
 
-    if file_num == 1:
+    if gauge_id == basins[0]:
         model_row = np.concatenate((["model"], model_list))
         weight_df = pd.DataFrame([model_row])
         weight_df.to_csv(output_dir + f"/weights/BMA_weights.csv", mode='w', index=False, header=False)
 
-    weight_row = np.concatenate(([f'file_{file_num}'], posterior_cal))
+    weight_row = np.concatenate(([f'gauge_{gauge_id}'], posterior_cal))
     with open(output_dir + f"/weights/BMA_weights.csv", 'a') as file:
         pd.DataFrame([weight_row]).to_csv(file, header=False, index=False)
 
     # EVALUATION
-    predict_eva = np.zeros(len(obs_eva))
     model_matrix_eva = df_eva[model_list].values  # shape: (n_dates, n_models)
-    predict_eva = np.dot(model_matrix_eva, posterior_cal)
+    predict_eva = np.dot(np.nan_to_num(model_matrix_eva, nan=0.0), posterior_cal)
 
     # Calibration testing for analysis
-    predict_cal = np.zeros(len(obs_cal))
     model_matrix_cal = df_cal[model_list].values  # shape: (n_dates, n_models)
-    predict_cal = np.dot(model_matrix_cal, posterior_cal)
+    predict_cal = np.dot(np.nan_to_num(model_matrix_cal, nan=0.0), posterior_cal)
 
     predict_cal[predict_cal < 0] = 0
     predict_eva[predict_eva < 0] = 0
 
-    file_row_cal = [f'file_{file_num}'] + list(predict_cal.flatten())
-    file_row_eva = [f'file_{file_num}'] + list(predict_eva.flatten())
+    file_row_cal = [f'gauge_{gauge_id}'] + list(predict_cal.flatten())
+    file_row_eva = [f'gauge_{gauge_id}'] + list(predict_eva.flatten())
 
-    if file_num == 1:
+    if gauge_id == basins[0]:
         predict_cal_dates = pd.date_range(start=pd.to_datetime(start_date_cal) + pd.DateOffset(days=1), periods=len(predict_cal))
         predict_eva_dates = pd.date_range(start=pd.to_datetime(start_date_eva) + pd.DateOffset(days=1), periods=len(predict_eva))
 
@@ -198,8 +202,8 @@ for file_num in range(1, file_tot_num + 1):  #range(1, file_tot_num + 1):
     with open(output_dir + f"/predict/BMA_predict_eva.csv", 'a') as file:
         pd.DataFrame([file_row_eva]).to_csv(file, header=False, index=False)
 
-    file_results_cal = {'file_num': file_num}
-    file_results_eva = {'file_num': file_num}
+    file_results_cal = {'gauge_id': gauge_id}
+    file_results_eva = {'gauge_id': gauge_id}
 
     # Loop over each benchmark and add results to the current file's dictionary
     for benchmark in benchmark_list:
@@ -216,39 +220,27 @@ for file_num in range(1, file_tot_num + 1):  #range(1, file_tot_num + 1):
     # using the same weights, calculate the BMA for the synthetic data
     for precip_col in precip_cols:
         if precip_col == 'no_precip':
-            syn_df = load_data("varssim_nocal_no_precip", file_num)
+            syn_df = load_data("varssim_nocal_no_precip", gauge_id)
         else:
-            syn_df = load_data(f"varssim_nocal_{precip_col}", file_num)
+            syn_df = load_data(f"varssim_nocal_{precip_col}", gauge_id)
         syn_cal = syn_df[start_date_cal:end_date_cal].copy()
         syn_eva = syn_df[start_date_eva:end_date_eva].copy()    
 
         # EVALUATION
-        syn_predict_eva = np.zeros(len(obs_eva))
-        for date in syn_eva.index:
-            BMA_day_prediction_eva = 0
-            for i, model in enumerate(model_list):
-                model_eva = syn_eva.at[date, model]
-                if not np.isnan(model_eva):
-                    BMA_day_prediction_eva += posterior_cal[i] * model_eva
-            syn_predict_eva[syn_eva.index.get_loc(date)] = BMA_day_prediction_eva
+        syn_model_matrix_eva = syn_eva[model_list].values
+        syn_predict_eva = np.dot(np.nan_to_num(syn_model_matrix_eva, nan=0.0), posterior_cal)
 
         # Calibration testing for analysis
-        syn_predict_cal = np.zeros(len(obs_cal))
-        for date in syn_cal.index:
-            BMA_day_prediction_cal = 0
-            for i, model in enumerate(model_list):
-                model_cal = syn_cal.at[date, model]
-                if not np.isnan(model_cal):
-                    BMA_day_prediction_cal += posterior_cal[i] * model_cal
-            syn_predict_cal[syn_cal.index.get_loc(date)] = BMA_day_prediction_cal
+        syn_model_matrix_cal = syn_cal[model_list].values
+        syn_predict_cal = np.dot(np.nan_to_num(syn_model_matrix_cal, nan=0.0), posterior_cal)
 
         syn_predict_cal[syn_predict_cal < 0] = 0
         syn_predict_eva[syn_predict_eva < 0] = 0
 
-        file_row_cal = [f'file_{file_num}_cal'] + list(syn_predict_cal.flatten())
-        file_row_eva = [f'file_{file_num}_eva'] + list(syn_predict_eva.flatten())
+        file_row_cal = [f'gauge_{gauge_id}_cal'] + list(syn_predict_cal.flatten())
+        file_row_eva = [f'gauge_{gauge_id}_eva'] + list(syn_predict_eva.flatten())
 
-        if file_num == 1:
+        if gauge_id == basins[0]:
             predict_cal_dates = pd.date_range(start=pd.to_datetime(start_date_cal) + pd.DateOffset(days=1), periods=len(predict_cal))
             predict_eva_dates = pd.date_range(start=pd.to_datetime(start_date_eva) + pd.DateOffset(days=1), periods=len(predict_eva))
 

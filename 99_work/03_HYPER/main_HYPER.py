@@ -14,8 +14,6 @@ benchmark_list = ["KGE","NSE","E1", "VE", "d","RMSE","MAE"]
 spin = 1
 
 nexttime = True
-#arid_files = True
-arid_files = False
 
 fix = ""
 #fix = "_nofix" ##
@@ -25,33 +23,45 @@ buf = f"{fix}"
 
 input_size = 3
 output_size = 1
-reservoir_size = 700
+reservoir_size = 300
 #reservoir_size = 200
-spectral_radius = 0.4
+spectral_radius = 0.8
+ridge_param = 0.1
+adjacency_density = 0.1
+input_scale = 0.5
+
 washout = 0
 #ridge_param = 1.0 
-ridge_param = 0.001
 
-#loc, ver, file_tot_num = "GB", 2, 424
-loc, ver, file_tot_num = "US", 2, 614
+#loc, ver = "GB", 2
+loc, ver = "US", 2
 
 
 file_tag = f"_r{reservoir_size}_s{spin}_sr{spectral_radius}_rr{ridge_param}{buf}"
 #####################
 print(file_tag)
 
-ver_name = "ver1_1" if ver == 1 else "ver2_0"   
+ver_name = "ver1_1" if ver == 1 else "ver2_0"
 
 varssim_dir = f"/data0/funato/hsp2/2_MERV/HYPER/{loc}"
+reshape_input_dir = f"/data0/funato/hsp2/2_MERV/varssim_{loc}"
 
-precip_cols = ['no_precip',  
+# Basin list, keyed by gauge_id: /2_MERV/HYPER/{loc}/{scenario}/{ver_name}/ now stores its
+# per-basin CSVs as varssim_{gauge_id}.csv (not the old sequential varssim{NNN}.csv), so the
+# driver data itself is loaded by gauge_id below. file_num_by_gauge is kept only for the
+# handful of things that still use the legacy sequential id: the BMA_predict_*.csv rows (see
+# BMA.py) and reshape_input_dir (/2_MERV/varssim_{loc}_1993_2006), which are still numbered.
+basin_list_csv = f"/data0/funato/hsp2/3_gis_data/{loc}/0_data/river_basin/dataset_{loc}/{loc.lower()}_file_num.csv"
+basin_df = pd.read_csv(basin_list_csv, dtype={'gauge_id': str})
+basins = [g.split('_')[-1] for g in basin_df['gauge_id']]
+file_num_by_gauge = dict(zip(basins, basin_df['File_num']))
+
+precip_cols = ['no_precip',
                'peak1_rate0','peak1_rate10', 'peak1_rate30', 'peak1_rate50',
                'peak3_rate0', 'peak3_rate10', 'peak3_rate30', 'peak3_rate50',
                'peak5_rate0', 'peak5_rate10', 'peak5_rate30', 'peak5_rate50']
 
-file_list = list(range(1, file_tot_num+1))
-
-start_date_cal = '1993-01-01'
+start_date_cal = '1990-01-01'
 end_date_cal = '2000-12-31'
 start_date_eva = '2001-01-01'
 end_date_eva = '2006-12-31'
@@ -60,6 +70,14 @@ output_dir = f'/data0/funato/hsp2/0_out/HYPER/{loc}'
 os.makedirs(output_dir, exist_ok=True)
 os.makedirs(output_dir + '/results', exist_ok=True)
 os.makedirs(output_dir + '/predict/synthetic', exist_ok=True)
+
+# Final per-basin output, already in the format used by the figure code
+# (previously produced by a separate reshape_HYPER_predict.py pass)
+pred_discharge_cols = ['og'] + precip_cols
+peak_length_list = [1, 3, 5]
+rate_list = [0, 10, 30, 50]
+reshape_output_dir = output_dir + '/varssim_HYPER'
+os.makedirs(reshape_output_dir, exist_ok=True)
 
 param_file_path = os.path.join(output_dir, 'parameters.txt')
 with open(param_file_path, 'w') as param_file:
@@ -77,9 +95,24 @@ def file_name(input_num, total_len):
     zero_len = total_len - car_len
     return '0' * zero_len + str(input_num)
 
+# Input normalization: z-score each driving variable (Precip, Temp, PET) using
+# calibration-period statistics only, so evaluation/synthetic scenarios never leak
+# their own statistics into the scaler used to train the reservoir.
+def compute_input_scaler(df_cal, cols):
+    cal_in = df_cal[cols].astype(float)
+    means = cal_in.mean(axis=0, skipna=True).values
+    stds = cal_in.std(axis=0, skipna=True).values
+    stds = np.where(stds == 0, 1.0, stds)
+    return means, stds
+
+def normalize_inputs(df, cols, means, stds):
+    vals = df[cols].astype(float).values
+    z = (vals - means) / stds
+    return np.nan_to_num(z, nan=0.0)
+
 # Function to load and preprocess data
-def load_data(data_name, file_num):
-    df = pd.read_csv(f"{varssim_dir}/{data_name}/{ver_name}/varssim{file_name(file_num, 3)}.csv")
+def load_data(data_name, gauge_id):
+    df = pd.read_csv(f"{varssim_dir}/{data_name}/{ver_name}/varssim_{gauge_id}.csv")
 
     if loc == "JP":
         df['Date'] = pd.to_datetime(df[['Year', 'Month', 'Day']])
@@ -151,12 +184,77 @@ def BMK(obs_data, sim_data, benchmark):
     elif benchmark == "MAE":
         return np.mean(np.abs(obs_data - sim_data))
 
+def save_reshaped_output(gauge_id, predictions):
+    """Merge this basin's predictions with its base varssim file and write it
+    directly in the long-format layout used by the figure code."""
+    file_num = file_num_by_gauge[gauge_id]
+    # reshape_input_dir (/2_MERV/varssim_{loc}_1993_2006) still uses the legacy sequential
+    # numbering, unlike /2_MERV/HYPER/{loc}'s per-scenario dirs.
+    base_file = f"{reshape_input_dir}/varssim{file_name(file_num, 3)}.csv"
+    if not os.path.exists(base_file):
+        print(f"Warning: Base file {base_file} does not exist. Skipping reshape output for gauge {gauge_id}.")
+        return
+
+    base_df = pd.read_csv(base_file, parse_dates=['Date'])
+    base_df = base_df[['Date', 'Obs flow', 'Precip', 'Temp', 'PET',
+                'syn_no_precip', 'Temp_at_peak',
+                'PET_at_peak', 'Obs_flow_at_peak',
+                'syn_peak1_rate0', 'syn_peak1_rate10', 'syn_peak1_rate30', 'syn_peak1_rate50',
+                'syn_peak3_rate0', 'syn_peak3_rate10', 'syn_peak3_rate30', 'syn_peak3_rate50',
+                'syn_peak5_rate0', 'syn_peak5_rate10', 'syn_peak5_rate30', 'syn_peak5_rate50']].copy()
+    base_df.set_index('Date', inplace=True)
+    base_df.sort_index(inplace=True)
+
+    precip_col = 'Precip'
+    eval_start_date = pd.Timestamp(start_date_eva)
+    eval_mask = base_df.index >= eval_start_date
+
+    eval_precip = base_df.loc[eval_mask, precip_col]
+    if len(eval_precip) > 0 and not eval_precip.isna().all():
+        peak_idx = eval_precip.idxmax()
+        peak_value = eval_precip.max()
+
+        # 41-day window around the peak (20 days before, peak day, 20 days after)
+        peak_start = max(peak_idx - pd.Timedelta(days=20), eval_start_date, base_df.index[0])
+        peak_end = min(peak_idx + pd.Timedelta(days=20), base_df.index[-1])
+
+        source_mask = (base_df.index >= peak_start) & (base_df.index <= peak_end)
+        source_precip_values = base_df.loc[source_mask, precip_col].values
+
+        eval_dates = base_df.index[eval_mask]
+        num_dest_rows = min(len(source_precip_values), len(eval_dates))
+        dest_mask = eval_dates[:num_dest_rows]
+
+        for peak_length in peak_length_list:
+            for rate in rate_list:
+                column_name = f"syn_peak{peak_length}_rate{rate}"
+                base_df[column_name] = base_df[precip_col]
+                base_df.loc[eval_mask, column_name] = np.nan
+
+                modified_precip_event = source_precip_values.copy()
+                syn_peak_value = peak_value * (1 + rate / 100.0)
+                peak_start_index = 10
+                peak_end_index = peak_start_index + peak_length
+                if peak_end_index <= len(modified_precip_event):
+                    modified_precip_event[peak_start_index:peak_end_index] = syn_peak_value
+
+                if len(dest_mask) > 0 and len(modified_precip_event) > 0:
+                    base_df.loc[dest_mask, column_name] = modified_precip_event[:num_dest_rows]
+    else:
+        print(f"Warning: No valid precipitation data found in evaluation period for gauge {gauge_id}")
+
+    for scenario in pred_discharge_cols:
+        pred_series = predictions.get(scenario)
+        base_df[scenario] = np.nan if pred_series is None else pred_series.reindex(base_df.index).values
+
+    base_df.to_csv(f"{reshape_output_dir}/varssim{file_name(file_num, 3)}.csv", index=True, header=True)
+
 model = ESN(input_size=input_size,
             output_size=output_size,
             reservoir_size=reservoir_size,
-            adjacency_density=0.0006,
+            adjacency_density=adjacency_density,
             spectral_radius=spectral_radius,
-            input_scale=0.5)
+            input_scale=input_scale)
 """
 W_in_vals = model.W_in_val()
 W_in_df = pd.DataFrame(W_in_vals)
@@ -171,18 +269,26 @@ if os.path.exists(output_dir + f'/HYPER_log.txt'):
     open(output_dir + f'/HYPER_log.txt', 'w').close()
 log_file = open(output_dir + f'/HYPER_log.txt', 'a')
 
+# Prediction timesteps are fixed by the cal/eva date ranges, so compute them
+# once up front instead of re-deriving them from file 1's array shapes.
+n_cal_days = len(pd.date_range(start=start_date_cal, end=end_date_cal))
+n_eva_days = len(pd.date_range(start=start_date_eva, end=end_date_eva))
+predict_cal_dates = pd.date_range(start=pd.to_datetime(start_date_cal) + pd.DateOffset(days=1), periods=n_cal_days)
+predict_eva_dates = pd.date_range(start=pd.to_datetime(start_date_eva) + pd.DateOffset(days=1), periods=n_eva_days - 1)
+
 results_cal = []
 results_eva = []
-for file_num in file_list:
-    print(file_num)
+for gauge_id in basins:
+    file_num = file_num_by_gauge[gauge_id]
+    print(gauge_id)
     start_time = datetime.now()
     start_time_st = start_time.strftime("%a %b %d %I:%M:%S %p JST %Y")
-    log_file.write(f"FILE_{file_num}\n")
+    log_file.write(f"BASIN_{gauge_id}\n")
     log_file.write(f"start: {start_time_st}\n")
     log_file.flush()
 
     ### INPUT DATA ###
-    df = load_data("varssim_nocal_og", file_num)
+    df = load_data("varssim_nocal_og", gauge_id)
 
     df_cal = df[start_date_cal:end_date_cal].copy()  # Use copy to avoid SettingWithCopyWarning
     df_eva = df[start_date_eva:end_date_eva].copy()
@@ -191,22 +297,19 @@ for file_num in file_list:
     bma_df_cal = pd.read_csv(f'/data0/funato/hsp2/0_out/BMA/{loc}/predict/BMA_predict_cal.csv', index_col=0)
     bma_df_eva = pd.read_csv(f'/data0/funato/hsp2/0_out/BMA/{loc}/predict/BMA_predict_eva.csv', index_col=0)
 
-    df_cal['Sim flow'] = bma_df_cal.loc[f'file_{file_num}'].values
-    df_eva['Sim flow'] = bma_df_eva.loc[f'file_{file_num}'].values
+    df_cal['Sim flow'] = bma_df_cal.loc[f'gauge_{gauge_id}'].values
+    df_eva['Sim flow'] = bma_df_eva.loc[f'gauge_{gauge_id}'].values
 
     # Calculate Flow Error
     df_cal['Flow Error'] = df_cal['Obs flow'] - df_cal['Sim flow']
     df_eva['Flow Error'] = df_eva['Obs flow'] - df_eva['Sim flow']
 
-    # For each timestep, Precip,Temp,PET,Obs flow
-    input_cal = np.hstack([
-        df_cal['Precip'].values.reshape(-1, 1),
-        df_cal['Temp'].values.reshape(-1, 1),
-        df_cal['PET'].values.reshape(-1, 1)]).T # Observed - Simulation
-    input_eva = np.hstack([
-        df_eva['Precip'].values.reshape(-1, 1),
-        df_eva['Temp'].values.reshape(-1, 1),
-        df_eva['PET'].values.reshape(-1, 1)]).T # Observed - Simulation
+    # For each timestep, Precip,Temp,PET,Obs flow -- z-score normalized per basin
+    # using calibration-period statistics (input_means/input_stds reused below for
+    # the synthetic scenarios so they stay on the same scale as training).
+    input_means, input_stds = compute_input_scaler(df_cal, ['Precip', 'Temp', 'PET'])
+    input_cal = normalize_inputs(df_cal, ['Precip', 'Temp', 'PET'], input_means, input_stds).T
+    input_eva = normalize_inputs(df_eva, ['Precip', 'Temp', 'PET'], input_means, input_stds).T
 
     #target_cal = np.concatenate((input_cal[3][1:], input_eva[3][:input_cal.shape[1] - 1])).tolist()
 
@@ -236,9 +339,9 @@ for file_num in file_list:
     Wout, reservoir = model.train(input_cal, target_data=error_target_cal, washout=washout, ridge_param=ridge_param, spinup = spin)
 
     """
-    reservoir_row = np.concatenate(([f'file_{file_num}'], reservoir.flatten()))
+    reservoir_row = np.concatenate(([f'gauge_{gauge_id}'], reservoir.flatten()))
     reservoir_df = pd.DataFrame([reservoir_row])
-    if file_num == 1:
+    if gauge_id == basins[0]:
         reservoir_df.to_csv(output_dir + f"/reservoir/HYPER_reservoir.csv", mode='w', index=False, header=False)
     else:
         reservoir_df.to_csv(output_dir + f"/reservoir/HYPER_reservoir.csv", mode='a', index=False, header=False)
@@ -246,9 +349,9 @@ for file_num in file_list:
     # Wout (1,R)
     # reservoir (R, )
 
-    Wout_row = np.concatenate(([f'file_{file_num}'], Wout.flatten()))
+    Wout_row = np.concatenate(([f'gauge_{gauge_id}'], Wout.flatten()))
     Wout_df = pd.DataFrame([Wout_row])
-    if file_num == 1:
+    if gauge_id == basins[0]:
         Wout_df.to_csv(output_dir + f"/Wout/HYPER_Wout.csv", mode='w', index=False, header=False)
     else:
         Wout_df.to_csv(output_dir + f"/Wout/HYPER_Wout.csv", mode='a', index=False, header=False)
@@ -286,13 +389,10 @@ for file_num in file_list:
     #print(predict_eva)
     print(BMK(target_cal.T,predict_cal,"KGE"), BMK(target_eva.T, predict_eva,"KGE"))
 
-    file_row_cal = [f'file_{file_num}_cal'] + list(predict_cal.flatten())
-    file_row_eva = [f'file_{file_num}_eva'] + list(predict_eva.flatten())
+    file_row_cal = [f'gauge_{gauge_id}'] + list(predict_cal.flatten())
+    file_row_eva = [f'gauge_{gauge_id}'] + list(predict_eva.flatten())
 
-    if file_num == 1:
-        predict_cal_dates = pd.date_range(start=pd.to_datetime(start_date_cal) + pd.DateOffset(days=1), periods=len(predict_cal[0]))
-        predict_eva_dates = pd.date_range(start=pd.to_datetime(start_date_eva) + pd.DateOffset(days=1), periods=len(predict_eva[0]))
-
+    if gauge_id == basins[0]:
         date_row_cal = list(['Date'] + [str(date.date()) for date in predict_cal_dates])
         date_row_eva = list(['Date'] + [str(date.date()) for date in predict_eva_dates])
 
@@ -307,24 +407,33 @@ for file_num in file_list:
     with open(output_dir + f"/predict/HYPER_predict_eva.csv", 'a') as file:
         pd.DataFrame([file_row_eva]).to_csv(file, header=False, index=False)
 
-    file_results_cal = {'file_num': file_num}
-    file_results_eva = {'file_num': file_num}
+    file_results_cal = {'gauge_id': gauge_id}
+    file_results_eva = {'gauge_id': gauge_id}
 
     # Loop over each benchmark and add results to the current file's dictionary
     for benchmark in benchmark_list:
         file_results_cal.update({
-            f'HYPER_{benchmark}_cal': BMK(target_cal, predict_cal, benchmark)
+            f'{benchmark}': BMK(target_cal, predict_cal, benchmark)
         })
         file_results_eva.update({
-            f'HYPER_{benchmark}_eva': BMK(target_eva, predict_eva, benchmark)
-        })  
-    
+            f'{benchmark}': BMK(target_eva, predict_eva, benchmark)
+        })
+
     results_cal.append(file_results_cal)
     results_eva.append(file_results_eva)
 
+    # Accumulate this basin's predictions (by scenario) so they can be merged
+    # directly into the final long-format output below, without a reshape pass.
+    predictions = {
+        'og': pd.concat([
+            pd.Series(predict_cal.flatten(), index=predict_cal_dates),
+            pd.Series(predict_eva.flatten(), index=predict_eva_dates),
+        ]).sort_index()
+    }
+
     # run the model for the synthetic data
     for precip_col in precip_cols:
-        syn_df = load_data(f"varssim_nocal_{precip_col}", file_num)
+        syn_df = load_data(f"varssim_nocal_{precip_col}", gauge_id)
         if precip_col == 'no_precip':
             syn_precip_col = 'syn_no_precip'
             temp_col = 'Temp'
@@ -340,21 +449,18 @@ for file_num in file_list:
         syn_bma_df_cal = pd.read_csv(f'/data0/funato/hsp2/0_out/BMA/{loc}/predict/synthetic/BMA_predict_{precip_col}_cal.csv', index_col=0)
         syn_bma_df_eva = pd.read_csv(f'/data0/funato/hsp2/0_out/BMA/{loc}/predict/synthetic/BMA_predict_{precip_col}_eva.csv', index_col=0)
 
-        syn_cal['Sim flow'] = syn_bma_df_cal.loc[f'file_{file_num}_cal'].values
-        syn_eva['Sim flow'] = syn_bma_df_eva.loc[f'file_{file_num}_eva'].values
+        syn_cal['Sim flow'] = syn_bma_df_cal.loc[f'gauge_{gauge_id}_cal'].values
+        syn_eva['Sim flow'] = syn_bma_df_eva.loc[f'gauge_{gauge_id}_eva'].values
 
         # Calculate Flow Error for synthetic data
         syn_cal['Flow Error'] = syn_cal['Obs flow'] - syn_cal['Sim flow']
         syn_eva['Flow Error'] = syn_eva['Obs flow'] - syn_eva['Sim flow']   
 
-        syn_input_cal = np.hstack([
-            syn_cal[syn_precip_col].values.reshape(-1, 1),
-            syn_cal[temp_col].values.reshape(-1, 1),
-            syn_cal[pet_col].values.reshape(-1, 1)]).T
-        syn_input_eva = np.hstack([
-            syn_eva[syn_precip_col].values.reshape(-1, 1),
-            syn_eva[temp_col].values.reshape(-1, 1),
-            syn_eva[pet_col].values.reshape(-1, 1)]).T
+        # Same means/stds as the 'og' scenario above, so synthetic inputs stay on the
+        # scale the reservoir was trained on.
+        syn_cols = [syn_precip_col, temp_col, pet_col]
+        syn_input_cal = normalize_inputs(syn_cal, syn_cols, input_means, input_stds).T
+        syn_input_eva = normalize_inputs(syn_eva, syn_cols, input_means, input_stds).T
         syn_obs_error_cal = syn_cal['Flow Error'].values.reshape(-1, 1)
         syn_obs_error_eva = syn_eva['Flow Error'].values.reshape(-1, 1) 
         syn_error_target_cal = np.concatenate([syn_obs_error_cal[1:], syn_obs_error_eva[0:1]])
@@ -371,25 +477,12 @@ for file_num in file_list:
         syn_predict_cal[syn_predict_cal < 0] = 0
         syn_predict_eva[syn_predict_eva < 0] = 0
 
-        syn_file_row_cal = [f'file_{file_num}_cal'] + list(syn_predict_cal.flatten())
-        syn_file_row_eva = [f'file_{file_num}_eva'] + list(syn_predict_eva.flatten())
+        syn_file_row_cal = [f'gauge_{gauge_id}'] + list(syn_predict_cal.flatten())
+        syn_file_row_eva = [f'gauge_{gauge_id}'] + list(syn_predict_eva.flatten())
 
-        if file_num == 1:
-            syn_predict_cal_dates = pd.date_range(start=pd.to_datetime(start_date_cal) + pd.DateOffset(days=1), periods=len(syn_predict_cal[0]))
-            syn_predict_eva_dates = pd.date_range(start=pd.to_datetime(start_date_eva) + pd.DateOffset(days=1), periods=len(syn_predict_eva[0]))
-
-            syn_date_row_cal = list(['Date'] + [str(date.date()) for date in syn_predict_cal_dates])
-            syn_date_row_eva = list(['Date'] + [str(date.date()) for date in syn_predict_eva_dates])
-
-            syn_predict_cal_df = pd.DataFrame([syn_date_row_cal])
-            syn_predict_eva_df = pd.DataFrame([syn_date_row_eva])
-
-        if file_num == 1:
-            syn_predict_cal_dates = pd.date_range(start=pd.to_datetime(start_date_cal) + pd.DateOffset(days=1), periods=len(syn_predict_cal[0]))
-            syn_predict_eva_dates = pd.date_range(start=pd.to_datetime(start_date_eva) + pd.DateOffset(days=1), periods=len(syn_predict_eva[0]))
-
-            syn_date_row_cal = list(['Date'] + [str(date.date()) for date in syn_predict_cal_dates])
-            syn_date_row_eva = list(['Date'] + [str(date.date()) for date in syn_predict_eva_dates])
+        if gauge_id == basins[0]:
+            syn_date_row_cal = list(['Date'] + [str(date.date()) for date in predict_cal_dates])
+            syn_date_row_eva = list(['Date'] + [str(date.date()) for date in predict_eva_dates])
 
             syn_predict_cal_df = pd.DataFrame([syn_date_row_cal])
             syn_predict_eva_df = pd.DataFrame([syn_date_row_eva])
@@ -401,6 +494,12 @@ for file_num in file_list:
         with open(output_dir + f"/predict/synthetic/HYPER_predict_{precip_col}_eva.csv", 'a') as file:
             pd.DataFrame([syn_file_row_eva]).to_csv(file, header=False, index=False)
 
+        predictions[precip_col] = pd.concat([
+            pd.Series(syn_predict_cal.flatten(), index=predict_cal_dates),
+            pd.Series(syn_predict_eva.flatten(), index=predict_eva_dates),
+        ]).sort_index()
+
+    save_reshaped_output(gauge_id, predictions)
 
     end_time = datetime.now()
     end_time_st = end_time.strftime("%a %b %d %I:%M:%S %p JST %Y")
