@@ -30,17 +30,17 @@ loc, ver = "JP", 2
 
 ver_name = "ver1_1" if ver == 1 else "ver2_0"   
 
-if loc == "JP" and ver == 2:
-    file_tot_num = 87
 varssim_dir = f"/data0/funato/2_MERV/{loc}/varssim_nocal/{ver_name}"
 
-file_list = list(range(1, file_tot_num+1))
-#file_list = list(range(20,30))
+import sys
+sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "TCN_regional_modeling-master"))
+from papercode.utils import get_basin_list
+gauge_id_list = get_basin_list(loc)
 
-start_date_cal = '1993-01-01'
-end_date_cal = '2000-12-31'
-start_date_eva = '2001-01-01'
-end_date_eva = '2006-12-31'
+start_date_cal = '1990-01-01'
+end_date_cal = '1998-12-31'
+start_date_eva = '1999-01-01'
+end_date_eva = '2000-12-31'
 
 output_dir = f"/data0/funato/hsp2/0_out/TCN/{loc}/hyperparam"
 os.makedirs(output_dir, exist_ok=True)
@@ -51,13 +51,8 @@ early_stopping = EarlyStopping(
     monitor='val_loss', patience=5, restore_best_weights=True
 )
 
-def file_name(input_num, total_len):
-    car_len = len(str(input_num))
-    zero_len = total_len - car_len
-    return '0' * zero_len + str(input_num)
-
-def load_data(file_num):
-    df = pd.read_csv(f"{varssim_dir}/varssim{file_name(file_num, 3)}.csv")
+def load_data(gauge_id):
+    df = pd.read_csv(f"{varssim_dir}/varssim_{gauge_id}.csv")
     
     if loc == "JP":
         df['Date'] = pd.to_datetime(df[['Year', 'Month', 'Day']])
@@ -142,15 +137,15 @@ for nb_filters in filter_size_list:
         for nb_stacks in nb_stacks_list:
             log_file.write("START=================\n")
             log_file.write(f"nb_filters: {nb_filters}, kernel_size: {kernel_size}, nb_stacks: {nb_stacks}\n")
-            for file_num in file_list:
+            for gauge_id in gauge_id_list:
                 start_time = datetime.now()
                 start_time_st = start_time.strftime("%a %b %d %I:%M:%S %p JST %Y")
-                log_file.write(f"FILE_{file_num}\n")
+                log_file.write(f"BASIN_{gauge_id}\n")
                 log_file.write(f"start: {start_time_st}\n")
                 log_file.flush()
 
                 ### INPUT DATA ###
-                df = load_data(file_num)
+                df = load_data(gauge_id)
 
                 df_cal = df[start_date_cal:end_date_cal].copy()  # Use copy to avoid SettingWithCopyWarning
                 df_eva = df[start_date_eva:end_date_eva].copy()
@@ -214,13 +209,13 @@ for nb_filters in filter_size_list:
                 print("target_cal_seq", target_cal_seq.shape, "predict_cal", predict_cal.shape)
                 print("target_eva_seq", target_eva_seq.shape, "predict_eva", predict_eva.shape)
 
-                print(f"file_num: {file_num}, NSE_cal: {BMK(target_cal_seq, predict_cal.flatten(), 'NSE')}, NSE_eva: {BMK(target_eva_seq, predict_eva.flatten(), 'NSE')}")
+                print(f"gauge_id: {gauge_id}, NSE_cal: {BMK(target_cal_seq, predict_cal.flatten(), 'NSE')}, NSE_eva: {BMK(target_eva_seq, predict_eva.flatten(), 'NSE')}")
 
 
-                file_row_cal = [f'file_{file_num}_cal'] + list(predict_cal.flatten())
-                file_row_eva = [f'file_{file_num}_eva'] + list(predict_eva.flatten())
+                file_row_cal = [f'basin_{gauge_id}_cal'] + list(predict_cal.flatten())
+                file_row_eva = [f'basin_{gauge_id}_eva'] + list(predict_eva.flatten())
 
-                if file_num == 1:
+                if gauge_id == gauge_id_list[0]:
                     predict_cal_dates = pd.date_range(start=pd.to_datetime(start_date_cal) + pd.DateOffset(days=1), periods=len(predict_cal))
                     predict_eva_dates = pd.date_range(start=pd.to_datetime(start_date_eva) + pd.DateOffset(days=1), periods=len(predict_eva))
 
@@ -238,8 +233,8 @@ for nb_filters in filter_size_list:
                 with open(output_dir + f"/predict/TCN_predict_f{nb_filters}_k{kernel_size}_s{nb_stacks}_eva.csv", 'a') as file:
                     pd.DataFrame([file_row_eva]).to_csv(file, header=False, index=False)
 
-                file_results_cal = {'file_num': file_num}
-                file_results_eva = {'file_num': file_num}
+                file_results_cal = {'gauge_id': gauge_id}
+                file_results_eva = {'gauge_id': gauge_id}
 
                 # Loop over each benchmark and add results to the current file's dictionary
                 for benchmark in benchmark_list:

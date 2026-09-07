@@ -5,22 +5,44 @@
 # ============================================
 
 # Core assignment
-cores=1
-start_core=34 # Start core (1-indexed)
+cores=3
+start_core=124 # Start core (1-indexed) -- moved off 0-79/80-103, which are busy with the
+# RF regional HP grid and XGB individual HP grid re-runs as of 2026-08-27.
 
 # Seeds
 nseeds=1
-firstseed=309
+firstseed=300
 
 # Static data
-static_bool=false
+# NOTE: this default was previously `false`, which silently disabled the regional
+# model's cross-basin conditioning mechanism (static basin attributes) in EVERY
+# production run (confirmed via runs_tcn/*/cfg.json - all show no_static=true even
+# though main_tcn.py's own argparse default is False). See DEBUG_README.md for the
+# LSTM pipeline's identical bug (no_static / EA-LSTM) and how it was found. Default
+# flipped to `true` so a canonical run actually exercises static conditioning unless
+# explicitly overridden.
+static_bool=true
 # if static_bool is true, use static data; if false, do not use static data
 
-# TCN Hyperparameters
-NUM_CHANNELS="128 256 512"  # Space-separated list of channel sizes
+# TCN Hyperparameters -- selected regional combo from the completed 162/162-combo HP grid
+# (154-basin subsample, NSE_median=0.284) -- see SELECTED_HYPERPARAMETERS.md. An earlier pass
+# this session mistakenly flagged this grid as broken (catastrophic NSE -99 to -585) based on a
+# STALE aggregated CSV generated before the underlying per-combo result files existed/finished;
+# re-running the aggregation script (99_work/01_fig/benchmark/hyperparameter_analysis/TCN_hp.py)
+# against the actual (fresh, complete) per-combo results showed sane numbers throughout -- see
+# DEBUG_README.md's TCN follow-up section for the full writeup. Also fixes the previous
+# NUM_CHANNELS="128 256 512" mismatch (a 3-level, non-uniform-width architecture that didn't
+# match this project's fixed 6-level uniform-width convention, per HYPERPARAMETERS.md's
+# "LAYERS 1 2 4 8 16 32" row / DEBUG_README.md's TCN §15.1 derivation).
+NUM_FILTERS=64
+NUM_LEVELS=6
 BATCH_SIZE=32
 EPOCHS=50
-KERNEL_SIZE=4
+KERNEL_SIZE=3
+DROPOUT=0.2
+LEARNING_RATE=0.0005
+# main_tcn.py hardcodes seq_length=270 in GLOBAL_SETTINGS (no --seq_length CLI flag), which
+# already matches the selected window size -- no variable/flag needed here.
 NUM_WORKERS=2
 
 # ============================================
@@ -68,8 +90,8 @@ for (( seed = $firstseed ; seed < $((nseeds+$firstseed)) ; seed++ )); do
         echo "Start Time: $start_time | Seed: $seed" >> "$output_dir/$log_name"
 
         # Build parameter strings from configuration
-        TCN_PARAMS="--num_channels $NUM_CHANNELS"
-        OTHER_PARAMS="--batch_size=$BATCH_SIZE --epochs=$EPOCHS --kernel_size=$KERNEL_SIZE --seed=$seed --num_workers=$NUM_WORKERS"
+        TCN_PARAMS="--num_filters=$NUM_FILTERS --num_levels=$NUM_LEVELS"
+        OTHER_PARAMS="--batch_size=$BATCH_SIZE --epochs=$EPOCHS --kernel_size=$KERNEL_SIZE --dropout=$DROPOUT --learning_rate=$LEARNING_RATE --seed=$seed --num_workers=$NUM_WORKERS"
 
 
         if [ "$static_bool" = true ]; then ## static data is used

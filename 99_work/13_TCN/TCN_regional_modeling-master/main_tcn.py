@@ -25,7 +25,9 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
-from papercode.datautils import add_basin_attributes, load_attributes
+from papercode.datautils import add_basin_attributes, load_attributes, VALID_ATTR
+from papercode.utils import get_basin_list
+from papercode.tcn_run_registry import find_completed_run, find_resumable_run
 
 # ####################### #
 # Global Definitions      #
@@ -35,7 +37,7 @@ GLOBAL_SETTINGS = {
     'loc': 'US',
     'ver': 2,
     'seq_length': 270,
-    'train_start': pd.to_datetime('1993-01-01', format='%Y-%m-%d'),
+    'train_start': pd.to_datetime('1990-01-01', format='%Y-%m-%d'),
     'train_end': pd.to_datetime('2000-12-31', format='%Y-%m-%d'),
     'val_start': pd.to_datetime('2001-01-01', format='%Y-%m-%d'),
     'val_end': pd.to_datetime('2006-12-31', format='%Y-%m-%d')
@@ -43,17 +45,7 @@ GLOBAL_SETTINGS = {
 
 ver_name = "ver1_1" if GLOBAL_SETTINGS['ver'] == 1 else "ver2_0"
 
-if GLOBAL_SETTINGS['loc'] == "JP":
-    file_tot_num = 87
-    file_num_list = list(map(str, range(1, file_tot_num + 1)))
-elif GLOBAL_SETTINGS['loc'] == "GB":
-    file_tot_num = 424
-    file_num_list = list(map(str, range(1, file_tot_num + 1)))
-elif GLOBAL_SETTINGS['loc'] == "US":
-    # Load small basins list (area < 1000 km²) for US
-    small_basins_csv = "/data0/funato/hsp2/3_gis_data/US/0_data/river_basin/dataset_US/small_basins_1000.csv"
-    small_basins_df = pd.read_csv(small_basins_csv)
-    file_num_list = small_basins_df['basin_id'].astype(str).tolist()
+gauge_id_list = get_basin_list(GLOBAL_SETTINGS['loc'])
 
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -61,12 +53,9 @@ DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 # Utility Functions       #
 # ####################### #
 
-def file_name(input_num, total_len):
-    return str(input_num).zfill(total_len)
-
-def load_data_for_basin(file_num):
+def load_data_for_basin(gauge_id):
     varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim_{GLOBAL_SETTINGS['loc']}"
-    df = pd.read_csv(f"{varssim_dir}/varssim{file_name(file_num, 3)}.csv")
+    df = pd.read_csv(f"{varssim_dir}/varssim_{gauge_id}.csv")
     df['Date'] = pd.to_datetime(df['Date'])
     df.set_index('Date', inplace=True)
     return df
@@ -164,18 +153,24 @@ class HydroDataset(Dataset):
         q_col = 'Obs flow'
 
         for basin in tqdm(self.basins, desc="Processing basins"):
-            df = load_data_for_basin(int(basin))
+            if basin not in self.scalers['basin_scalers']: continue
+
+            df = load_data_for_basin(basin)
             df_period = df.loc[self.cfg['train_start']:self.cfg['train_end']]
-            
-            gscaler = self.scalers['global_scalers']
-            
-            dyn_data_scaled = (df_period[dyn_cols].values - gscaler['dynamic_means']) / gscaler['dynamic_stds']
-            q_data_scaled = (df_period[q_col].values - gscaler['q_mean']) / gscaler['q_std']
+
+            bscaler = self.scalers['basin_scalers'][basin]
+
+            dyn_data_scaled = (df_period[dyn_cols].values - bscaler['dynamic_means']) / bscaler['dynamic_stds']
+            q_data_scaled = (df_period[q_col].values - bscaler['q_mean']) / bscaler['q_std']
             
             static_data_scaled = None
             if not self.cfg["no_static"]:
-                static_data = self.attributes.loc[int(basin)].values
-                static_data_scaled = (static_data - self.scalers['static_means']) / self.scalers['static_stds']
+                static_data = self.attributes.loc[basin].values
+                static_data_scaled = np.where(
+                    self.scalers['static_stds'] != 0,
+                    (static_data - self.scalers['static_means']) / self.scalers['static_stds'],
+                    0.0
+                )
             
             is_nan = df_period[dyn_cols + [q_col]].isnull().any(axis=1)
             clumps = np.ma.clump_unmasked(np.ma.masked_array(is_nan, is_nan))
@@ -221,14 +216,20 @@ def get_args() -> Dict:
     parser.add_argument('--run_dir', type=str, help="For evaluation mode.")
     parser.add_argument('--num_workers', type=int, default=2)
     parser.add_argument('--no_static', type=str2bool, default=False)
-    parser.add_argument('--num_levels', type=int, default=8, help='Number of dilation levels (fixed at 8)')
+    # Fixed at 6 (dilations [1,2,4,8,16,32]) per HYPERPARAMETERS.md's "LAYERS 1 2 4 8 16 32" row,
+    # same convention as the individual TCN script -- see DEBUG_README.md §15.1. Was previously
+    # 8 here, inconsistent with that convention (run_main_tcn.sh doesn't pass --num_levels, so
+    # this default is what production actually got).
+    parser.add_argument('--num_levels', type=int, default=6, help='Number of dilation levels (fixed at 6)')
     
-    # TCN specific arguments
+    # TCN specific arguments. Defaults are the selected regional combo from the completed
+    # 162/162-combo HP grid (154-basin subsample, NSE_median=0.284) -- see
+    # SELECTED_HYPERPARAMETERS.md and DEBUG_README.md's TCN follow-up section.
     parser.add_argument('--batch_size', type=int, default=256)
     parser.add_argument('--epochs', type=int, default=50)
-    parser.add_argument('--learning_rate', type=float, default=1e-3)
-    parser.add_argument('--dropout', type=float, default=0.4)
-    parser.add_argument('--kernel_size', type=int, default=4)
+    parser.add_argument('--learning_rate', type=float, default=5e-4)
+    parser.add_argument('--dropout', type=float, default=0.2)
+    parser.add_argument('--kernel_size', type=int, default=3)
     parser.add_argument('--num_filters', type=int, default=64)
     parser.add_argument('--num_channels', type=int, nargs='+', default=None)
 
@@ -264,39 +265,81 @@ def train(cfg):
     if torch.cuda.is_available():
         torch.cuda.manual_seed(cfg["seed"])
     
-    basins = file_num_list
-    cfg = _setup_run(cfg)
+    basins = gauge_id_list
+
+    # _setup_run's run_dir is timestamped, so a restart after a kill would
+    # otherwise retrain from scratch even if training already ran to
+    # cfg["epochs"] under these exact hyperparameters. Skip if a completed run
+    # (one with a checkpoint at the required epoch count) already exists under
+    # runs_tcn/. 'seed' is deliberately NOT a match key -- get_args() defaults
+    # --seed to a random draw when omitted (same convention as the upstream
+    # EA-LSTM reference implementation, which logs that random seed in the run
+    # folder name purely for traceability), so requiring it to match would defeat
+    # resumability for any invocation that doesn't pin --seed.
+    match_keys = ['batch_size', 'epochs', 'learning_rate', 'dropout', 'kernel_size',
+                  'num_filters', 'num_levels', 'no_static']
+    search_root = Path(__file__).parent / "runs_tcn"
+    target_checkpoint = f"tcn_model_epoch{cfg['epochs']}.pt"
+    existing_run = find_completed_run(search_root, cfg, match_keys, target_checkpoint)
+    if existing_run is not None:
+        print(f"Skipping: a completed {cfg['epochs']}-epoch run with these exact hyperparameters already exists at {existing_run}")
+        return
+
+    # Resume from a partially-trained run with matching hyperparameters instead of always
+    # starting a fresh timestamped directory from epoch 0 -- this training loop already
+    # checkpoints every 5 epochs, that progress just wasn't being reused before. Only the
+    # model/optimizer state is restored here (data loading, scaler computation, and static
+    # attributes below are all still redone -- cheap relative to a training epoch, and
+    # deterministic given the same basins/period, so recomputing them is harmless).
+    resume_dir, resume_epoch = find_resumable_run(search_root, cfg, match_keys,
+                                                   "tcn_model_epoch*.pt",
+                                                   lambda p: int(p.stem.replace("tcn_model_epoch", "")))
+    if resume_dir is not None:
+        cfg['run_dir'] = resume_dir
+        print(f"Resuming existing run at {resume_dir} from epoch {resume_epoch + 1}/{cfg['epochs']}")
+    else:
+        cfg = _setup_run(cfg)
     for key, val in cfg.items(): print(f"{key}: {val}")
 
-    print("\nUsing global normalization scalers (matching LSTM approach)...")
+    print("\nCalculating per-basin scalers from clean data blocks...")
     dyn_cols = ['Precip', 'PET', 'Temp']
     q_col = 'Obs flow'
-    
-    # Global scalers - same as LSTM's SCALER values
-    # Maurer mean/std calculated over all basins in period 01.10.1999 until 30.09.2008
-    global_scalers = {
-        'dynamic_means': np.array([3.0267525200819776, 13.110970171836367, 10.81853041139944]),
-        'dynamic_stds': np.array([1.085855688036388, 5.04530884159448, 5.45962822094668]),
-        'q_mean': 1.6033382557458762,
-        'q_std': 1.6091810953328294
-    }
+    basin_scalers = {}
 
-    scalers = {'global_scalers': global_scalers}
-    
+    for basin in tqdm(basins, desc="Loading basin data for scaling"):
+        df = load_data_for_basin(basin)
+        df_period = df.loc[cfg['train_start']:cfg['train_end']]
+
+        is_nan = df_period[dyn_cols + [q_col]].isnull().any(axis=1)
+        clumps = np.ma.clump_unmasked(np.ma.masked_array(df_period.index, is_nan))
+        if not isinstance(clumps, list):
+            clumps = [clumps] if clumps else []
+        clean_blocks = [df_period.iloc[s] for s in clumps]
+
+        if not clean_blocks:
+            continue
+
+        basin_clean_df = pd.concat(clean_blocks)
+
+        basin_scalers[basin] = {
+            'q_mean': basin_clean_df[q_col].mean(),
+            'q_std': basin_clean_df[q_col].std(),
+            'dynamic_means': basin_clean_df[dyn_cols].mean().values,
+            'dynamic_stds': basin_clean_df[dyn_cols].std().values
+        }
+
+    scalers = {'basin_scalers': basin_scalers}
+
     db_path = str(cfg['run_dir'] / 'attributes.db')
     add_basin_attributes(db_path=db_path, loc=GLOBAL_SETTINGS['loc'], ver_name=ver_name)
-    
-    # Define the 18 valid basin attributes to use
-    VALID_ATTR = [
-        'p_mean', 'pet_mean', 'aridity', 'seasonality', 'frac_snow', 'high_prec_freq',
-        'high_prec_dur', 'low_prec_freq', 'low_prec_dur', 'ele_mt_smn', 'slp_dg_sav', 'area',
-        'for_pc_sse', 'snd_pc_sav', 'slt_pc_sav', 'cly_pc_sav','soc_th_sav', 'swc_pc_syr']
-    
+
     attributes = None
     if not cfg["no_static"]:
         attributes = load_attributes(db_path=db_path, basins=basins, drop_lat_lon=True, keep_features=VALID_ATTR)
         scalers['static_means'] = attributes.mean().values
         scalers['static_stds'] = attributes.std().values
+        # Replace zero stds with 1.0 to avoid division by zero
+        scalers['static_stds'] = np.where(scalers['static_stds'] == 0, 1.0, scalers['static_stds'])
 
     def convert_for_json(obj):
         if isinstance(obj, dict): return {k: convert_for_json(v) for k, v in obj.items()}
@@ -323,9 +366,23 @@ def train(cfg):
     optimizer = torch.optim.Adam(model.parameters(), lr=cfg["learning_rate"])
     loss_func = nn.MSELoss()
 
+    if resume_epoch > 0:
+        ckpt_path = cfg['run_dir'] / f"tcn_model_epoch{resume_epoch}.pt"
+        ckpt = torch.load(ckpt_path, map_location=DEVICE)
+        if isinstance(ckpt, dict) and 'model_state_dict' in ckpt:
+            model.load_state_dict(ckpt['model_state_dict'])
+            if 'optimizer_state_dict' in ckpt:
+                optimizer.load_state_dict(ckpt['optimizer_state_dict'])
+        else:
+            # Old checkpoint format: a bare model.state_dict(), no optimizer state saved --
+            # optimizer starts fresh (Adam re-warms its moment estimates over a few steps,
+            # not a correctness issue for resuming).
+            model.load_state_dict(ckpt)
+        print(f"Loaded checkpoint from epoch {resume_epoch}")
+
     print("\nStarting training loop...")
     all_preds_scaled, all_obs_scaled = [], []
-    for epoch in range(1, cfg["epochs"] + 1):
+    for epoch in range(resume_epoch + 1, cfg["epochs"] + 1):
         model.train()
         pbar = tqdm(loader, desc=f'Epoch {epoch}/{cfg["epochs"]}')
         
@@ -348,9 +405,21 @@ def train(cfg):
             all_obs_scaled = np.array(epoch_obs).flatten()
 
         if epoch % 5 == 0 or epoch == cfg["epochs"]:
-            torch.save(model.state_dict(), cfg["run_dir"] / f"tcn_model_epoch{epoch}.pt")
+            torch.save({
+                'epoch': epoch,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+            }, cfg["run_dir"] / f"tcn_model_epoch{epoch}.pt")
 
+    # Was previously print-only -- final_model_path was computed and logged as "saved" but
+    # never actually passed to torch.save(), so tcn_model_final.pt never existed (same bug
+    # already documented for main_tcn_hp.py). The epoch%5==0-or-last-epoch checkpoint above
+    # already wrote tcn_model_epoch{cfg["epochs"]}.pt, which is what eval_regional.py's
+    # --model_epoch default actually relies on; this just makes the "_final.pt" convenience
+    # alias (used by eval_adapted.py's fallback when a specific --model_epoch isn't passed)
+    # real.
     final_model_path = cfg["run_dir"] / "tcn_model_final.pt"
+    torch.save(model.state_dict(), final_model_path)
     print(f"\nTraining finished. Final model saved to {final_model_path}")
 
     print("\nGenerating debug plots for a sample of basins...")
@@ -368,14 +437,14 @@ def train(cfg):
         print(f"  Plotting basin {basin_id}...")
         
         basin_samples = df_samples[df_samples['basin'] == basin_id]
-        gscaler = scalers['global_scalers']
-        
+        bscaler = scalers['basin_scalers'][basin_id]
+
         fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(20, 12), sharex=True)
         fig.suptitle(f'TCN Training Debug Analysis for Basin {basin_id}', fontsize=16)
-        
+
         # Rescaled Hydrograph
-        obs_rescaled = (basin_samples['obs_scaled'] * gscaler['q_std']) + gscaler['q_mean']
-        pred_rescaled = (basin_samples['pred_scaled'] * gscaler['q_std']) + gscaler['q_mean']
+        obs_rescaled = (basin_samples['obs_scaled'] * bscaler['q_std']) + bscaler['q_mean']
+        pred_rescaled = (basin_samples['pred_scaled'] * bscaler['q_std']) + bscaler['q_mean']
         ax1.plot(basin_samples['date'], obs_rescaled, label='Observed', color='black')
         ax1.plot(basin_samples['date'], pred_rescaled, label='Predicted', color='blue', linestyle='--')
         ax1.set_title('Rescaled Hydrograph (Training Period)')

@@ -48,13 +48,14 @@ ver_name = "ver1_1" if ver == 1 else "ver2_0"
 
 
 if loc == "JP" and ver == 2:
-    file_tot_num = 87
     varssim_dir = f"/data0/funato/2_MERV/{loc}/varssim_nocal/{ver_name}"
 elif loc == "GB" and ver == 2:
-    file_tot_num = 424
     varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim"
 
-file_list = list(range(1, file_tot_num+1))
+import sys
+sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "TCN_regional_modeling-master"))
+from papercode.utils import get_basin_list
+gauge_id_list = get_basin_list(loc)
 
 input_dim = 3
 
@@ -69,7 +70,7 @@ dropout_rate = 0.2
 param_tag = f"f{nb_filters}_k{kernel_size}_d{dropout_rate}"
 
 
-start_date_cal = '1993-01-01'
+start_date_cal = '1990-01-01'
 end_date_cal = '2000-12-31'
 start_date_eva = '2001-01-01'
 end_date_eva = '2006-12-31'
@@ -85,13 +86,8 @@ early_stopping = EarlyStopping(
 )
 
 
-def file_name(input_num, total_len):
-    car_len = len(str(input_num))
-    zero_len = total_len - car_len
-    return '0' * zero_len + str(input_num)
-
-def load_data(file_num):
-    df = pd.read_csv(f"{varssim_dir}/varssim{file_name(file_num, 3)}.csv")
+def load_data(gauge_id):
+    df = pd.read_csv(f"{varssim_dir}/varssim_{gauge_id}.csv")
     
     if loc == "JP":
         df['Date'] = pd.to_datetime(df[['Year', 'Month', 'Day']])
@@ -178,7 +174,7 @@ if os.path.exists(output_dir + f'/TCN_log.txt'):
     open(output_dir + f'/TCN_log.txt', 'w').close()
 log_file = open(output_dir + f'/TCN_log.txt', 'a')
 
-# results_cal and results_eva will store dicts for each file_num
+# results_cal and results_eva will store dicts for each gauge_id
 results_cal = []
 results_eva = []
 
@@ -189,15 +185,15 @@ log_file.flush()
 
 
 # --- Individual Training Loop ---
-for file_num in file_list:
+for gauge_id in gauge_id_list:
     start_time_basin = datetime.now()
     start_time_st_basin = start_time_basin.strftime("%a %b %d %I:%M:%S %p JST %Y")
-    log_file.write(f"FILE_{file_num} - Individual Training\n")
+    log_file.write(f"BASIN_{gauge_id} - Individual Training\n")
     log_file.write(f"start: {start_time_st_basin}\n")
     log_file.flush()
 
     ### LOAD DATA FOR CURRENT BASIN ###
-    df = load_data(file_num)
+    df = load_data(gauge_id)
 
     df_cal = df[start_date_cal:end_date_cal].copy()  
     df_eva = df[start_date_eva:end_date_eva].copy()
@@ -243,7 +239,7 @@ for file_num in file_list:
 
     # Skip if insufficient data
     if len(input_cal_seq) == 0 or len(input_eva_seq) == 0:
-        log_file.write(f"Insufficient data for basin {file_num}, skipping\n")
+        log_file.write(f"Insufficient data for basin {gauge_id}, skipping\n")
         continue
 
     ### BUILD AND TRAIN MODEL FOR THIS BASIN ###
@@ -285,11 +281,11 @@ for file_num in file_list:
 
     ### SAVE PREDICTIONS ###
     # Prepare CSV data
-    file_row_cal = [f'file_{file_num}_cal'] + list(predict_cal_basin)
-    file_row_eva = [f'file_{file_num}_eva'] + list(predict_eva_basin)
+    file_row_cal = [f'basin_{gauge_id}_cal'] + list(predict_cal_basin)
+    file_row_eva = [f'basin_{gauge_id}_eva'] + list(predict_eva_basin)
 
     # Write headers for first file
-    if file_num == file_list[0]:
+    if gauge_id == gauge_id_list[0]:
         predict_cal_dates = pd.date_range(start=pd.to_datetime(start_date_cal) + pd.DateOffset(days=timesteps+1), periods=len(predict_cal_basin))
         predict_eva_dates = pd.date_range(start=pd.to_datetime(start_date_eva) + pd.DateOffset(days=timesteps+1), periods=len(predict_eva_basin))
 
@@ -308,8 +304,8 @@ for file_num in file_list:
         pd.DataFrame([file_row_eva]).to_csv(file, header=False, index=False)
 
     ### CALCULATE BENCHMARKS ###
-    file_results_cal = {'file_num': file_num}
-    file_results_eva = {'file_num': file_num}
+    file_results_cal = {'gauge_id': gauge_id}
+    file_results_eva = {'gauge_id': gauge_id}
 
     for benchmark in benchmark_list:
         file_results_cal.update({
@@ -329,13 +325,13 @@ for file_num in file_list:
     df_results_eva = pd.DataFrame(results_eva)
     df_results_eva.to_csv(output_dir + f'/results/TCN_results_{param_tag}_eva.csv', index=False, header=True)
 
-    print(f"file_num: {file_num}, NSE_cal: {BMK(target_cal_denorm, predict_cal_basin, 'NSE'):.4f}, NSE_eva: {BMK(target_eva_denorm, predict_eva_basin, 'NSE'):.4f}")
+    print(f"gauge_id: {gauge_id}, NSE_cal: {BMK(target_cal_denorm, predict_cal_basin, 'NSE'):.4f}, NSE_eva: {BMK(target_eva_denorm, predict_eva_basin, 'NSE'):.4f}")
 
     end_time_basin = datetime.now()
     log_file.write(f"end: {end_time_basin}\n")
     log_file.write(f"elapsed: {end_time_basin - start_time_basin}\n")
-    log_file.write(f"Results saved for file {file_num}\n")
-    print(f"Results saved for file {file_num}")
+    log_file.write(f"Results saved for basin {gauge_id}\n")
+    print(f"Results saved for basin {gauge_id}")
     log_file.flush()
 
 end_time_overall = datetime.now()

@@ -109,15 +109,21 @@ def create_h5_files(
             out_f.flush()
 
 
-def get_basin_list(file_tot_num: int = None) -> List:
-    """Read list of basins from text file.
-    
+def get_basin_list(loc: str = None) -> List:
+    """Read list of basin gauge_ids from the location's file_num lookup CSV.
+
+    Parameters
+    ----------
+    loc : str
+        Location code (e.g. 'US', 'GB', 'JP')
+
     Returns
     -------
     List
-        List containing the 8-digit basin code of all basins
+        List containing the gauge_id (plain string, no prefix) of all basins
     """
-    basins = list(range(1, file_tot_num + 1)) if file_tot_num is not None else []
-    # chnage the number to 3 digit string with leading zeros
-    basins = [str(basin).zfill(3) for basin in basins]
+    file_num_csv = (f"/data0/funato/hsp2/3_gis_data/{loc}/0_data/river_basin/"
+                     f"dataset_{loc}/{loc.lower()}_file_num.csv")
+    df = pd.read_csv(file_num_csv, dtype={'gauge_id': str})
+    basins = sorted({str(g).split('_')[-1] for g in df['gauge_id']})
     return basins

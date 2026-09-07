@@ -21,7 +21,9 @@ from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 
-from papercode.datautils import add_basin_attributes, load_attributes
+from papercode.datautils import add_basin_attributes, load_attributes, VALID_ATTR
+from papercode.utils import get_basin_list
+from papercode.tcn_run_registry import find_completed_run
 
 # ####################### #
 # Global Definitions      #
@@ -30,22 +32,15 @@ from papercode.datautils import add_basin_attributes, load_attributes
 GLOBAL_SETTINGS = {
     'loc': 'US',
     'ver': 2,
-    'seq_length': 270,
-    'train_start': pd.to_datetime('1993-01-01', format='%Y-%m-%d'),
-    'train_end': pd.to_datetime('2000-12-31', format='%Y-%m-%d'),
-    'val_start': pd.to_datetime('2001-01-01', format='%Y-%m-%d'),
-    'val_end': pd.to_datetime('2006-12-31', format='%Y-%m-%d')
+    'train_start': pd.to_datetime('1990-01-01', format='%Y-%m-%d'),
+    'train_end': pd.to_datetime('1998-12-31', format='%Y-%m-%d'),
+    'val_start': pd.to_datetime('1999-01-01', format='%Y-%m-%d'),
+    'val_end': pd.to_datetime('2000-12-31', format='%Y-%m-%d')
 }
 
 ver_name = "ver1_1" if GLOBAL_SETTINGS['ver'] == 1 else "ver2_0"
 
-if GLOBAL_SETTINGS['loc'] == "JP":
-    file_tot_num = 87
-elif GLOBAL_SETTINGS['loc'] == "GB":
-    file_tot_num = 424
-elif GLOBAL_SETTINGS['loc'] == "US":
-    file_tot_num = 614
-file_num_list = list(map(str, range(1, file_tot_num + 1)))[::4]
+gauge_id_list = get_basin_list(GLOBAL_SETTINGS['loc'])[::4]
 
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -53,12 +48,9 @@ DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 # Utility Functions       #
 # ####################### #
 
-def file_name(input_num, total_len):
-    return str(input_num).zfill(total_len)
-
-def load_data_for_basin(file_num):
+def load_data_for_basin(gauge_id):
     varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim_{GLOBAL_SETTINGS['loc']}"
-    df = pd.read_csv(f"{varssim_dir}/varssim{file_name(file_num, 3)}.csv")
+    df = pd.read_csv(f"{varssim_dir}/varssim_{gauge_id}.csv")
     df['Date'] = pd.to_datetime(df['Date'])
     df.set_index('Date', inplace=True)
     return df
@@ -158,7 +150,7 @@ class HydroDataset(Dataset):
         for basin in tqdm(self.basins, desc="Processing basins"):
             if basin not in self.scalers['basin_scalers']: continue
 
-            df = load_data_for_basin(int(basin))
+            df = load_data_for_basin(basin)
             df_period = df.loc[self.cfg['train_start']:self.cfg['train_end']]
             
             bscaler = self.scalers['basin_scalers'][basin]
@@ -168,7 +160,7 @@ class HydroDataset(Dataset):
             
             static_data_scaled = None
             if not self.cfg["no_static"]:
-                static_data = self.attributes.loc[int(basin)].values
+                static_data = self.attributes.loc[basin].values
                 # Use np.where to safely handle division by zero (already handled in scaler creation)
                 static_data_scaled = np.where(
                     self.scalers['static_stds'] != 0,
@@ -228,16 +220,33 @@ def get_args() -> Dict:
     parser.add_argument('--dropout', type=float, default=0.4)
     parser.add_argument('--kernel_size', type=int, default=4)
     parser.add_argument('--num_filters', type=int, default=64, help='Number of filters per layer')
+    # Fixed at 6, not swept: HYPERPARAMETERS.md's TCN "LAYERS 1 2 4 8 16 32" row is not an
+    # independent hyperparameter dimension - it's the dilation schedule dilation=2**i for
+    # i in range(num_levels), which num_levels=6 reproduces exactly (dilations
+    # [1,2,4,8,16,32]). Was previously defaulted to 8 (dilations up to 128) - see
+    # DEBUG_README.md for the derivation and the runs_tcn/*/cfg.json evidence of the old default.
+    parser.add_argument('--num_levels', type=int, default=6, help='Number of dilation levels (fixed at 6, matches HYPERPARAMETERS.md LAYERS row)')
+    # seq_length (input window, days) is swept in the HP grid (90/180/270) - was previously fixed
+    # in GLOBAL_SETTINGS. Kept out of GLOBAL_SETTINGS now so cfg.update(GLOBAL_SETTINGS) below
+    # doesn't clobber the CLI value back to a hardcoded default.
+    parser.add_argument('--seq_length', type=int, default=270, help='Input window length in days')
     #parser.add_argument('--num_channels', type=int, nargs='+', default=[32, 64, 128])
 
     cfg = vars(parser.parse_args())
     cfg.update(GLOBAL_SETTINGS)
     return cfg
 
+def _hp_str(cfg: Dict) -> str:
+    # learning_rate is swept in HYPERPARAMETERS.md's regional grid (0.001 vs 0.0005) - must be
+    # in the tag or two runs differing only in LR would land in the same directory. num_levels
+    # is fixed (not swept, see the --num_levels help text above) but still included rather than
+    # buried, so the tag stays self-describing.
+    return f"f{cfg['num_filters']}_k{cfg['kernel_size']}_d{cfg['dropout']}_lr{cfg['learning_rate']}_lv{cfg['num_levels']}_w{cfg['seq_length']}_ns{cfg['no_static']}"
+
 def _setup_run(cfg: Dict) -> Dict:
     """Create folder structure for this run"""
     now = datetime.now()
-    hp_str = f"f{cfg['num_filters']}_k{cfg['kernel_size']}_d{cfg['dropout']}_w{cfg[GLOBAL_SETTINGS['seq_length']]}"
+    hp_str = _hp_str(cfg)
     time_str = now.strftime("%m%d_%H%M")
     run_name = f"{hp_str}/tcn_run_{time_str}_seed{cfg['seed']}"
     cfg['run_dir'] = Path(__file__).parent / "runs_tcn" / "hp" / GLOBAL_SETTINGS['loc'] / run_name
@@ -260,7 +269,27 @@ def train(cfg):
     if torch.cuda.is_available():
         torch.cuda.manual_seed(cfg["seed"])
     
-    basins = file_num_list
+    basins = gauge_id_list
+
+    # run_tcn_hp_tuning.sh launches one process per hyperparameter combination;
+    # a restart after a kill would otherwise retrain every combination from
+    # scratch since _setup_run's leaf directory is timestamped. Skip if a
+    # completed run (checkpoint at the required epoch count) with this exact HP
+    # combination already exists under runs_tcn/hp/{loc}/{hp_str}/. 'seed' is
+    # deliberately NOT a match key -- get_args() defaults --seed to a random draw
+    # when omitted (same convention as the upstream EA-LSTM reference
+    # implementation, which logs that random seed in the run folder name purely
+    # for traceability), so requiring it to match would defeat resumability for
+    # any invocation that doesn't pin --seed.
+    match_keys = ['batch_size', 'epochs', 'learning_rate', 'dropout', 'kernel_size',
+                  'num_filters', 'num_levels', 'seq_length', 'no_static']
+    search_root = Path(__file__).parent / "runs_tcn" / "hp" / GLOBAL_SETTINGS['loc'] / _hp_str(cfg)
+    target_checkpoint = f"tcn_model_epoch{cfg['epochs']}.pt"
+    existing_run = find_completed_run(search_root, cfg, match_keys, target_checkpoint)
+    if existing_run is not None:
+        print(f"Skipping: a completed {cfg['epochs']}-epoch run with these exact hyperparameters already exists at {existing_run}")
+        return
+
     cfg = _setup_run(cfg)
     for key, val in cfg.items(): print(f"{key}: {val}")
 
@@ -270,7 +299,7 @@ def train(cfg):
     basin_scalers = {}
 
     for basin in tqdm(basins, desc="Loading basin data for scaling"):
-        df = load_data_for_basin(int(basin))
+        df = load_data_for_basin(basin)
         df_period = df.loc[cfg['train_start']:cfg['train_end']]
         
         is_nan = df_period[dyn_cols + [q_col]].isnull().any(axis=1)
@@ -299,8 +328,8 @@ def train(cfg):
     
     attributes = None
     if not cfg["no_static"]:
-        # Convert string basins to integers for attributes DataFrame
-        attributes = load_attributes(db_path=db_path, basins=[int(b) for b in basins], drop_lat_lon=True)
+        attributes = load_attributes(db_path=db_path, basins=basins, drop_lat_lon=True,
+                                      keep_features=VALID_ATTR)
         scalers['static_means'] = attributes.mean().values
         scalers['static_stds'] = attributes.std().values
         # Replace zero stds with 1.0 to avoid division by zero

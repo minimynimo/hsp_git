@@ -68,7 +68,7 @@ class CamelsTXT(Dataset):
         self.db_path = db_path
 
         # Set missing attributes for varssim data
-        self.file_num = basin
+        self.gauge_id = basin
         self.varssim_dir = "/data0/funato/hsp/2_MERV/varssim_HBV"
         self.loc = "GB"
 
@@ -102,11 +102,11 @@ class CamelsTXT(Dataset):
 
     def _load_data(self) -> Tuple[torch.Tensor, torch.Tensor]:
         """Load input and output data from text files."""
-        if self.file_num is None or self.varssim_dir is None or self.loc is None:
-            raise ValueError("file_num, varssim_dir, and loc must be provided.")
-        
+        if self.gauge_id is None or self.varssim_dir is None or self.loc is None:
+            raise ValueError("gauge_id, varssim_dir, and loc must be provided.")
+
         # Pass start_date and end_date to load_data
-        df = load_data(self.file_num, self.varssim_dir,  self.loc)
+        df = load_data(self.gauge_id, self.varssim_dir,  self.loc)
 
         # we use (seq_len) time steps before start for warmup
         start_date = self.dates[0] - pd.DateOffset(days=self.seq_length - 1)

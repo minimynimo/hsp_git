@@ -14,17 +14,20 @@ import glob
 import re
 import numpy as np
 
+sys.path.append(str(Path(__file__).parent))
+from papercode.utils import get_basin_list
+
 def generate_date_columns(period, num_cols):
     """Generate date column names for a given period."""
     if period == 'cal':
-        start_date = pd.to_datetime('1993-01-01')
+        start_date = pd.to_datetime('1990-01-01')
         end_date = pd.to_datetime('2000-12-31')
     elif period == 'eva':
         start_date = pd.to_datetime('2001-01-01')
         end_date = pd.to_datetime('2006-12-31')
     else:
         # Default to creating a date range
-        start_date = pd.to_datetime('1993-01-01')
+        start_date = pd.to_datetime('1990-01-01')
         end_date = start_date + pd.Timedelta(days=num_cols-1)
     
     date_range = pd.date_range(start=start_date, end=end_date, freq='D')
@@ -88,7 +91,7 @@ def combine_results():
             try:
                 # Try normal reading first
                 try:
-                    df = pd.read_csv(file, index_col='basin')
+                    df = pd.read_csv(file, index_col='basin', dtype={'basin': str})
                     print(f"    ✓ Process {process_id}: {len(df)} basins")
                     dfs.append(df)
                 except pd.errors.ParserError:
@@ -116,7 +119,7 @@ def combine_results():
                     # Create DataFrame
                     df = pd.DataFrame(basins_data, columns=header)
                     df = df.set_index('basin')
-                    df.index = df.index.astype(int)
+                    df.index = df.index.astype(str)
                     
                     # Convert to numeric
                     for col in df.columns:
@@ -188,15 +191,16 @@ def verify_results():
         base_dir / "predict" / "TCN_predict_eva.csv",
     ]
     
-    total_basins = 424  # For GB dataset
-    
+    all_gauge_ids = get_basin_list("GB")
+    total_basins = len(all_gauge_ids)  # For GB dataset
+
     for file in files_to_check:
         if file.exists():
-            df = pd.read_csv(file, index_col='basin')
+            df = pd.read_csv(file, index_col='basin', dtype={'basin': str})
             print(f"\n  {file.name}:")
             print(f"    Basins found: {len(df)} / {total_basins}")
             if len(df) < total_basins:
-                missing_basins = set(range(1, total_basins + 1)) - set(df.index)
+                missing_basins = set(all_gauge_ids) - set(df.index)
                 print(f"    ⚠ Missing {total_basins - len(df)} basins")
                 print(f"    Missing basin IDs: {sorted(list(missing_basins))[:10]}...")  # Show first 10
             else:

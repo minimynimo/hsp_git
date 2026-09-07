@@ -32,19 +32,18 @@ GLOBAL_SETTINGS = {
     'loc': 'US',
     'ver': 2,
     'seq_length': 270,
-    'train_start': pd.to_datetime('1993-01-01', format='%Y-%m-%d'),
+    'train_start': pd.to_datetime('1990-01-01', format='%Y-%m-%d'),
     'train_end': pd.to_datetime('2000-12-31', format='%Y-%m-%d'),
     'val_start': pd.to_datetime('2001-01-01', format='%Y-%m-%d'),
     'val_end': pd.to_datetime('2006-12-31', format='%Y-%m-%d')
 }
 
 benchmarks = ["NSE", "KGE", "E1", "VE", "RMSE", "MAE"]
-"""
-syn_precip_cols = ['syn_no_precip', 'syn_p_pet',
-                   'syn_peak1_rate0', 'syn_peak1_rate10', 'syn_peak1_rate30', 'syn_peak1_rate50',
-                   'syn_peak3_rate0', 'syn_peak3_rate10', 'syn_peak3_rate30', 'syn_peak3_rate50',
-                   'syn_peak5_rate0', 'syn_peak5_rate10', 'syn_peak5_rate30', 'syn_peak5_rate50']"""
 
+# Note: 'syn_p_pet' does NOT appear in this list - verified against the actual varssim_GB/
+# varssim_US/varssim_nocal (JP) CSVs, none of which have a syn_p_pet column. This 13-item list is
+# the correct one for the real data; an older draft (not present here anymore) included
+# 'syn_p_pet' and would have KeyError'd if ever run for real - see DEBUG_README.md.
 syn_precip_cols = ['syn_no_precip',
                    'syn_peak1_rate0', 'syn_peak1_rate10', 'syn_peak1_rate30', 'syn_peak1_rate50',
                    'syn_peak3_rate0', 'syn_peak3_rate10', 'syn_peak3_rate30', 'syn_peak3_rate50',
@@ -55,17 +54,9 @@ DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 #DEVICE = torch.device("cpu")  # Force CPU for debugging
 
 
-if GLOBAL_SETTINGS['loc'] == "JP":
-    file_tot_num = 87
-    file_num_list = list(map(str, range(1, file_tot_num + 1)))
-elif GLOBAL_SETTINGS['loc'] == "GB":
-    file_tot_num = 424
-    file_num_list = list(map(str, range(1, file_tot_num + 1)))
-elif GLOBAL_SETTINGS['loc'] == "US":
-    # Load small basins list (area < 1000 km²) for US
-    small_basins_csv = "/data0/funato/hsp2/3_gis_data/US/0_data/river_basin/dataset_US/small_basins_1000.csv"
-    small_basins_df = pd.read_csv(small_basins_csv)
-    file_num_list = small_basins_df['basin_id'].astype(str).tolist()
+from papercode.utils import get_basin_list
+from papercode.tcn_run_registry import load_tcn_state_dict
+gauge_id_list = get_basin_list(GLOBAL_SETTINGS['loc'])
 
 # ####################### #
 # TCN Model Definition    #
@@ -125,16 +116,19 @@ class TCNModel(nn.Module):
 # Utility Functions       #
 # ####################### #
 
-def file_name(input_num, total_len): return str(input_num).zfill(total_len)
-
-def load_data_for_basin(file_num):
+def load_data_for_basin(gauge_id):
     varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim_{GLOBAL_SETTINGS['loc']}"
-    df = pd.read_csv(f"{varssim_dir}/varssim{file_name(file_num, 3)}.csv", index_col='Date', parse_dates=True)
+    df = pd.read_csv(f"{varssim_dir}/varssim_{gauge_id}.csv", index_col='Date', parse_dates=True)
     return df
 
-def load_attributes(db_path, basins, drop_lat_lon=True):
+from papercode.datautils import VALID_ATTR
+
+def load_attributes(db_path, basins, drop_lat_lon=True, keep_features=None, loc=None):
     from papercode.datautils import load_attributes as load_attributes_from_lib
-    return load_attributes_from_lib(db_path, basins, drop_lat_lon)
+    kwargs = {}
+    if loc is not None:
+        kwargs['loc'] = loc
+    return load_attributes_from_lib(db_path, basins, drop_lat_lon, keep_features=keep_features, **kwargs)
 
 
 def get_param_string(run_cfg):
@@ -151,8 +145,11 @@ def get_param_string(run_cfg):
     kernel_size = run_cfg.get("kernel_size", 4)
     dropout = run_cfg.get("dropout", 0.4)
     seq_length = run_cfg.get("seq_length", 30)
-    
-    return f"n{nb_filters}_k{kernel_size}_d{dropout}"
+    no_static = run_cfg.get("no_static", True)
+
+    # Encode every config dimension that changes the model/architecture, not just the
+    # ones currently swept - matches eval_regional.py's tag (see DEBUG_README).
+    return f"n{nb_filters}_k{kernel_size}_d{dropout}_ns{no_static}_sl{seq_length}"
 
 def BMK(obs_data, sim_data, benchmark):    
     """Calculate benchmark metrics"""
@@ -235,24 +232,25 @@ def get_seed_label_from_run_cfg(run_cfg):
 # ####################### #
 
 class FineTuneDataset(Dataset):
-    def __init__(self, basin, dates, cfg, static_attrs, global_scalers=None):
+    def __init__(self, basin, dates, cfg, static_attrs, basin_scalers=None):
         self.samples, self.scalers = [], {}
-        self._prepare_data(basin, dates, cfg, static_attrs, global_scalers)
+        self._prepare_data(basin, dates, cfg, static_attrs, basin_scalers)
 
-    def _prepare_data(self, basin, dates, cfg, static_attrs, global_scalers):
-        df = load_data_for_basin(int(basin))
+    def _prepare_data(self, basin, dates, cfg, static_attrs, basin_scalers):
+        df = load_data_for_basin(basin)
         df_period = df.loc[dates[0]:dates[1]]
         dyn_cols, q_col = ['Precip', 'PET', 'Temp'], 'Obs flow'
 
         is_nan = df_period[dyn_cols + [q_col]].isnull().any(axis=1)
         clean_blocks = [df_period.iloc[s] for s in np.ma.clump_unmasked(np.ma.masked_array(is_nan, is_nan))]
         if not clean_blocks: return
-        
-        # Use global scalers for adapted evaluation (matching regional training)
-        if global_scalers is not None:
-            self.scalers = global_scalers
+
+        # Use THIS basin's own scaler (as computed by main_tcn.py at regional-training
+        # time) - never a single pooled scaler shared across basins. Fall back to
+        # recomputing per-basin stats only if the training-time scaler is unavailable.
+        if basin_scalers is not None and basin in basin_scalers:
+            self.scalers = basin_scalers[basin]
         else:
-            # Fallback to per-basin scalers if global not provided (shouldn't happen)
             basin_clean_df = pd.concat(clean_blocks)
             self.scalers = {
                 'q_mean': basin_clean_df[q_col].mean(), 'q_std': basin_clean_df[q_col].std(),
@@ -264,7 +262,7 @@ class FineTuneDataset(Dataset):
         
         static_scaled = None
         if static_attrs is not None and not cfg["no_static"]:
-            static_data = static_attrs.loc[int(basin)].values
+            static_data = static_attrs.loc[basin].values
             # For adapted eval, static attrs don't need scaling as they are constant for the basin
             static_scaled = static_data
 
@@ -292,11 +290,13 @@ class SyntheticFineTuneDataset(Dataset):
     """Dataset for synthetic precipitation scenarios"""
     def __init__(self, basin, scenario_col, dates, cfg, static_attrs, base_scalers):
         self.samples = []
+        # base_scalers here is already this specific basin's own scaler dict
+        # (passed in by evaluate_synthetic as basin_scalers[basin]).
         self.scalers = base_scalers
         self._prepare_synthetic_data(basin, scenario_col, dates, cfg, static_attrs)
 
     def _prepare_synthetic_data(self, basin, scenario_col, dates, cfg, static_attrs):
-        df = load_data_for_basin(int(basin))
+        df = load_data_for_basin(basin)
         warmup_start = dates[0] - pd.DateOffset(days=cfg['seq_length'] - 1)
         df_period = df.loc[warmup_start:dates[1]]
         
@@ -317,7 +317,7 @@ class SyntheticFineTuneDataset(Dataset):
         
         static_scaled = None
         if static_attrs is not None and not cfg["no_static"]:
-            static_data = static_attrs.loc[int(basin)].values
+            static_data = static_attrs.loc[basin].values
             static_scaled = static_data
 
         is_nan = df_syn[dyn_cols].isnull().any(axis=1)
@@ -348,29 +348,38 @@ class SyntheticFineTuneDataset(Dataset):
     def __len__(self): return len(self.samples)
     def __getitem__(self, idx):
         x, date = self.samples[idx]
-        return torch.from_numpy(x), date
+        # DataLoader's default collate can't batch raw pandas.Timestamp objects
+        # (pre-existing bug - crashed with "batch must contain tensors, ... found
+        # <class 'pandas.Timestamp'>" the moment this path was actually exercised).
+        # Pass the int64 ns timestamp instead and convert back in evaluate_synthetic.
+        return torch.from_numpy(x), np.int64(pd.Timestamp(date).value)
 
 # ####################### #
 # Main Logic              #
 # ####################### #
 
-def save_basin_model(basin, model, scalers, save_dir):
+def save_basin_model(basin, model, scalers, save_dir, epoch_tag):
     """Save fine-tuned model and scalers for a basin."""
     save_dir = Path(save_dir)
     save_dir.mkdir(parents=True, exist_ok=True)
-    
-    model_path = save_dir / f"basin_{basin}_model.pt"
-    scalers_path = save_dir / f"basin_{basin}_scalers.pkl"
-    
+
+    model_path = save_dir / f"basin_{basin}_{epoch_tag}_model.pt"
+    scalers_path = save_dir / f"basin_{basin}_{epoch_tag}_scalers.pkl"
+
     torch.save(model.state_dict(), model_path)
     with open(scalers_path, 'wb') as f:
         pickle.dump(scalers, f)
 
-def load_basin_model(basin, base_model, save_dir):
-    """Load fine-tuned model and scalers for a basin if they exist."""
+def load_basin_model(basin, base_model, save_dir, epoch_tag):
+    """Load fine-tuned model and scalers for a basin if they exist.
+
+    epoch_tag (e.g. "epoch30" or "final") must identify which base checkpoint the fine-tune
+    started from -- without it, a cache entry from a fine-tune of one base epoch would be
+    silently reused for a request against a different base epoch.
+    """
     save_dir = Path(save_dir)
-    model_path = save_dir / f"basin_{basin}_model.pt"
-    scalers_path = save_dir / f"basin_{basin}_scalers.pkl"
+    model_path = save_dir / f"basin_{basin}_{epoch_tag}_model.pt"
+    scalers_path = save_dir / f"basin_{basin}_{epoch_tag}_scalers.pkl"
     
     if model_path.exists() and scalers_path.exists():
         model = copy.deepcopy(base_model)
@@ -383,19 +392,19 @@ def load_basin_model(basin, base_model, save_dir):
         return model, scalers
     return None, None
 
-def fine_tune_basin_model(base_model, basin, cfg, static_attrs, global_scalers):
+def fine_tune_basin_model(base_model, basin, cfg, static_attrs, basin_scalers):
     """Fine-tune the base model once for a basin using calibration period data."""
-    ft_dataset = FineTuneDataset(basin, (GLOBAL_SETTINGS['train_start'], GLOBAL_SETTINGS['train_end']), cfg, static_attrs, global_scalers)
+    ft_dataset = FineTuneDataset(basin, (GLOBAL_SETTINGS['train_start'], GLOBAL_SETTINGS['train_end']), cfg, static_attrs, basin_scalers)
     if len(ft_dataset) == 0:
         return None, None
 
     ft_loader = DataLoader(ft_dataset, batch_size=512, shuffle=True, num_workers=0, pin_memory=False)
-    
+
     basin_model = copy.deepcopy(base_model).train()
     optimizer = torch.optim.Adam(basin_model.parameters(), lr=1e-4)
     loss_func = nn.MSELoss()
-    
-    print(f"  Fine-tuning basin {basin} for 5 epochs with global scalers...")
+
+    print(f"  Fine-tuning basin {basin} for 5 epochs with this basin's own scaler...")
     for _ in range(5):
         for x, y in ft_loader:
             x, y = x.to(DEVICE), y.to(DEVICE)
@@ -448,8 +457,8 @@ def evaluate_synthetic(basin_model, basin, scenario_col, dates, cfg, static_attr
             x_batch = x_batch.to(DEVICE)
             y_pred = basin_model(x_batch)
             preds_list.extend(y_pred.cpu().numpy().flatten())
-            dates_list.extend(date_batch)
-    
+            dates_list.extend(pd.to_datetime(date_batch.numpy()))
+
     # Rescale predictions
     preds_rescaled = np.array(preds_list) * scalers['q_std'] + scalers['q_mean']
     return preds_rescaled, dates_list
@@ -465,48 +474,60 @@ def main():
     with open(run_dir / 'cfg.json', 'r') as fp:
         cfg = json.load(fp)
     
-    # Load global scalers from regional training
+    # Load per-basin scalers from regional training (main_tcn.py). These are the SAME
+    # scalers each basin's data was normalized with during regional pre-training - fine-tuning
+    # and evaluation must keep using them, not one pooled/global scaler (see DEBUG_README).
     scalers_file = run_dir / 'scalers.json'
     if scalers_file.exists():
         with open(scalers_file, 'r') as fp:
             scalers_data = json.load(fp)
-            global_scalers = scalers_data.get('global_scalers', {})
-            # Convert lists back to numpy arrays
-            for key in ['dynamic_means', 'dynamic_stds']:
-                if key in global_scalers and isinstance(global_scalers[key], list):
-                    global_scalers[key] = np.array(global_scalers[key])
-        print(f"Loaded global scalers from {scalers_file}")
-        print(f"  dynamic_means: {global_scalers['dynamic_means']}")
-        print(f"  dynamic_stds: {global_scalers['dynamic_stds']}")
-        print(f"  q_mean: {global_scalers['q_mean']}, q_std: {global_scalers['q_std']}")
+        regional_basin_scalers = {}
+        for basin, bs in scalers_data.get('basin_scalers', {}).items():
+            regional_basin_scalers[basin] = {
+                'q_mean': bs['q_mean'], 'q_std': bs['q_std'],
+                'dynamic_means': np.array(bs['dynamic_means']),
+                'dynamic_stds': np.array(bs['dynamic_stds'])
+            }
+        static_means = np.array(scalers_data['static_means']) if 'static_means' in scalers_data else None
+        static_stds = np.array(scalers_data['static_stds']) if 'static_stds' in scalers_data else None
+        print(f"Loaded per-basin scalers for {len(regional_basin_scalers)} basins from {scalers_file}")
     else:
-        print(f"Warning: No scalers.json found! Using hardcoded US global scalers.")
-        global_scalers = {
-            'dynamic_means': np.array([3.0267525200819776, 13.110970171836367, 10.81853041139944]),
-            'dynamic_stds': np.array([1.085855688036388, 5.04530884159448, 5.45962822094668]),
-            'q_mean': 1.6033382557458762,
-            'q_std': 1.6091810953328294
-        }
+        raise ValueError(f"No scalers.json found in {run_dir}; cannot fine-tune/evaluate without "
+                          f"the per-basin scalers this run was trained with.")
 
     print("Adapted TCN Evaluation")
     
-    basins_to_process = file_num_list
+    basins_to_process = gauge_id_list
     if args.n_basins:
-        basins_to_process = file_num_list[:args.n_basins]
+        basins_to_process = gauge_id_list[:args.n_basins]
         
     model_file = run_dir / f"tcn_model_epoch{args.model_epoch}.pt"
     if not model_file.exists(): model_file = run_dir / "tcn_model_final.pt"
     print(f"Loading base model from: {model_file}")
+    # Identifies which base checkpoint fine-tuning started from, so basin-model cache entries
+    # from a different --model_epoch are never mistaken for this one (e.g. "epoch30" or "final").
+    epoch_tag = model_file.stem.replace("tcn_model_", "")
 
     is_no_static = cfg.get('no_static', False)
+
+    static_attrs = None
+    if not is_no_static:
+        db_path = run_dir / "attributes.db"
+        static_attrs = load_attributes(db_path, basins=basins_to_process, drop_lat_lon=True, keep_features=VALID_ATTR)
+        # Normalize with the SAME static scaler used at regional-training time.
+        if static_means is None or static_stds is None:
+            raise ValueError("scalers.json has no static_means/static_stds but no_static=False")
+        safe_stds = np.where(static_stds != 0, static_stds, 1.0)
+        static_attrs = (static_attrs - static_means) / safe_stds
+
     input_size = 3
     if not is_no_static:
-        # This assumes the number of static features is known and consistent
-        # A better approach would be to save this in cfg.json during training
-        # For now, we hardcode a common value for GB attributes
-        input_size += 27 
+        # Derive the static input width from what was actually loaded, instead of a
+        # hardcoded guess (was hardcoded to 27, inconsistent with the 18-column
+        # VALID_ATTR list and with eval_regional.py's own hardcoded 209 - neither had
+        # ever been exercised because every saved run used no_static=True).
+        input_size += static_attrs.shape[1]
 
-        
     # Handle different parameter formats
     # Check if num_levels and num_filters exist (training script creates num_channels from these)
     if 'num_levels' in cfg and 'num_filters' in cfg:
@@ -531,18 +552,7 @@ def main():
                           num_channels=num_channels, 
                           kernel_size=cfg["kernel_size"], 
                           dropout=cfg["dropout"]).to(DEVICE)
-    base_model.load_state_dict(torch.load(model_file, map_location=DEVICE))
-    
-    # Define the 18 valid basin attributes to use
-    VALID_ATTR = [
-        'p_mean', 'pet_mean', 'aridity', 'seasonality', 'frac_snow', 'high_prec_freq',
-        'high_prec_dur', 'low_prec_freq', 'low_prec_dur', 'ele_mt_smn', 'slp_dg_sav', 'area',
-        'for_pc_sse', 'snd_pc_sav', 'slt_pc_sav', 'cly_pc_sav','soc_th_sav', 'swc_pc_syr']
-    
-    static_attrs = None
-    if not is_no_static:
-        db_path = run_dir / "attributes.db"
-        static_attrs = load_attributes(db_path, basins=basins_to_process, drop_lat_lon=True, keep_features=VALID_ATTR)
+    base_model.load_state_dict(load_tcn_state_dict(model_file, map_location=DEVICE))
 
     output_dir = Path(f"/data0/funato/hsp2/0_out/TCN/{GLOBAL_SETTINGS['loc']}/adapted")
     
@@ -562,18 +572,18 @@ def main():
     print("="*60)
     for basin in tqdm(basins_to_process, desc="Processing basins"):
         # Try to load existing fine-tuned model
-        basin_model, scalers = load_basin_model(basin, base_model, adapted_models_dir)
-        
+        basin_model, scalers = load_basin_model(basin, base_model, adapted_models_dir, epoch_tag)
+
         if basin_model is None:
-            # Fine-tune if not found (pass global_scalers)
-            basin_model, scalers = fine_tune_basin_model(base_model, basin, cfg, static_attrs, global_scalers)
+            # Fine-tune if not found (pass this run's per-basin scalers from regional training)
+            basin_model, scalers = fine_tune_basin_model(base_model, basin, cfg, static_attrs, regional_basin_scalers)
             if basin_model is not None:
                 # Save the fine-tuned model
-                save_basin_model(basin, basin_model, scalers, adapted_models_dir)
+                save_basin_model(basin, basin_model, scalers, adapted_models_dir, epoch_tag)
         
         if basin_model is not None:
             basin_models[basin] = basin_model
-            basin_scalers[basin] = scalers if scalers else global_scalers
+            basin_scalers[basin] = scalers if scalers else regional_basin_scalers.get(basin)
 
     param_tag = get_param_string(cfg)
     
@@ -617,8 +627,7 @@ def main():
 
         if all_results:
             # Sort CSV by basin ID numerically
-            temp_df = pd.read_csv(pred_path, index_col='basin')
-            temp_df.index = temp_df.index.astype(int)
+            temp_df = pd.read_csv(pred_path, index_col='basin', dtype={'basin': str})
             temp_df = temp_df.sort_index()
             temp_df.to_csv(pred_path)
             print(f"Predictions saved to {pred_path}")
@@ -670,8 +679,7 @@ def main():
         
         # Sort CSV by basin ID numerically if file exists
         if pred_path.exists():
-            temp_df = pd.read_csv(pred_path, index_col='basin')
-            temp_df.index = temp_df.index.astype(int)
+            temp_df = pd.read_csv(pred_path, index_col='basin', dtype={'basin': str})
             temp_df = temp_df.sort_index()
             temp_df.to_csv(pred_path)
             print(f"Saved predictions to {pred_path}")

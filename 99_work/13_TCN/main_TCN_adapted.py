@@ -43,18 +43,46 @@ syn_precip_cols = ['syn_no_precip', 'syn_p_pet',
                    'syn_peak3_rate0','syn_peak3_rate10', 'syn_peak3_rate30', 'syn_peak3_rate50',
                    'syn_peak5_rate0','syn_peak5_rate10', 'syn_peak5_rate30', 'syn_peak5_rate50']
 
+# The 27-attribute CAMELS-US catchment-attribute set from
+# /data0/funato/hsp2/CATCHMENT_ATTRIBUTE.md (see papercode/datautils.py's VALID_ATTR in both
+# the LSTM and TCN regional-modeling dirs for the canonical copy / full naming-typo notes).
+VALID_ATTR = [
+    'p_mean', 'pet_mean', 'aridity', 'p_seasonality', 'frac_snow', 'high_prec_freq',
+    'high_prec_dur', 'low_prec_freq', 'low_prec_dur', 'elev_mean', 'slope_mean', 'area_gages2',
+    'frac_forest', 'lai_max', 'lai_diff', 'gvf_max', 'gvf_diff', 'soil_depth_pelletier',
+    'soil_depth_statsgo', 'soil_porosity', 'soil_conductivity', 'max_water_content',
+    'sand_frac', 'silt_frac', 'clay_frac', 'carbonate_rocks_frac', 'geol_permeability'
+]
+
 if loc == "JP" and ver == 2:
-    file_tot_num = 87
-    columns_drop = ['grdc_no','river','station','WaterASrea','ForestArea','ForestAreaRatio','WaterAreaRatio','lat_org','long_org', 'land_GolfCourse','land_GolfCourse_Ratio']
-    attribute_values = pd.read_csv(f'{attribute_dir}/basin_data_limited_met&soil&geology&land_{ver_name}.csv', encoding= 'UTF-8', index_col=0, header=0)
+    columns_drop = ['grdc_no','river','station','WaterASrea','ForestArea','ForestAreaRatio','WaterAreaRatio','lat_org','long_org', 'land_GolfCourse','land_GolfCourse_Ratio', 'File_num']
+    attribute_values = pd.read_csv(f'{attribute_dir}/basin_data_limited_met&soil&geology&land_{ver_name}.csv', encoding= 'UTF-8', index_col='gauge_id', header=0, dtype={'gauge_id': str})
     varssim_dir = f"/data0/funato/2_MERV/{loc}/varssim_nocal/{ver_name}"
 elif loc == "GB" and ver == 2:
-    file_tot_num = 424 # Using 20 for consistency with other models
-    columns_drop = ['gauge_id']
-    attribute_values = pd.read_csv(f'{attribute_dir}/camelsgb_attribute_combined.csv', encoding= 'UTF-8', index_col=0, header=0)
+    attribute_values = pd.read_csv(f'{attribute_dir}/camelsgb_attribute_combined.csv', encoding= 'UTF-8', index_col='gauge_id', header=0, dtype={'gauge_id': str})
     varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim"
+elif loc == "US" and ver == 2:
+    # Use the 27-attribute CAMELS-original combined CSV (built from the raw
+    # camels_clim/topo/vege/soil/geol.txt files), not the old HydroATLAS-derived
+    # camels_attribute_combined.csv, which does not contain any of VALID_ATTR's names.
+    attribute_values = pd.read_csv(f'{attribute_dir}/camels_original_attribute_combined.csv', encoding= 'UTF-8', index_col='gauge_id', header=0, dtype={'gauge_id': str})
+    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim_US"
 
-file_list = list(range(1, file_tot_num+1))
+if loc in ("US", "GB"):
+    # Restrict to VALID_ATTR (intersected with whatever is actually present -- GB's
+    # CAMELS-GB-native attribute CSV only shares 11 of the 27 names outright; see
+    # CATCHMENT_ATTRIBUTE.md / datautils.py's VALID_ATTR notes for the full list).
+    available_attr = [c for c in VALID_ATTR if c in attribute_values.columns]
+    missing_attr = [c for c in VALID_ATTR if c not in attribute_values.columns]
+    if missing_attr:
+        print(f"WARNING: {len(missing_attr)}/{len(VALID_ATTR)} VALID_ATTR columns are missing "
+              f"for loc={loc} and will be skipped: {missing_attr}")
+    attribute_values = attribute_values[available_attr]
+    columns_drop = []
+
+sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "TCN_regional_modeling-master"))
+from papercode.utils import get_basin_list
+gauge_id_list = get_basin_list(loc)
 
 # TCN parameters
 timesteps = 25
@@ -64,7 +92,7 @@ nb_filters = 128
 kernel_size = 4
 nb_stacks = 3
 
-start_date_cal = '1993-01-01'
+start_date_cal = '1990-01-01'
 end_date_cal = '2000-12-31'
 start_date_eva = '2001-01-01'
 end_date_eva = '2006-12-31'
@@ -89,13 +117,8 @@ attribute_values_normalized.loc[:, attribute_values_numeric.columns] = (attribut
 
 early_stopping = EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True)
 
-def file_name(input_num, total_len):
-    car_len = len(str(input_num))
-    zero_len = total_len - car_len
-    return '0' * zero_len + str(input_num)
-
-def load_data(file_num):
-    df = pd.read_csv(f"{varssim_dir}/varssim{file_name(file_num, 3)}.csv")
+def load_data(gauge_id):
+    df = pd.read_csv(f"{varssim_dir}/varssim_{gauge_id}.csv")
     if loc == "JP":
         df['Date'] = pd.to_datetime(df[['Year', 'Month', 'Day']])
     else:
@@ -163,11 +186,11 @@ log_file.flush()
 
 print("--- Collecting Data for all Basins ---")
 log_file.write("Collecting data for all basins...\n")
-for file_num in file_list:
-    log_file.write(f"Processing basin {file_num}/{file_tot_num}\n")
+for gauge_id in gauge_id_list:
+    log_file.write(f"Processing basin {gauge_id}\n")
     log_file.flush()
     
-    df = load_data(file_num)
+    df = load_data(gauge_id)
     df_cal = df[start_date_cal:end_date_cal].copy()
     df_eva = df[start_date_eva:end_date_eva].copy()
 
@@ -177,7 +200,7 @@ for file_num in file_list:
     mask_cal = ~np.isnan(input_cal_dyn).any(axis=1) & ~np.isnan(df_cal['Obs flow'].values)
     mask_eva = ~np.isnan(input_eva_dyn).any(axis=1) & ~np.isnan(df_eva['Obs flow'].values)
 
-    static_features_for_basin = attribute_values_normalized.loc[file_num].drop('File_num', errors='ignore')
+    static_features_for_basin = attribute_values_normalized.loc[gauge_id].drop('File_num', errors='ignore')
     static_array_cal = np.tile(static_features_for_basin.values, (np.sum(mask_cal), 1))
     static_array_eva = np.tile(static_features_for_basin.values, (np.sum(mask_eva), 1))
 
@@ -192,7 +215,7 @@ for file_num in file_list:
     all_target_cal_list.append(target_cal)
     all_target_eva_list.append(target_eva)
 
-    individual_basin_data[file_num] = {
+    individual_basin_data[gauge_id] = {
         'input_cal_full': input_cal_full, 'target_cal': target_cal, 'dates_cal': df_cal.index[mask_cal],
         'input_eva_full': input_eva_full, 'target_eva': target_eva, 'dates_eva': df_eva.index[mask_eva],
     }
@@ -251,13 +274,13 @@ syn_predict_dfs_combined = {col: {} for col in syn_precip_cols}
 # Fine-tuning parameters
 fine_tune_epochs = 5  # Number of epochs for basin-specific fine-tuning
 
-for file_num in file_list:
-    basin_data = individual_basin_data[file_num]
+for gauge_id in gauge_id_list:
+    basin_data = individual_basin_data[gauge_id]
     start_time_basin = datetime.now()
-    log_file.write(f"FILE_{file_num}, start: {start_time_basin.strftime('%a %b %d %I:%M:%S %p JST %Y')}\n")
+    log_file.write(f"BASIN_{gauge_id}, start: {start_time_basin.strftime('%a %b %d %I:%M:%S %p JST %Y')}\n")
     
     # --- Fine-tuning: Clone the base model and fine-tune on basin-specific data ---
-    print(f"Fine-tuning model for basin {file_num}...")
+    print(f"Fine-tuning model for basin {gauge_id}...")
     
     # Prepare basin-specific data for fine-tuning
     input_cal_full_basin = basin_data['input_cal_full'].copy()
@@ -295,17 +318,17 @@ for file_num in file_list:
         'Date': dates_predict_cal,
         'Observed': target_cal_seq_basin,
         'Predicted': predict_cal_basin
-    }).to_csv(f"{output_dir}/predict/og/TCN_predict_cal_basin_{file_num}.csv", index=False)
+    }).to_csv(f"{output_dir}/predict/og/TCN_predict_cal_basin_{gauge_id}.csv", index=False)
 
     pd.DataFrame({
         'Date': dates_predict_eva,
         'Observed': target_eva_seq_basin,
         'Predicted': predict_eva_basin
-    }).to_csv(f"{output_dir}/predict/og/TCN_predict_eva_basin_{file_num}.csv", index=False)
+    }).to_csv(f"{output_dir}/predict/og/TCN_predict_eva_basin_{gauge_id}.csv", index=False)
     
     # Calculate and store benchmark results
-    file_results_cal = {'file_num': file_num}
-    file_results_eva = {'file_num': file_num}
+    file_results_cal = {'gauge_id': gauge_id}
+    file_results_eva = {'gauge_id': gauge_id}
 
     for benchmark in benchmark_list:
         file_results_cal[f'TCN_{benchmark}_cal'] = BMK(target_cal_seq_basin, predict_cal_basin, benchmark)
@@ -315,8 +338,8 @@ for file_num in file_list:
     results_eva.append(file_results_eva)
 
     # --- Synthetic Data Evaluation with fine-tuned model ---
-    df_current_basin = load_data(file_num)
-    static_features_for_basin = attribute_values_normalized.loc[file_num].drop('File_num', errors='ignore')
+    df_current_basin = load_data(gauge_id)
+    static_features_for_basin = attribute_values_normalized.loc[gauge_id].drop('File_num', errors='ignore')
 
     for syn_precip_col in syn_precip_cols:
         log_file.write(f"Processing synthetic column: {syn_precip_col}\n")
@@ -359,7 +382,7 @@ for file_num in file_list:
             dates_predict_syn = dates_syn[timesteps:]
             
             temp_syn_df = pd.DataFrame({'Date': dates_predict_syn, 'prediction': predict_syn}).set_index('Date')
-            syn_predict_dfs_combined[syn_precip_col][file_num] = temp_syn_df
+            syn_predict_dfs_combined[syn_precip_col][gauge_id] = temp_syn_df
         else:
             temp_syn_df = pd.DataFrame()  # Empty dataframe for logging
 
@@ -381,9 +404,9 @@ for file_num in file_list:
         pass
 
     end_time_basin = datetime.now()
-    log_file.write(f"FILE_{file_num}, end: {end_time_basin.strftime('%a %b %d %I:%M:%S %p JST %Y')}, elapsed: {end_time_basin - start_time_basin}\n")
-    log_file.write(f"Results saved for file {file_num}\n")
-    print(f"Results saved for file {file_num}")
+    log_file.write(f"BASIN_{gauge_id}, end: {end_time_basin.strftime('%a %b %d %I:%M:%S %p JST %Y')}, elapsed: {end_time_basin - start_time_basin}\n")
+    log_file.write(f"Results saved for basin {gauge_id}\n")
+    print(f"Results saved for basin {gauge_id}")
     log_file.flush()
 
 print("--- Saving Final Synthetic Results ---")
@@ -394,9 +417,9 @@ for syn_precip_col, basin_preds_dict in syn_predict_dfs_combined.items():
     if not basin_preds_dict: continue
     
     combined_syn_df = pd.DataFrame()
-    for file_num, df_preds in basin_preds_dict.items():
-        df_preds = df_preds.rename(columns={'prediction': f'file_{file_num}'})
-        log_file.write(f"  Adding predictions for file {file_num}, shape: {df_preds.shape}\n")
+    for gauge_id, df_preds in basin_preds_dict.items():
+        df_preds = df_preds.rename(columns={'prediction': f'basin_{gauge_id}'})
+        log_file.write(f"  Adding predictions for basin {gauge_id}, shape: {df_preds.shape}\n")
         if combined_syn_df.empty:
             combined_syn_df = df_preds
         else:
@@ -414,7 +437,7 @@ for syn_precip_col, basin_preds_dict in syn_predict_dfs_combined.items():
     # Transpose to have basins as rows (index) and dates as columns (like regional model format)
     combined_syn_df_transposed = combined_syn_df.T
     # Clean up the index by removing 'file_' prefix to just have basin numbers
-    combined_syn_df_transposed.index = combined_syn_df_transposed.index.str.replace('file_', '')
+    combined_syn_df_transposed.index = combined_syn_df_transposed.index.str.replace('basin_', '')
     combined_syn_df_transposed.index.name = 'basin'
     
     combined_syn_df_transposed.to_csv(f"{output_dir}/predict/synthetic/TCN_predict_{syn_precip_col.replace('syn_','')}.csv")

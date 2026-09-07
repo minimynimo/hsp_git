@@ -31,7 +31,7 @@ GLOBAL_SETTINGS = {
     'loc': 'US',
     'ver': 2,
     'seq_length': 270,
-    'train_start': pd.to_datetime('1993-01-01', format='%Y-%m-%d'),
+    'train_start': pd.to_datetime('1990-01-01', format='%Y-%m-%d'),
     'train_end': pd.to_datetime('2000-12-31', format='%Y-%m-%d'),
     'val_start': pd.to_datetime('2001-01-01', format='%Y-%m-%d'),
     'val_end': pd.to_datetime('2006-12-31', format='%Y-%m-%d')
@@ -48,10 +48,9 @@ DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 DEVICE = torch.device("cpu")  # Force CPU for debugging
 
 
-if GLOBAL_SETTINGS['loc'] == "JP": file_tot_num = 87
-elif GLOBAL_SETTINGS['loc'] == "GB": file_tot_num = 424
-elif GLOBAL_SETTINGS['loc'] == "US": file_tot_num = 614
-file_num_list = list(map(str, range(1, file_tot_num + 1)))
+from papercode.utils import get_basin_list
+from papercode.tcn_run_registry import load_tcn_state_dict
+gauge_id_list = get_basin_list(GLOBAL_SETTINGS['loc'])
 
 # ####################### #
 # TCN Model Definition    #
@@ -111,16 +110,19 @@ class TCNModel(nn.Module):
 # Utility Functions       #
 # ####################### #
 
-def file_name(input_num, total_len): return str(input_num).zfill(total_len)
-
-def load_data_for_basin(file_num):
+def load_data_for_basin(gauge_id):
     varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim_{GLOBAL_SETTINGS['loc']}"
-    df = pd.read_csv(f"{varssim_dir}/varssim{file_name(file_num, 3)}.csv", index_col='Date', parse_dates=True)
+    df = pd.read_csv(f"{varssim_dir}/varssim_{gauge_id}.csv", index_col='Date', parse_dates=True)
     return df
 
-def load_attributes(db_path, basins, drop_lat_lon=True):
+from papercode.datautils import VALID_ATTR
+
+def load_attributes(db_path, basins, drop_lat_lon=True, keep_features=None, loc=None):
     from papercode.datautils import load_attributes as load_attributes_from_lib
-    return load_attributes_from_lib(db_path, basins, drop_lat_lon)
+    kwargs = {}
+    if loc is not None:
+        kwargs['loc'] = loc
+    return load_attributes_from_lib(db_path, basins, drop_lat_lon, keep_features=keep_features, **kwargs)
 
 def BMK(obs_data, sim_data, benchmark):    
     """Calculate benchmark metrics"""
@@ -187,7 +189,7 @@ class FineTuneDataset(Dataset):
         self._prepare_data(basin, dates, cfg, static_attrs)
 
     def _prepare_data(self, basin, dates, cfg, static_attrs):
-        df = load_data_for_basin(int(basin))
+        df = load_data_for_basin(basin)
         df_period = df.loc[dates[0]:dates[1]]
         dyn_cols, q_col = ['Precip', 'PET', 'Temp'], 'Obs flow'
 
@@ -206,7 +208,7 @@ class FineTuneDataset(Dataset):
         
         static_scaled = None
         if static_attrs is not None and not cfg["no_static"]:
-            static_data = static_attrs.loc[int(basin)].values
+            static_data = static_attrs.loc[basin].values
             static_scaled = static_data
 
         for block_df in clean_blocks:
@@ -237,7 +239,7 @@ class SyntheticFineTuneDataset(Dataset):
         self._prepare_synthetic_data(basin, scenario_col, dates, cfg, static_attrs)
 
     def _prepare_synthetic_data(self, basin, scenario_col, dates, cfg, static_attrs):
-        df = load_data_for_basin(int(basin))
+        df = load_data_for_basin(basin)
         warmup_start = dates[0] - pd.DateOffset(days=cfg['seq_length'] - 1)
         df_period = df.loc[warmup_start:dates[1]]
         
@@ -258,7 +260,7 @@ class SyntheticFineTuneDataset(Dataset):
         
         static_scaled = None
         if static_attrs is not None and not cfg["no_static"]:
-            static_data = static_attrs.loc[int(basin)].values
+            static_data = static_attrs.loc[basin].values
             static_scaled = static_data
 
         is_nan = df_syn[dyn_cols].isnull().any(axis=1)
@@ -295,23 +297,28 @@ class SyntheticFineTuneDataset(Dataset):
 # Main Logic              #
 # ####################### #
 
-def save_basin_model(basin, model, scalers, save_dir):
+def save_basin_model(basin, model, scalers, save_dir, epoch_tag):
     """Save fine-tuned model and scalers for a basin."""
     save_dir = Path(save_dir)
     save_dir.mkdir(parents=True, exist_ok=True)
-    
-    model_path = save_dir / f"basin_{basin}_model.pt"
-    scalers_path = save_dir / f"basin_{basin}_scalers.pkl"
-    
+
+    model_path = save_dir / f"basin_{basin}_{epoch_tag}_model.pt"
+    scalers_path = save_dir / f"basin_{basin}_{epoch_tag}_scalers.pkl"
+
     torch.save(model.state_dict(), model_path)
     with open(scalers_path, 'wb') as f:
         pickle.dump(scalers, f)
 
-def load_basin_model(basin, base_model, save_dir):
-    """Load fine-tuned model and scalers for a basin if they exist."""
+def load_basin_model(basin, base_model, save_dir, epoch_tag):
+    """Load fine-tuned model and scalers for a basin if they exist.
+
+    epoch_tag (e.g. "epoch30" or "final") must identify which base checkpoint the fine-tune
+    started from -- without it, a cache entry from a fine-tune of one base epoch would be
+    silently reused for a request against a different base epoch.
+    """
     save_dir = Path(save_dir)
-    model_path = save_dir / f"basin_{basin}_model.pt"
-    scalers_path = save_dir / f"basin_{basin}_scalers.pkl"
+    model_path = save_dir / f"basin_{basin}_{epoch_tag}_model.pt"
+    scalers_path = save_dir / f"basin_{basin}_{epoch_tag}_scalers.pkl"
     
     if model_path.exists() and scalers_path.exists():
         model = copy.deepcopy(base_model)
@@ -416,7 +423,7 @@ def main():
     print(f"Parallel Adapted TCN Evaluation - Process {args.process_id}/{args.total_processes}")
     
     # Distribute basins across processes
-    all_basins = file_num_list
+    all_basins = gauge_id_list
     basins_per_process = len(all_basins) // args.total_processes
     start_idx = args.process_id * basins_per_process
     if args.process_id == args.total_processes - 1:
@@ -431,25 +438,35 @@ def main():
     model_file = run_dir / f"tcn_model_epoch{args.model_epoch}.pt"
     if not model_file.exists(): model_file = run_dir / "tcn_model_final.pt"
     print(f"Loading base model from: {model_file}")
+    # Identifies which base checkpoint fine-tuning started from, so basin-model cache entries
+    # from a different --model_epoch are never mistaken for this one (e.g. "epoch30" or "final").
+    epoch_tag = model_file.stem.replace("tcn_model_", "")
 
     is_no_static = cfg.get('no_static', False)
+
+    static_attrs = None
+    if not is_no_static:
+        db_path = run_dir / "attributes.db"
+        static_attrs = load_attributes(db_path, basins=gauge_id_list, drop_lat_lon=True, keep_features=VALID_ATTR)
+
     input_size = 3
     if not is_no_static:
-        input_size += 27 
+        # Derive from what was actually loaded instead of a hardcoded guess (was
+        # hardcoded to 27 - inconsistent with the 18-column VALID_ATTR list and never
+        # actually exercised, since every saved run used no_static=True).
+        input_size += static_attrs.shape[1]
 
     base_model = TCNModel(input_size=input_size, 
                           num_channels=cfg["num_channels"], 
                           kernel_size=cfg["kernel_size"], 
                           dropout=cfg["dropout"]).to(DEVICE)
-    base_model.load_state_dict(torch.load(model_file, map_location=DEVICE))
-    
-    static_attrs = None
-    if not is_no_static:
-        db_path = run_dir / "attributes.db"
-        static_attrs = load_attributes(db_path, basins=file_num_list, drop_lat_lon=True)
+    base_model.load_state_dict(load_tcn_state_dict(model_file, map_location=DEVICE))
 
     output_dir = Path(f"/data0/funato/hsp2/0_out/TCN/{GLOBAL_SETTINGS['loc']}/adapted")
-    adapted_models_dir = Path("/data0/funato/hsp2/99_work/13_TCN/TCN_regional_modeling-master/runs_tcn_adapted")
+    # Scoped by run_dir.name (matching eval_adapted.py) so basin-model caches from different
+    # regional-training runs never collide -- a shared path here would let a restart against a
+    # different run_dir silently reuse a fine-tuned model trained from an unrelated checkpoint.
+    adapted_models_dir = Path("/data0/funato/hsp2/99_work/13_TCN/TCN_regional_modeling-master/runs_tcn_adapted") / run_dir.name
     adapted_models_dir.mkdir(parents=True, exist_ok=True)
     
     # Fine-tuning stage
@@ -460,13 +477,13 @@ def main():
         
         for basin in tqdm(basins_to_process, desc=f"P{args.process_id} Fine-tuning"):
             # Check if already fine-tuned
-            basin_model, scalers = load_basin_model(basin, base_model, adapted_models_dir)
+            basin_model, scalers = load_basin_model(basin, base_model, adapted_models_dir, epoch_tag)
             
             if basin_model is None:
                 # Fine-tune if not found
                 basin_model, scalers = fine_tune_basin_model(base_model, basin, cfg, static_attrs)
                 if basin_model is not None:
-                    save_basin_model(basin, basin_model, scalers, adapted_models_dir)
+                    save_basin_model(basin, basin_model, scalers, adapted_models_dir, epoch_tag)
                     print(f"Process {args.process_id}: Saved fine-tuned model for basin {basin}")
     
     # Evaluation stage
@@ -480,7 +497,7 @@ def main():
         basin_scalers = {}
         
         for basin in basins_to_process:
-            basin_model, scalers = load_basin_model(basin, base_model, adapted_models_dir)
+            basin_model, scalers = load_basin_model(basin, base_model, adapted_models_dir, epoch_tag)
             if basin_model is not None:
                 basin_models[basin] = basin_model
                 basin_scalers[basin] = scalers
@@ -524,8 +541,7 @@ def main():
                     all_results.append(result_row)
 
             if all_results:
-                temp_df = pd.read_csv(pred_path, index_col='basin')
-                temp_df.index = temp_df.index.astype(int)
+                temp_df = pd.read_csv(pred_path, index_col='basin', dtype={'basin': str})
                 temp_df = temp_df.sort_index()
                 temp_df.to_csv(pred_path)
                 print(f"Process {args.process_id}: Predictions saved to {pred_path}")
@@ -573,8 +589,7 @@ def main():
                         basin_row.to_csv(pred_path, mode='a', header=False)
             
             if pred_path.exists():
-                temp_df = pd.read_csv(pred_path, index_col='basin')
-                temp_df.index = temp_df.index.astype(int)
+                temp_df = pd.read_csv(pred_path, index_col='basin', dtype={'basin': str})
                 temp_df = temp_df.sort_index()
                 temp_df.to_csv(pred_path)
                 print(f"Process {args.process_id}: Saved predictions to {pred_path}")

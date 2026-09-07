@@ -12,13 +12,14 @@ from keras.callbacks import EarlyStopping
 from tcn import TCN
 from sklearn.preprocessing import StandardScaler
 
-# Load basin 1
-varssim_dir = "/data0/funato/hsp2/2_MERV/varssim"
-df = pd.read_csv(f"{varssim_dir}/varssim001.csv")
+# Load a single basin (GB gauge_id 96001, the first row of gb_file_num.csv)
+gauge_id = "96001"
+varssim_dir = "/data0/funato/hsp2/2_MERV/varssim_GB"
+df = pd.read_csv(f"{varssim_dir}/varssim_{gauge_id}.csv")
 df['Date'] = pd.to_datetime(df['Date'])
 df.set_index('Date', inplace=True)
 
-df_cal = df['1993-01-01':'2000-12-31'].copy()
+df_cal = df['1990-01-01':'2000-12-31'].copy()
 df_eva = df['2001-01-01':'2006-12-31'].copy()
 
 # Prepare data
@@ -38,7 +39,7 @@ input_eva_dyn = input_eva_dyn[mask_eva]
 target_cal_raw = target_cal_raw[mask_cal]
 target_eva_raw = target_eva_raw[mask_eva]
 
-print(f"Basin 1 data shapes:")
+print(f"Basin {gauge_id} data shapes:")
 print(f"  Cal input: {input_cal_dyn.shape}, target: {target_cal_raw.shape}")
 print(f"  Eva input: {input_eva_dyn.shape}, target: {target_eva_raw.shape}")
 print(f"  Target cal range: [{target_cal_raw.min():.2f}, {target_cal_raw.max():.2f}], mean: {target_cal_raw.mean():.2f}")

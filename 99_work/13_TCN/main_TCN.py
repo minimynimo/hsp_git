@@ -18,6 +18,9 @@ from sklearn.preprocessing import StandardScaler
 from datetime import datetime
 
 import shap
+import sys
+sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "TCN_regional_modeling-master"))
+from papercode.utils import get_basin_list
 
 benchmark_list = ["KGE","NSE","E1", "VE", "d","RMSE","MAE"]
 
@@ -27,27 +30,48 @@ loc, ver = "GB", 2
 
 ver_name = "ver1_1" if ver == 1 else "ver2_0"   
 
-attribute_dir = f'/data0/funato/3_gis_data/{loc}/0_data/river_basin/dataset_{loc}'
+attribute_dir = f'/data0/funato/hsp2/3_gis_data/{loc}/0_data/river_basin/dataset_{loc}'
+
+# The 27-attribute CAMELS-US catchment-attribute set from
+# /data0/funato/hsp2/CATCHMENT_ATTRIBUTE.md (see papercode/datautils.py's VALID_ATTR in both
+# the LSTM and TCN regional-modeling dirs for the canonical copy / full naming-typo notes).
+VALID_ATTR = [
+    'p_mean', 'pet_mean', 'aridity', 'p_seasonality', 'frac_snow', 'high_prec_freq',
+    'high_prec_dur', 'low_prec_freq', 'low_prec_dur', 'elev_mean', 'slope_mean', 'area_gages2',
+    'frac_forest', 'lai_max', 'lai_diff', 'gvf_max', 'gvf_diff', 'soil_depth_pelletier',
+    'soil_depth_statsgo', 'soil_porosity', 'soil_conductivity', 'max_water_content',
+    'sand_frac', 'silt_frac', 'clay_frac', 'carbonate_rocks_frac', 'geol_permeability'
+]
 
 if loc == "JP" and ver == 2:
-    file_tot_num = 87
-    columns_drop = ['grdc_no','river','station','WaterArea','ForestArea','ForestAreaRatio','WaterAreaRatio','lat_org','long_org', 'land_GolfCourse','land_GolfCourse_Ratio']
-    attribute_values = pd.read_csv(f'{attribute_dir}/basin_data_limited_met&soil&geology&land_{ver_name}.csv', encoding= 'UTF-8', index_col=0, header=0)
+    columns_drop = ['grdc_no','river','station','WaterArea','ForestArea','ForestAreaRatio','WaterAreaRatio','lat_org','long_org', 'land_GolfCourse','land_GolfCourse_Ratio', 'File_num']
+    attribute_values = pd.read_csv(f'{attribute_dir}/basin_data_limited_met&soil&geology&land_{ver_name}.csv', encoding= 'UTF-8', index_col='gauge_id', header=0, dtype={'gauge_id': str})
     varssim_dir = f"/data0/funato/2_MERV/{loc}/varssim_nocal/{ver_name}"
 elif loc == "GB" and ver == 2:
-    file_tot_num = 424
-    columns_drop = ['grdc_no','river','station','WaterArea','ForestArea','ForestAreaRatio','WaterAreaRatio','lat_org','long_org', 'land_GolfCourse','land_GolfCourse_Ratio']
-    attribute_values = pd.read_csv(f'{attribute_dir}/camelsgb_attribute_combined.csv', encoding= 'UTF-8', index_col=0, header=0)
+    attribute_values = pd.read_csv(f'{attribute_dir}/camelsgb_attribute_combined.csv', encoding= 'UTF-8', index_col='gauge_id', header=0, dtype={'gauge_id': str})
     varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim_GB"
 elif loc == "US" and ver == 2:
-    file_tot_num = 614
-    columns_drop = ['grdc_no','river','station']
-    attribute_values = pd.read_csv(f'{attribute_dir}/camels_attribute_combined.csv', encoding= 'UTF-8', index_col=0, header=0)
+    # Use the 27-attribute CAMELS-original combined CSV (built from the raw
+    # camels_clim/topo/vege/soil/geol.txt files), not the old HydroATLAS-derived
+    # camels_attribute_combined.csv, which does not contain any of VALID_ATTR's names.
+    attribute_values = pd.read_csv(f'{attribute_dir}/camels_original_attribute_combined.csv', encoding= 'UTF-8', index_col='gauge_id', header=0, dtype={'gauge_id': str})
     varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim_US"
 
-file_list = list(range(1, file_tot_num+1))
+if loc in ("US", "GB"):
+    # Restrict to VALID_ATTR (intersected with whatever is actually present -- GB's
+    # CAMELS-GB-native attribute CSV only shares 11 of the 27 names outright; see
+    # CATCHMENT_ATTRIBUTE.md / datautils.py's VALID_ATTR notes for the full list).
+    available_attr = [c for c in VALID_ATTR if c in attribute_values.columns]
+    missing_attr = [c for c in VALID_ATTR if c not in attribute_values.columns]
+    if missing_attr:
+        print(f"WARNING: {len(missing_attr)}/{len(VALID_ATTR)} VALID_ATTR columns are missing "
+              f"for loc={loc} and will be skipped: {missing_attr}")
+    attribute_values = attribute_values[available_attr]
+    columns_drop = []
 
-input_dim = 3 + len(attribute_values.columns) - len(columns_drop)  # 3 meteorological + 193 attributes
+gauge_id_list = get_basin_list(loc)
+
+input_dim = 3 + len(attribute_values.columns) - len(columns_drop)  # 3 meteorological + N attributes
 
 timesteps, input_dim = 365, input_dim
 epochs = 50 # Changed from 5 to 50 for better training potential
@@ -57,7 +81,7 @@ kernel_size = 4
 nb_stacks = 1
 
 
-start_date_cal = '1993-01-01'
+start_date_cal = '1990-01-01'
 end_date_cal = '2000-12-31'
 start_date_eva = '2001-01-01'
 end_date_eva = '2006-12-31'
@@ -90,14 +114,9 @@ early_stopping = EarlyStopping(
 )
 
 
-def file_name(input_num, total_len):
-    car_len = len(str(input_num))
-    zero_len = total_len - car_len
-    return '0' * zero_len + str(input_num)
+def load_data(gauge_id):
+    df = pd.read_csv(f"{varssim_dir}/varssim_{gauge_id}.csv")
 
-def load_data(file_num):
-    df = pd.read_csv(f"{varssim_dir}/varssim{file_name(file_num, 3)}.csv")
-    
     if loc == "JP":
         df['Date'] = pd.to_datetime(df[['Year', 'Month', 'Day']])
     else:
@@ -181,7 +200,7 @@ if os.path.exists(output_dir + f'/TCN_log.txt'):
 log_file = open(output_dir + f'/TCN_log.txt', 'a')
 
 
-# results_cal and results_eva will store dicts for each file_num
+# results_cal and results_eva will store dicts for each gauge_id
 results_cal = []
 results_eva = []
 
@@ -205,15 +224,15 @@ log_file.flush()
 # Also store individual basin data for later plotting and individual prediction processing
 individual_basin_data = {}
 
-for file_num in file_list:
+for gauge_id in gauge_id_list:
     start_time_basin_load = datetime.now() 
     start_time_st_basin_load = start_time_basin_load.strftime("%a %b %d %I:%M:%S %p JST %Y")
-    log_file.write(f"FILE_{file_num} - Data Loading\n")
+    log_file.write(f"BASIN_{gauge_id} - Data Loading\n")
     log_file.write(f"start: {start_time_st_basin_load}\n")
     log_file.flush()
 
     ### INPUT DATA ###
-    df = load_data(file_num)
+    df = load_data(gauge_id)
 
     df_cal = df[start_date_cal:end_date_cal].copy()  
     df_eva = df[start_date_eva:end_date_eva].copy()
@@ -236,7 +255,7 @@ for file_num in file_list:
     input_eva_dyn = input_eva_dyn[mask_eva]
 
     # Load static features once for this basin
-    static_features_for_basin = attribute_values_normalized.loc[file_num]
+    static_features_for_basin = attribute_values_normalized.loc[gauge_id]
     # Repeat static features for every timestep
     static_array_cal = np.tile(static_features_for_basin.values, (input_cal_dyn.shape[0], 1))
     static_array_eva = np.tile(static_features_for_basin.values, (input_eva_dyn.shape[0], 1))
@@ -262,7 +281,7 @@ for file_num in file_list:
     dates_cal_basin_original_full = df_cal.index[mask_cal] 
     dates_eva_basin_original_full = df_eva.index[mask_eva] 
 
-    individual_basin_data[file_num] = {
+    individual_basin_data[gauge_id] = {
         'input_cal_full_pre_norm': input_cal_full.copy(), # Store before combined norm
         'target_cal': target_cal,
         'dates_cal_original_full': dates_cal_basin_original_full,
@@ -404,14 +423,14 @@ with open(output_dir + f"/predict/TCN_predict_eva.csv", 'w') as file:
 
 
 # --- Loop to process, plot, and evaluate EACH individual file ---
-for file_num in file_list:
+for gauge_id in gauge_id_list:
     start_time_basin_eval = datetime.now()
     start_time_st_basin_eval = start_time_basin_eval.strftime("%a %b %d %I:%M:%S %p JST %Y")
-    log_file.write(f"FILE_{file_num} - Evaluation and Plotting\n")
+    log_file.write(f"BASIN_{gauge_id} - Evaluation and Plotting\n")
     log_file.write(f"start: {start_time_st_basin_eval}\n")
     log_file.flush()
 
-    basin_data = individual_basin_data[file_num]
+    basin_data = individual_basin_data[gauge_id]
 
     # --- Calibration Data for current basin ---
     # Use the pre-normalized input data from `individual_basin_data`
@@ -433,13 +452,13 @@ for file_num in file_list:
     plt.figure(figsize=(15, 6))
     plt.plot(dates_cal_plot, target_cal_seq_basin, label='Observed', color='blue', alpha=0.7)
     plt.plot(dates_cal_plot, predict_cal_basin, label='Predicted', color='red', alpha=0.7)
-    plt.title(f'Hydrograph (Calibration) - File {file_num}')
+    plt.title(f'Hydrograph (Calibration) - Basin {gauge_id}')
     plt.xlabel('Date')
     plt.ylabel('Observed Flow')
     plt.legend()
     plt.grid(True)
     plt.tight_layout()
-    plt.savefig(os.path.join(output_dir, "hydrographs", f"hydrograph_cal_file_{file_num}.png"))
+    plt.savefig(os.path.join(output_dir, "hydrographs", f"hydrograph_cal_basin_{gauge_id}.png"))
     plt.close()
 
     # --- Evaluation Data for current basin ---
@@ -461,20 +480,20 @@ for file_num in file_list:
     plt.figure(figsize=(15, 6))
     plt.plot(dates_eva_plot, target_eva_seq_basin, label='Observed', color='blue', alpha=0.7)
     plt.plot(dates_eva_plot, predict_eva_basin, label='Predicted', color='red', alpha=0.7)
-    plt.title(f'Hydrograph (Evaluation) - File {file_num}')
+    plt.title(f'Hydrograph (Evaluation) - Basin {gauge_id}')
     plt.xlabel('Date')
     plt.ylabel('Observed Flow')
     plt.legend()
     plt.grid(True)
     plt.tight_layout()
-    plt.savefig(os.path.join(output_dir, "hydrographs", f"hydrograph_eva_file_{file_num}.png"))
+    plt.savefig(os.path.join(output_dir, "hydrographs", f"hydrograph_eva_basin_{gauge_id}.png"))
     plt.close()
 
     # --- Prepare data for CSV saving (individual file) ---
     # Ensure predict_cal_basin and target_cal_seq_basin match lengths with dates_cal_plot
     # (which they should due to create_sequences)
-    file_row_cal = [f'file_{file_num}_cal'] + list(predict_cal_basin) # Use individual basin predictions
-    file_row_eva = [f'file_{file_num}_eva'] + list(predict_eva_basin) # Use individual basin predictions
+    file_row_cal = [f'basin_{gauge_id}_cal'] + list(predict_cal_basin) # Use individual basin predictions
+    file_row_eva = [f'basin_{gauge_id}_eva'] + list(predict_eva_basin) # Use individual basin predictions
 
     # Append individual file's prediction data to the pre-initialized CSVs
     with open(output_dir + f"/predict/TCN_predict_cal.csv", 'a') as file:
@@ -484,8 +503,8 @@ for file_num in file_list:
 
 
     # --- Calculate and store benchmark results for individual basins ---
-    file_results_cal = {'file_num': file_num}
-    file_results_eva = {'file_num': file_num}
+    file_results_cal = {'gauge_id': gauge_id}
+    file_results_eva = {'gauge_id': gauge_id}
 
     for benchmark in benchmark_list:
         file_results_cal.update({
@@ -505,13 +524,13 @@ for file_num in file_list:
     df_results_eva = pd.DataFrame(results_eva)
     df_results_eva.to_csv(output_dir + f'/results/TCN_results_eva.csv', index=False, header=True)
 
-    print(f"file_num: {file_num}, NSE_cal: {BMK(target_cal_seq_basin, predict_cal_basin, 'NSE'):.4f}, NSE_eva: {BMK(target_eva_seq_basin, predict_eva_basin, 'NSE'):.4f}")
+    print(f"gauge_id: {gauge_id}, NSE_cal: {BMK(target_cal_seq_basin, predict_cal_basin, 'NSE'):.4f}, NSE_eva: {BMK(target_eva_seq_basin, predict_eva_basin, 'NSE'):.4f}")
 
     end_time_basin_eval = datetime.now()
     log_file.write(f"end: {end_time_basin_eval}\n")
     log_file.write(f"elapsed: {end_time_basin_eval - start_time_basin_eval}\n")
-    log_file.write(f"Results saved for file {file_num}\n")
-    print(f"Results saved for file {file_num}")
+    log_file.write(f"Results saved for basin {gauge_id}\n")
+    print(f"Results saved for basin {gauge_id}")
     log_file.flush()
 
 
