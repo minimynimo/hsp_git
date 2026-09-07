@@ -10,7 +10,7 @@ loc = "US"
 fs = 20
 
 # Configuration
-model_list = ["HBV", "HYPER","RF", "XGB", "TCN", "LSTM"]  # Can be expanded if needed
+model_list = ["HBV", "BC","RF", "XGB", "TCN", "LSTM"]  # Can be expanded if needed
 input_dir = f"/data0/funato/hsp2/0_out/analysis/no_precip_discharge"
 output_fig_dir = f"/data0/funato/hsp2/0_out/1_fig/{loc}/no_precip_discharge_dailymean_use"
 
@@ -19,7 +19,7 @@ os.makedirs(output_fig_dir, exist_ok=True)
 
 color_list = {
     "HBV": "#7B7B7B",    # Kept as requested (Medium Grey)
-    "HYPER": "#628AE8",     # Kept as requested (Steel Blue)
+    "BC": "#628AE8",     # Kept as requested (Steel Blue)
     "RF":   "#FF7F00",   # Red
     "XGB":  "#9C4803",   # Bright Orange
     "TCN":  "#E41A1C",   # Reddish Purple / Magenta
@@ -40,7 +40,7 @@ if not os.path.exists(summary_csv):
 all_discharge_df = pd.read_csv(summary_csv)
 print(f"Loaded {len(all_discharge_df)} discharge data points")
 
-all_discharge_df['Model'] = all_discharge_df['Model'].replace('BC', 'HYPER')  # Change BC to HYPER
+all_discharge_df['Model'] = all_discharge_df['Model'].replace('BC', 'BC')  # Change BC to BC
 
 # Load summary statistics
 if os.path.exists(summary_csv):

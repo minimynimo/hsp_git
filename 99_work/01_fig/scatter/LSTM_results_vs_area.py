@@ -2,7 +2,12 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import os
 
-lstm_results = "/data0/funato/hsp2/0_out/LSTM/US/regional/results/LSTM_results_hs256_do0.4_e30_eva.csv"
+# Canonical true-EA-LSTM regional output (ealstm_regional_modeling/eval.py), NOT the legacy
+# x_lstm_regional_modeling-master/eval_regional.py output at .../LSTM/US/regional/ (which was
+# always run with no_static=True and never exercised the EA-LSTM mechanism). Update the tag
+# below if the production regional run used different hyperparameters than the
+# ealstm_regional_modeling/main.py paper defaults (hidden_size=256, dropout=0.4, seq_length=270).
+lstm_results = "/data0/funato/hsp2/0_out/LSTM/US/regional_ealstm/results/LSTM_results_nsFalse_csFalse_hs256_do0.4_e30_sl270_eva.csv"
 basin_attr ="/data0/funato/hsp2/3_gis_data/US/0_data/river_basin/dataset_US/camels_attribute_combined.csv"
 
 lstm_results_df = pd.read_csv(lstm_results, index_col=0)

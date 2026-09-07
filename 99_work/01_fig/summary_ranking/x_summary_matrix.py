@@ -10,7 +10,7 @@
 # The model with the mean discharge closest to 0 gets Rank 1 (Best). The model with the highest mean discharge gets Rank 6 (Worst).
 ### Flood Condition Rank:
 # This is a qualitative rank based on physical realism.
-# Rank 1 (Best): Models that show a plausible, consistently increasing peak discharge with increasing precipitation (like HBV and HYPER).
+# Rank 1 (Best): Models that show a plausible, consistently increasing peak discharge with increasing precipitation (like HBV and BC).
 # Rank 2-4 (Good/Fair): Models that show some increase but perhaps not as consistently (like TCN and LSTM).
 # Rank 5-6 (Worst): Models that show a saturated, flat, or decreasing response to increased precipitation (like RF and XGBoost).
 # Step 2: Calculate the Composite Plausibility Score
@@ -28,13 +28,13 @@ import os
 output_dir = "/data0/funato/hsp/0_out/1_fig/summary_ranking"
 os.makedirs(output_dir, exist_ok=True)
 
-model_list = ["HBV", "HYPER", "RF", "XGB", "TCN", "LSTM"]
+model_list = ["HBV", "BC", "RF", "XGB", "TCN", "LSTM"]
 fs = 24
 
 # Define colors for each model
 color_list = {
     "HBV": "#7B7B7B",    # Medium Grey
-    "HYPER": "#628AE8",  # Steel Blue
+    "BC": "#628AE8",  # Steel Blue
     "RF": "#FF7F00",     # Orange
     "XGB": "#9C4803",    # Dark Orange
     "TCN": "#E41A1C",    # Red
@@ -47,7 +47,7 @@ print("Loading and processing model performance data...")
 kge_scores = {}
 
 for model in model_list:
-    if model == "HYPER":
+    if model == "BC":
         input_file = "/data0/funato/hsp/0_out/BC/results/BC_results_eva.csv"
         kge_col = "BC_KGE_eva"
     else:
@@ -74,7 +74,7 @@ mass_bias_file = "/data0/funato/hsp/0_out/analysis/mass_conservation/mass_bias_d
 mass_df = pd.read_csv(mass_bias_file)
 
 for model in model_list:
-    model_name = "BC" if model == "HYPER" else model
+    model_name = "BC" if model == "BC" else model
     
     # Filter data for this model
     model_data = mass_df[mass_df['Model'] == model_name]
@@ -95,7 +95,7 @@ drought_file = "/data0/funato/hsp/0_out/analysis/no_precip_discharge/no_precip_m
 drought_df = pd.read_csv(drought_file)
 
 for model in model_list:
-    model_name = "BC" if model == "HYPER" else model
+    model_name = "BC" if model == "BC" else model
     
     # Find the row for this model
     model_row = drought_df[drought_df['Model'] == model_name]
@@ -110,7 +110,7 @@ for model in model_list:
 # Based on user specification: 1 for all models except RF and XGB (which get 5)
 flood_ranks = {
     "HBV": 1,
-    "HYPER": 1, 
+    "BC": 1, 
     "TCN": 1,
     "LSTM": 1,
     "RF": 6,     # Poor response

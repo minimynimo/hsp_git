@@ -13,11 +13,11 @@ input_df = pd.read_csv(input_data)
 output_dir = f"/data0/funato/hsp2/0_out/1_fig/{loc}/mass_conservation"
 os.makedirs(output_dir, exist_ok=True)
 
-model_list = ["SACSMA", "HYPER", "RF", "XGB", "TCN", "LSTM"]
+model_list = ["SACSMA", "BC", "RF", "XGB", "TCN", "LSTM"]
 
 color_list = {
     "SACSMA": "#7B7B7B",    # Kept as requested (Medium Grey)
-    "HYPER": "#628AE8",  # Kept as requested (Steel Blue)
+    "BC": "#628AE8",  # Kept as requested (Steel Blue)
     "RF":   "#FF7F00",   # Red
     "XGB":  "#9C4803",   # Bright Orange
     "TCN":  "#E41A1C",   # Reddish Purple / Magenta
@@ -30,8 +30,8 @@ plt.style.use('default')
 print("Creating mass bias visualizations...")
 print(f"Dataset shape: {input_df.shape}")
 print(f"Models in dataset: {input_df['Model'].unique()}")
-#change "BC" to "HYPER" in input_df
-input_df['Model'] = input_df['Model'].replace('BC', 'HYPER')
+#change "BC" to "BC" in input_df
+input_df['Model'] = input_df['Model'].replace('BC', 'BC')
 
 # 1. Box plot of mass bias by model
 plt.figure(figsize=(7, 7))
@@ -50,7 +50,7 @@ plt.close()
 # 2, CDF plot of mass bias by model
 plt.figure(figsize=(6, 6))
 for model in model_list:
-    if model != "HYPER":
+    if model != "BC":
         model_data = input_df[input_df['Model'] == model]['Mass_Bias']
     else:
         model_data = input_df[input_df['Model'] == 'BC']['Mass_Bias']

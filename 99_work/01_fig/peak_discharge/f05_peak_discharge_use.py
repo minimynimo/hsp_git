@@ -11,7 +11,7 @@ fs = 24
 output_dir = f"/data0/funato/hsp2/0_out/1_fig/{loc}/peak_discharge_use"
 os.makedirs(output_dir, exist_ok=True)
 
-model_list = ["HBV", "HYPER", "RF", "XGB", "TCN", "LSTM"]
+model_list = ["HBV", "BC", "RF", "XGB", "TCN", "LSTM"]
 file_tot_num = 424 
 
 # Dictionary to store all model data
@@ -26,7 +26,7 @@ peak_labels = [1, 3, 5]
 # Define colors for each model
 color_list = {
     "HBV": "#7B7B7B",    # Kept as requested (Medium Grey)
-    "HYPER": "#628AE8",     # Kept as requested (Steel Blue)
+    "BC": "#628AE8",     # Kept as requested (Steel Blue)
     "RF":   "#FF7F00",   # Red
     "XGB":  "#9C4803",   # Bright Orange
     "TCN":  "#E41A1C",   # Reddish Purple / Magenta
@@ -129,7 +129,7 @@ def BMK(obs_data, sim_data, benchmark):
 for model in model_list:
     if model == "HBV":
         input_file = "/data0/funato/hsp2/0_out/HBV/peak_discharge/peak_discharge_comparison_HBV.csv"
-    elif model == "HYPER":
+    elif model == "BC":
         input_file = "/data0/funato/hsp2/0_out/BC/peak_discharge/peak_discharge_comparison_BC.csv"
     else:
         input_file = f"/data0/funato/hsp2/0_out/{model}/peak_discharge/peak_discharge_comparison_{model}.csv"

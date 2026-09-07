@@ -17,10 +17,10 @@ N_SIMULATIONS = 10000
 TERNARY_RESOLUTION = 100
 
 # Model names and the color palette
-model_list = ["HBV", "HYPER", "RF", "XGB", "TCN", "LSTM"]
+model_list = ["HBV", "BC", "RF", "XGB", "TCN", "LSTM"]
 color_list = {
     "HBV": "#7B7B7B",    # Medium Grey
-    "HYPER": "#628AE8",   # Steel Blue
+    "BC": "#628AE8",   # Steel Blue
     "RF": "#FF7F00",      # Orange
     "XGB": "#9C4803",    # Dark Orange
     "TCN": "#E41A1C",     # Red

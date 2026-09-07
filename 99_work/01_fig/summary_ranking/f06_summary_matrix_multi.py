@@ -10,7 +10,7 @@
 # The model with the mean discharge closest to 0 gets Rank 1 (Best). The model with the highest mean discharge gets Rank 6 (Worst).
 ### Flood Condition Rank:
 # This is a qualitative rank based on physical realism.
-# Rank 1 (Best): Models that show a plausible, consistently increasing peak discharge with increasing precipitation (like HBV and HYPER).
+# Rank 1 (Best): Models that show a plausible, consistently increasing peak discharge with increasing precipitation (like HBV and BC).
 # Rank 2-4 (Good/Fair): Models that show some increase but perhaps not as consistently (like TCN and LSTM).
 # Rank 5-6 (Worst): Models that show a saturated, flat, or decreasing response to increased precipitation (like RF and XGBoost).
 # Step 2: Calculate the Composite Plausibility Score
@@ -30,13 +30,13 @@ loc = "US"
 output_dir = f"/data0/funato/hsp2/0_out/1_fig/{loc}/summary_ranking_multi"
 os.makedirs(output_dir, exist_ok=True)
 
-model_list = ["HBV", "HYPER", "RF", "XGB", "TCN", "LSTM"]
+model_list = ["HBV", "BC", "RF", "XGB", "TCN", "LSTM"]
 fs = 24
 
 # Define colors for each model
 color_list = {
     "HBV": "#7B7B7B",    # Medium Grey
-    "HYPER": "#628AE8",  # Steel Blue
+    "BC": "#628AE8",  # Steel Blue
     "RF": "#FF7F00",     # Orange
     "XGB": "#9C4803",    # Dark Orange
     "TCN": "#E41A1C",    # Red
@@ -59,7 +59,7 @@ benchmark = "KGE"
 for model in model_list:
     base_path = f"/data0/funato/hsp2/0_out/{model}/GB/regional/results"  
 
-    if model == "HYPER":
+    if model == "BC":
         input_file_cal = f"/data0/funato/hsp2/0_out/BC/results/BC_results_cal.csv"
         input_file_eva = f"/data0/funato/hsp2/0_out/BC/results/BC_results_eva.csv"
         # Use BC for column names since that's what's in the files
@@ -98,7 +98,7 @@ mass_bias_file = f"/data0/funato/hsp2/0_out/analysis/mass_conservation/mass_bias
 mass_df = pd.read_csv(mass_bias_file)
 
 for model in model_list:
-    model_name = "BC" if model == "HYPER" else model
+    model_name = "BC" if model == "BC" else model
     
     # Filter data for this model
     model_data = mass_df[mass_df['Model'] == model_name]
@@ -119,7 +119,7 @@ drought_file = f"/data0/funato/hsp2/0_out/analysis/no_precip_discharge/no_precip
 drought_df = pd.read_csv(drought_file)
 
 for model in model_list:
-    model_name = "BC" if model == "HYPER" else model
+    model_name = "BC" if model == "BC" else model
     
     # Find the row for this model
     model_row = drought_df[drought_df['Model'] == model_name]

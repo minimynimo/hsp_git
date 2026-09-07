@@ -22,18 +22,18 @@ print("Creating water balance ET difference visualizations...")
 print(f"Dataset shape: {input_df.shape}")
 print(f"Models in dataset: {input_df['Model'].unique()}")
 
-input_df['Model'] = input_df['Model'].replace('BC', 'HYPER')
+input_df['Model'] = input_df['Model'].replace('BC', 'BC')
 
 # Get observed ET values for each basin
 observed_df = input_df[input_df['Model'] == 'Observed'].set_index('File_num')['Daily_Mean_ET']
 
 # Calculate ET differences for each model compared to observed
-model_list = ["SACSMA", "HYPER", "RF", "XGB", "TCN", "LSTM"]
+model_list = ["SACSMA", "BC", "RF", "XGB", "TCN", "LSTM"]
 et_differences = []
 
 color_list = {
     "SACSMA": "#7B7B7B",    # Kept as requested (Medium Grey)
-    "HYPER": "#628AE8",     # Kept as requested (Steel Blue)
+    "BC": "#628AE8",     # Kept as requested (Steel Blue)
     "RF":   "#FF7F00",   # Red
     "XGB":  "#9C4803",   # Bright Orange
     "TCN":  "#E41A1C",   # Reddish Purple / Magenta
