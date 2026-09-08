@@ -35,20 +35,36 @@ DATASET_CACHE_ROOT = Path(__file__).parent / "cache" / "hp"
 # ####################### #
 
 
-# HP-search cal/val split -- must NOT touch the real 2001-01-01..2006-12-31 test period.
 GLOBAL_SETTINGS = {
     'loc': 'US',
     'ver': 2,
     'seq_length': 270,
-    'train_start': pd.to_datetime('1990-01-01', format='%Y-%m-%d'),
-    'train_end': pd.to_datetime('1998-12-31', format='%Y-%m-%d'),
-    'val_start': pd.to_datetime('1999-01-01', format='%Y-%m-%d'),
-    'val_end': pd.to_datetime('2000-12-31', format='%Y-%m-%d')
+}
+
+# HP-search-only cal/val split, kept strictly INSIDE each dataset's production calibration
+# period (main_rf.py's DATASET_SETTINGS) so HP search never touches the real held-out
+# evaluation period -- mirrors ealstm_regional_modeling/main_lstm_regional_hp.py's HP_SPLIT.
+#   * 'camels'  -- production calibration is 1987-2000; HP search sub-splits that into
+#     1990-1998 (train) / 1999-2000 (val), staying clear of the 2001-2006 held-out period.
+#   * 'caravan' -- production calibration is 1990-2000 (this script's own dates); HP search
+#     sub-splits that into 1990-1998 (train) / 1999-2000 (val), staying clear of the 2001-2006
+#     held-out period. Unchanged from before this script supported multiple datasets.
+HP_SPLIT = {
+    'camels': {
+        'train_start': pd.to_datetime('1990-01-01', format='%Y-%m-%d'),
+        'train_end': pd.to_datetime('1998-12-31', format='%Y-%m-%d'),
+        'val_start': pd.to_datetime('1999-01-01', format='%Y-%m-%d'),
+        'val_end': pd.to_datetime('2000-12-31', format='%Y-%m-%d'),
+    },
+    'caravan': {
+        'train_start': pd.to_datetime('1990-01-01', format='%Y-%m-%d'),
+        'train_end': pd.to_datetime('1998-12-31', format='%Y-%m-%d'),
+        'val_start': pd.to_datetime('1999-01-01', format='%Y-%m-%d'),
+        'val_end': pd.to_datetime('2000-12-31', format='%Y-%m-%d'),
+    },
 }
 
 ver_name = "ver1_1" if GLOBAL_SETTINGS['ver'] == 1 else "ver2_0"
-
-gauge_id_list = get_basin_list(GLOBAL_SETTINGS['loc'])
 
 # ####################### #
 # Utility Functions       #
@@ -71,7 +87,8 @@ def get_args() -> Dict:
     parser.add_argument('--seed', type=int, required=False, default=np.random.randint(10000000))
     parser.add_argument('--run_dir', type=str, help="For evaluation mode.")
     parser.add_argument('--no_static', type=str2bool, default=False)
-    
+    parser.add_argument('--dataset', type=str, default='camels', choices=['camels', 'caravan'])
+
     # Random Forest specific arguments
     parser.add_argument('--n_estimators', type=int, default=100)
     parser.add_argument('--max_depth', type=int, default=None, help='Maximum depth (None for unlimited)')
@@ -93,6 +110,7 @@ def get_args() -> Dict:
             cfg['max_features'] = 'sqrt'
     
     cfg.update(GLOBAL_SETTINGS)
+    cfg.update(HP_SPLIT[cfg['dataset']])
     return cfg
 
 def _hp_str(cfg: Dict) -> str:
@@ -104,7 +122,7 @@ def _setup_run(cfg: Dict) -> Dict:
     now = datetime.now()
     hp_str = _hp_str(cfg)
     run_name = f'{hp_str}/rf_run_{now.strftime("%m%d_%H%M")}_seed{cfg["seed"]}'
-    cfg['run_dir'] = Path(__file__).parent / "runs_rf" / "hp" / run_name
+    cfg['run_dir'] = Path(__file__).parent / "runs_rf" / "hp" / cfg['dataset'] / run_name
     cfg['run_dir'].mkdir(parents=True, exist_ok=True)
     
     with open(cfg['run_dir'] / 'cfg.json', 'w') as fp:
@@ -121,7 +139,7 @@ def train(cfg):
     random.seed(cfg["seed"])
     np.random.seed(cfg["seed"])
     
-    basins = gauge_id_list
+    basins = get_basin_list(cfg['loc'], dataset=cfg['dataset'])
 
     # run_rf_hp_tuning.sh launches one process per (n_estimators, max_depth,
     # min_samples_leaf, max_features) combination; a restart after a kill would
@@ -132,8 +150,8 @@ def train(cfg):
     # (same convention as the upstream reference implementation, which logs that
     # random seed in the run folder name purely for traceability), so requiring it
     # to match would defeat resumability for any invocation that doesn't pin --seed.
-    match_keys = ['n_estimators', 'max_depth', 'min_samples_leaf', 'max_features', 'no_static']
-    search_root = Path(__file__).parent / "runs_rf" / "hp" / _hp_str(cfg)
+    match_keys = ['dataset', 'n_estimators', 'max_depth', 'min_samples_leaf', 'max_features', 'no_static']
+    search_root = Path(__file__).parent / "runs_rf" / "hp" / cfg['dataset'] / _hp_str(cfg)
     existing_run = find_completed_run(search_root, cfg, match_keys)
     if existing_run is not None:
         print(f"Skipping: a completed run with these exact hyperparameters already exists at {existing_run}")

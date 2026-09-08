@@ -12,9 +12,18 @@ Reproducibility note: the old `eval_regional.py` tagged its output CSVs only wit
 two differently-configured runs (e.g. no_static=True vs true EA-LSTM) could silently overwrite
 each other's results. `_param_tag` below additionally encodes no_static, concat_static and
 seq_length so that cannot happen. Output also goes to a location dedicated to this script
-(`0_out/LSTM/{loc}/regional_ealstm/`), distinct from
-`x_lstm_regional_modeling-master/eval_regional.py`'s `0_out/LSTM/{loc}/regional/`, so the two
-implementations' results can never collide either.
+(`0_out/LSTM/{loc}/{dataset}/regional/`, `dataset` being the run's `--dataset`, 'camels' or
+'caravan' -- see main_lstm_regional.py), distinct from
+`x_lstm_regional_modeling-master/eval_regional.py`'s `0_out/LSTM/{loc}/regional/` (no dataset
+split), so the two implementations' results can never collide either.
+
+RUN USING (--run_dir is the output directory printed by main_lstm_regional.py's training run,
+e.g. runs/run_<timestamp>_<loc>_<dataset>_seed<N>; loc/dataset/hyperparameters are all read
+back from that run's own cfg.json, not passed here):
+nohup python eval.py --run_dir runs/run_<timestamp>_US_camels_seed<N> > eval_output.log 2>&1 &
+
+Quick smoke test (few basins, real-data-only):
+python eval.py --run_dir runs/run_<timestamp>_US_camels_seed<N> --n_basins 5 --no_synthetic
 """
 
 import argparse
@@ -205,7 +214,7 @@ class EvalDataset(Dataset):
         concat_static = cfg.get("concat_static", False)
         true_ealstm = (not no_static) and (not concat_static)
 
-        df = load_data_for_basin(cfg['loc'], basin)
+        df = load_data_for_basin(cfg['loc'], basin, cfg.get('dataset', 'camels'))
         warmup_start = dates[0] - pd.DateOffset(days=self.seq_length - 1)
         df_period = df.loc[warmup_start:dates[1]].copy()
         if len(df_period) < self.seq_length:
@@ -462,7 +471,7 @@ def main():
     model.load_state_dict(load_lstm_state_dict(model_file, map_location=DEVICE))
 
     loc = cfg['loc']
-    basins = get_basin_list(loc=loc)
+    basins = get_basin_list(loc=loc, dataset=cfg.get('dataset', 'camels'))
     if args.n_basins:
         basins = basins[:args.n_basins]
 
@@ -476,7 +485,7 @@ def main():
     val_start = pd.to_datetime(cfg['val_start'])
     val_end = pd.to_datetime(cfg['val_end'])
 
-    output_base = Path(f"/data0/funato/hsp2/0_out/LSTM/{loc}/regional")
+    output_base = Path(f"/data0/funato/hsp2/0_out/LSTM/{loc}/{cfg.get('dataset', 'camels')}/regional")
     tag = _param_tag(cfg, model_epoch)
 
     og_series_by_basin: Dict[str, pd.Series] = {}

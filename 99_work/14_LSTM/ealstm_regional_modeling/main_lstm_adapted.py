@@ -22,8 +22,16 @@ was trained. Usage:
 
     python adapted.py --run_dir runs/run_XXXX_US_seedNN --n_basins 20 --ft_epochs 5
 
-Output goes to /data0/funato/hsp2/0_out/LSTM/{loc}/adapted/, distinct from both the
-old x_lstm-based .../adapted/ and this directory's own regional_ealstm/ output.
+Output goes to /data0/funato/hsp2/0_out/LSTM/{loc}/{dataset}/adapted/ (`dataset` being the run's
+--dataset, 'camels' or 'caravan' -- see main_lstm_regional.py), distinct from both the
+old x_lstm-based .../adapted/ and this directory's own regional/ output.
+
+RUN USING (--run_dir is the output directory printed by main_lstm_regional.py's training run;
+loc/dataset/hyperparameters are all read back from that run's own cfg.json, not passed here):
+nohup python main_lstm_adapted.py --run_dir runs/run_<timestamp>_US_camels_seed<N> > adapted_output.log 2>&1 &
+
+Quick smoke test (few basins):
+python main_lstm_adapted.py --run_dir runs/run_<timestamp>_US_camels_seed<N> --n_basins 5
 """
 
 import argparse
@@ -176,7 +184,8 @@ def main():
     base_model.load_state_dict(load_lstm_state_dict(model_file, map_location=DEVICE))
 
     loc = cfg['loc']
-    basins = get_basin_list(loc=loc)
+    dataset = cfg.get('dataset', 'camels')
+    basins = get_basin_list(loc=loc, dataset=dataset)
     if args.n_basins:
         basins = basins[:args.n_basins]
     basins = [b for b in basins if b in scalers['basin_scalers']]
@@ -186,7 +195,7 @@ def main():
         db_path = str(run_dir / 'attributes.db')
         attributes = load_attributes(db_path, basins)
 
-    output_base = Path(f"/data0/funato/hsp2/0_out/LSTM/{loc}/adapted")
+    output_base = Path(f"/data0/funato/hsp2/0_out/LSTM/{loc}/{dataset}/adapted")
     tag = _param_tag(cfg, model_epoch) + f"_ft{args.ft_epochs}_ftlr{args.ft_lr}"
 
     period_dates = {'cal': (cfg['train_start'], cfg['train_end']), 'eva': (val_start, val_end)}

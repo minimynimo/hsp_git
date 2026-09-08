@@ -11,20 +11,34 @@ benchmark_list = ["KGE","NSE","E1","VE", "d","RMSE","MAE"]
 
 loc = "US"
 
+# dataset: 'camels' (default) -- built directly from raw CAMELS-US, full 1980-2014 record --
+# or 'caravan', the older Caravan-derived extraction (1987-2006 only). Only affects loc='US'.
+# See ealstm_regional_modeling/main_lstm_regional.py's --dataset for the same split.
+#
+# NOTE: this only changes which per-basin gauge list / cal-eval dates BMA.py uses -- it does
+# NOT by itself make /2_MERV/HYPER/{dataset}/{loc}/{scenario}/{ver_name}/varssim_{gauge_id}.csv
+# exist. That directory (a merged {m01..m47} ensemble-prediction matrix per basin/scenario) is
+# built by some other, separate script not present in this directory, and as of this edit
+# neither /2_MERV/HYPER/US/ nor the old flat /2_MERV/HYPER/US (pre-dataset-split) exists at
+# all -- so this whole BMA/HYPER pipeline cannot actually run yet, for either dataset, until
+# that upstream ensemble-assembly step is regenerated to read from 2_MERV/{dataset}/varssim_US
+# the way 1.create_dataset_plain_camels.py's consumers now do.
+dataset = "camels"  # "caravan"
+
 #ver = 1
 ver = 2
 ############
 
 ver_name = 'ver1_1' if ver == 1 else 'ver2_0' if ver == 2 else 'ver3_0'
 
-varssim_dir = f"/data0/funato/hsp2/2_MERV/HYPER/{loc}"
+varssim_dir = f"/data0/funato/hsp2/2_MERV/HYPER/{dataset}/{loc}"
 
-# Basin list, keyed by gauge_id: /2_MERV/HYPER/{loc}/{scenario}/{ver_name}/ stores its per-basin
-# CSVs as varssim_{gauge_id}.csv (not the old sequential varssim{NNN}.csv), matching what
-# main_HYPER.py / hparam_main_HYPER.py already load from. This script's own output
+# Basin list, keyed by gauge_id: /2_MERV/HYPER/{dataset}/{loc}/{scenario}/{ver_name}/ stores its
+# per-basin CSVs as varssim_{gauge_id}.csv (not the old sequential varssim{NNN}.csv), matching
+# what main_HYPER.py / hparam_main_HYPER.py already load from. This script's own output
 # (BMA_weights.csv, BMA_predict_*.csv, BMA_results_*.csv) is now keyed by gauge_id too --
 # main_HYPER.py/hparam_main_HYPER.py look up a basin's 'Sim flow' by gauge_id, not file_num.
-basin_list_csv = f"/data0/funato/hsp2/3_gis_data/{loc}/0_data/river_basin/dataset_{loc}/{loc.lower()}_file_num.csv"
+basin_list_csv = f"/data0/funato/hsp2/3_gis_data/US/0_data/river_basin/dataset_US/us_{dataset}_file_num.csv"
 basin_df = pd.read_csv(basin_list_csv, dtype={'gauge_id': str})
 basins = [g.split('_')[-1] for g in basin_df['gauge_id']]
 
@@ -34,10 +48,19 @@ precip_cols = ['no_precip',
                'peak5_rate0', 'peak5_rate10', 'peak5_rate30', 'peak5_rate50']
 
 # Define the calibration and evaluation periods
-start_date_cal = '1990-01-01'
-end_date_cal = '2000-12-31'
-start_date_eva = '2001-01-01'
-end_date_eva = '2006-12-31'
+if dataset == "camels":
+    start_date_cal = '1981-01-01'
+    end_date_cal = '1995-12-31'
+    start_date_eva = '1996-01-01'
+    end_date_eva = '2010-12-31'
+else:  # caravan
+    start_date_cal = '1990-01-01'
+    end_date_cal = '2000-12-31'
+    start_date_eva = '2001-01-01'
+    end_date_eva = '2006-12-31'
+
+print(f"[BMA] loc={loc} dataset={dataset!r} "
+      f"cal={start_date_cal}..{end_date_cal} eva={start_date_eva}..{end_date_eva}")
 
 # List of models
 model_list = ["m01", "m02", "m03", "m04", "m05", "m06", "m07", "m08", "m09", "m10",
@@ -46,7 +69,7 @@ model_list = ["m01", "m02", "m03", "m04", "m05", "m06", "m07", "m08", "m09", "m1
             "m31", "m32", "m33", "m34", "m35", "m36", "m37", "m38", "m39", "m40",
             "m41", "m42", "m43", "m44", "m45","m46", "m47"]
 
-output_dir = f'/data0/funato/hsp2/0_out/BMA/{loc}'
+output_dir = f'/data0/funato/hsp2/0_out/BMA/{loc}/{dataset}'
 
 os.makedirs(output_dir + '/results', exist_ok=True)
 os.makedirs(output_dir + '/predict/synthetic', exist_ok=True)

@@ -26,12 +26,12 @@ DYN_COLS = ['Precip', 'PET', 'Temp']
 Q_COL = 'Obs flow'
 
 
-def _varssim_path(loc: str, gauge_id: str) -> str:
-    return f"/data0/funato/hsp2/2_MERV/varssim_{loc}/varssim_{gauge_id}.csv"
+def _varssim_path(loc: str, gauge_id: str, dataset: str = 'camels') -> str:
+    return f"/data0/funato/hsp2/2_MERV/{dataset}/varssim_{loc}/varssim_{gauge_id}.csv"
 
 
-def load_data_for_basin(loc: str, gauge_id: str) -> pd.DataFrame:
-    df = pd.read_csv(_varssim_path(loc, gauge_id))
+def load_data_for_basin(loc: str, gauge_id: str, dataset: str = 'camels') -> pd.DataFrame:
+    df = pd.read_csv(_varssim_path(loc, gauge_id, dataset))
     df['Date'] = pd.to_datetime(df['Date'])
     df.set_index('Date', inplace=True)
     return df
@@ -50,7 +50,7 @@ def compute_basin_scalers(cfg: Dict, basins: List[str]) -> Dict:
     """Per-basin mean/std of dynamic inputs and streamflow over the training period."""
     basin_scalers = {}
     for basin in basins:
-        df = load_data_for_basin(cfg['loc'], basin)
+        df = load_data_for_basin(cfg['loc'], basin, cfg.get('dataset', 'camels'))
         df_period = df.loc[cfg['train_start']:cfg['train_end']]
 
         clumps = _clean_blocks(df_period, DYN_COLS + [Q_COL])
@@ -98,7 +98,7 @@ def build_feature_matrix(cfg: Dict, basins: List[str], basin_scalers: Dict,
         if basin not in basin_scalers:
             continue
 
-        df = load_data_for_basin(cfg['loc'], basin)
+        df = load_data_for_basin(cfg['loc'], basin, cfg.get('dataset', 'camels'))
         df_period = df.loc[cfg['train_start']:cfg['train_end']]
         bscaler = basin_scalers[basin]
 
@@ -150,6 +150,7 @@ def build_feature_matrix(cfg: Dict, basins: List[str], basin_scalers: Dict,
 def _cache_key(cfg: Dict, basins: List[str]) -> str:
     key_fields = {
         'loc': cfg['loc'],
+        'dataset': cfg.get('dataset', 'camels'),
         'ver': cfg['ver'],
         'seq_length': cfg['seq_length'],
         'train_start': cfg['train_start'].strftime('%Y-%m-%d'),

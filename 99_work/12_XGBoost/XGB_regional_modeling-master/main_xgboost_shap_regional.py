@@ -47,8 +47,8 @@ DYN_COLS = ['Precip', 'PET', 'Temp']
 Q_COL = 'Obs flow'
 
 
-def load_data_for_basin(loc, gauge_id):
-    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim_{loc}"
+def load_data_for_basin(loc, gauge_id, dataset='camels'):
+    varssim_dir = f"/data0/funato/hsp2/2_MERV/{dataset}/varssim_{loc}"
     df = pd.read_csv(f"{varssim_dir}/varssim_{gauge_id}.csv")
     df['Date'] = pd.to_datetime(df['Date'])
     df.set_index('Date', inplace=True)
@@ -103,7 +103,7 @@ def build_samples(run_dir, cfg, scalers, basins, n_samples_per_basin, seed):
     for basin in basins:
         if basin not in basin_scalers:
             continue
-        df = load_data_for_basin(loc, basin)
+        df = load_data_for_basin(loc, basin, cfg.get('dataset', 'camels'))
         df_period = df.loc[train_start:train_end]
         bscaler = basin_scalers[basin]
         dyn_data_scaled = (df_period[DYN_COLS].values - np.array(bscaler['dynamic_means'])) / np.array(bscaler['dynamic_stds'])
@@ -224,7 +224,7 @@ def main():
         )
     print(f"Finite SHAP values: {np.isfinite(shap_values).all()}")
 
-    out_base = Path(f"/data0/funato/hsp2/0_out/XGB/{loc}/regional/shap")
+    out_base = Path(f"/data0/funato/hsp2/0_out/XGB/{loc}/{cfg.get('dataset', 'camels')}/regional/shap")
     run_tag = run_dir.name
     shap_objects_dir = out_base / "shap_objects" / run_tag
     shap_objects_dir.mkdir(parents=True, exist_ok=True)

@@ -110,6 +110,11 @@ if [ "$MODEL_TYPE" == "regional" ]; then
     NUM_LEVELS=6
     SCRIPT_PATH="/data0/funato/hsp2/99_work/13_TCN/TCN_regional_modeling-master/main_tcn_hp.py"
     LOG_DIR="/data0/funato/hsp2/99_work/13_TCN/TCN_regional_modeling-master/logs"
+    # 'camels' (default): built directly from raw CAMELS-US, full 1980-2014 record --
+    # main_tcn_hp.py sub-splits its own HP-search cal/val window (1990-1998/1999-2000) strictly
+    # inside production's 1987-2000 calibration period. 'caravan': older Caravan-derived
+    # extraction (1987-2006 only).
+    DATASET="camels"
 elif [ "$MODEL_TYPE" == "individual" ]; then
     NUM_FILTERS=(16 32)
     KERNEL_SIZE=(3 5)
@@ -119,6 +124,11 @@ elif [ "$MODEL_TYPE" == "individual" ]; then
     NUM_LEVELS=6
     SCRIPT_PATH="/data0/funato/hsp2/99_work/13_TCN/main_TCN_indiv_hp.py"
     LOG_DIR="/data0/funato/hsp2/99_work/13_TCN/logs"
+    # 'camels' (default): built directly from raw CAMELS-US, full 1980-2014 record --
+    # main_TCN_indiv_hp.py sub-splits its own HP-search window (1990-1998/1999-2000) strictly
+    # inside production's 1987-2000 calibration period. 'caravan': older Caravan-derived
+    # extraction (1987-2006 only).
+    DATASET="camels"
 else
     echo "Error: ModelType must be 'regional' or 'individual'"
     exit 1
@@ -177,6 +187,7 @@ run_job() {
             --learning_rate $lr \
             --num_levels $NUM_LEVELS \
             --seq_length $win \
+            --dataset "$DATASET" \
             --seed 42 > "$log_file" 2>&1
     else
         taskset -c $core "$PYTHON_CMD" "$SCRIPT_PATH" \
@@ -185,7 +196,8 @@ run_job() {
             --dropout $drop \
             --learning_rate $lr \
             --num_levels $NUM_LEVELS \
-            --timesteps $win > "$log_file" 2>&1
+            --timesteps $win \
+            --dataset "$DATASET" > "$log_file" 2>&1
     fi
 
     local exit_code=$?
@@ -204,6 +216,7 @@ export LOG_DIR
 export MODEL_TYPE
 export TOTAL_COMBINATIONS
 export NUM_LEVELS
+export DATASET
 
 # Run jobs in parallel with GNU parallel if available, otherwise use background jobs
 if command -v parallel &> /dev/null; then

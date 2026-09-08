@@ -28,30 +28,40 @@ from papercode.utils import get_basin_list
 from papercode.xgb_run_registry import find_completed_run
 
 # Global Settings
-# HP-search calibration/validation split -- intentionally does NOT touch the real held-out
-# test period (2001-01-01..2006-12-31): calibration is 1990-1998, validation is 1999-2000.
 GLOBAL_SETTINGS = {
     'loc': 'US',
     'ver': 2,
     'seq_length': 270,
-    'train_start': pd.to_datetime('1990-01-01', format='%Y-%m-%d'),
-    'train_end': pd.to_datetime('1998-12-31', format='%Y-%m-%d'),
-    'val_start': pd.to_datetime('1999-01-01', format='%Y-%m-%d'),
-    'val_end': pd.to_datetime('2000-12-31', format='%Y-%m-%d')
+}
+
+# HP-search-only cal/val split, kept strictly INSIDE each dataset's production calibration
+# period (main_xgb.py's DATASET_SETTINGS) so HP search never touches the real held-out
+# evaluation period -- mirrors ealstm_regional_modeling/main_lstm_regional_hp.py's HP_SPLIT.
+#   * 'camels'  -- production calibration is 1987-2000; HP search sub-splits that into
+#     1990-1998 (train) / 1999-2000 (val), staying clear of the 2001-2006 held-out period.
+#   * 'caravan' -- production calibration is 1990-2000 (this script's own dates); HP search
+#     sub-splits that into 1990-1998 (train) / 1999-2000 (val), staying clear of the 2001-2006
+#     held-out period. Unchanged from before this script supported multiple datasets.
+HP_SPLIT = {
+    'camels': {
+        'train_start': pd.to_datetime('1990-01-01', format='%Y-%m-%d'),
+        'train_end': pd.to_datetime('1998-12-31', format='%Y-%m-%d'),
+        'val_start': pd.to_datetime('1999-01-01', format='%Y-%m-%d'),
+        'val_end': pd.to_datetime('2000-12-31', format='%Y-%m-%d'),
+    },
+    'caravan': {
+        'train_start': pd.to_datetime('1990-01-01', format='%Y-%m-%d'),
+        'train_end': pd.to_datetime('1998-12-31', format='%Y-%m-%d'),
+        'val_start': pd.to_datetime('1999-01-01', format='%Y-%m-%d'),
+        'val_end': pd.to_datetime('2000-12-31', format='%Y-%m-%d'),
+    },
 }
 
 ver_name = "ver1_1" if GLOBAL_SETTINGS['ver'] == 1 else "ver2_0"
 
-# Basin configuration
-gauge_id_list = get_basin_list(GLOBAL_SETTINGS['loc'])
-
-def load_data_for_basin(gauge_id):
+def load_data_for_basin(gauge_id, dataset='camels'):
     """Load data for a specific basin"""
-    # NOTE: this used to be "/data0/funato/hsp2/2_MERV/varssim" -- stale after the data directory
-    # was renamed varssim_{loc}. Old runs under runs_xgb/hp/ that predate this fix were trained
-    # while the old path was still valid; a fresh run with the stale path would fail to find any
-    # data at all. See DEBUG_README.md for the identical class of bug (stale path after rename).
-    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim_{GLOBAL_SETTINGS['loc']}"
+    varssim_dir = f"/data0/funato/hsp2/2_MERV/{dataset}/varssim_{GLOBAL_SETTINGS['loc']}"
     df = pd.read_csv(f"{varssim_dir}/varssim_{gauge_id}.csv")
     df['Date'] = pd.to_datetime(df['Date'])
     df.set_index('Date', inplace=True)
@@ -88,9 +98,11 @@ def get_args() -> Dict:
     parser.add_argument('--subsample', type=float, default=0.8, help='Row sampling ratio (R: 0.7/0.8/1.0)')
     parser.add_argument('--colsample_bytree', type=float, default=0.8, help='Column sampling ratio (R: 0.7/0.8/1.0)')
     parser.add_argument('--min_child_weight', type=int, default=1, help='Minimum child weight (R: 1/3/5)')
-    
+    parser.add_argument('--dataset', type=str, default='camels', choices=['camels', 'caravan'])
+
     cfg = vars(parser.parse_args())
     cfg.update(GLOBAL_SETTINGS)
+    cfg.update(HP_SPLIT[cfg['dataset']])
     return cfg
 
 def _hp_str(cfg: Dict) -> str:
@@ -107,7 +119,7 @@ def _setup_run(cfg: Dict) -> Dict:
     now = datetime.now()
     hp_str = _hp_str(cfg)
     run_name = f'{hp_str}/xgb_run_{now.strftime("%m%d_%H%M")}_seed{cfg["seed"]}'
-    cfg['run_dir'] = Path(__file__).parent / "runs_xgb" / "hp" /run_name
+    cfg['run_dir'] = Path(__file__).parent / "runs_xgb" / "hp" / cfg['dataset'] / run_name
     cfg['run_dir'].mkdir(parents=True, exist_ok=True)
     
     with open(cfg['run_dir'] / 'cfg.json', 'w') as fp:
@@ -126,7 +138,7 @@ def train(cfg):
     random.seed(cfg["seed"])
     np.random.seed(cfg["seed"])
     
-    basins = gauge_id_list
+    basins = get_basin_list(GLOBAL_SETTINGS['loc'], dataset=cfg['dataset'])
 
     # run_xgb_hp_tuning.sh launches one process per hyperparameter combination;
     # a restart after a kill would otherwise retrain every combination from
@@ -137,9 +149,9 @@ def train(cfg):
     # upstream EA-LSTM reference implementation, which logs that random seed in
     # the run folder name purely for traceability), so requiring it to match
     # would defeat resumability for any invocation that doesn't pin --seed.
-    match_keys = ['n_estimators', 'max_depth', 'learning_rate', 'subsample',
+    match_keys = ['dataset', 'n_estimators', 'max_depth', 'learning_rate', 'subsample',
                   'colsample_bytree', 'min_child_weight', 'no_static']
-    search_root = Path(__file__).parent / "runs_xgb" / "hp" / _hp_str(cfg)
+    search_root = Path(__file__).parent / "runs_xgb" / "hp" / cfg['dataset'] / _hp_str(cfg)
     existing_run = find_completed_run(search_root, cfg, match_keys)
     if existing_run is not None:
         print(f"Skipping: a completed run with these exact hyperparameters already exists at {existing_run}")
@@ -154,7 +166,7 @@ def train(cfg):
     basin_scalers = {}
 
     for basin in tqdm(basins, desc="Loading basin data for scaling"):
-        df = load_data_for_basin(basin)
+        df = load_data_for_basin(basin, cfg['dataset'])
         df_period = df.loc[cfg['train_start']:cfg['train_end']]
         
         # ## MODIFICATION START: Calculate scalers ONLY from clean, contiguous data ##
@@ -222,7 +234,7 @@ def train(cfg):
     for basin in tqdm(basins, desc="Processing basins for training"):
         if basin not in scalers['basin_scalers']: continue # Skip if no scalers were generated
 
-        df = load_data_for_basin(basin)
+        df = load_data_for_basin(basin, cfg['dataset'])
         df_period = df.loc[cfg['train_start']:cfg['train_end']]
         bscaler = scalers['basin_scalers'][basin]
         
@@ -345,7 +357,7 @@ def train(cfg):
         ax2.grid(True, linestyle='--', alpha=0.6)
 
         ax3.set_title('Original Input Data (Training Period)', fontsize=14)
-        df_basin_raw = load_data_for_basin(basin_id)
+        df_basin_raw = load_data_for_basin(basin_id, cfg['dataset'])
         df_basin_period = df_basin_raw.loc[cfg['train_start']:cfg['train_end']]
 
         ax3.plot(df_basin_period.index.values, df_basin_period['PET'].values, label='PET', color='orange')

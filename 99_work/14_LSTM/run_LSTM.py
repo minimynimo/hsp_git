@@ -1,3 +1,9 @@
+# Dataset-agnostic library code (CamelsTXT/Model/train_epoch/eval_model/BMK/load_data), used by
+# main_LSTM_indiv.py and main_LSTM_indiv_hp.py. Nothing here is hardcoded to a particular
+# dataset ('camels' or 'caravan') or varssim path -- `varssim_dir`/`loc` are passed in by the
+# caller (see those two files' `dataset`/`--dataset` selection), so no changes were needed here
+# to support --dataset camels; this file works unmodified for either dataset.
+
 from pathlib import Path
 from typing import Tuple, List
 

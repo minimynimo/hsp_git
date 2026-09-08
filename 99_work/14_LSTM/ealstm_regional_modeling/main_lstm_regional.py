@@ -16,7 +16,7 @@ assumptions. Only the data loading (this file + `papercode/datautils.py` +
 `papercode/utils.py`) is adapted to this project's data:
 
   * Dynamic forcing + discharge come from per-basin CSVs at
-        /data0/funato/hsp2/2_MERV/varssim_{loc}/varssim_{gauge_id}.csv
+        /data0/funato/hsp2/2_MERV/{dataset}/varssim_{loc}/varssim_{gauge_id}.csv
     with exactly 3 dynamic inputs (Precip, PET, Temp) and target column 'Obs flow', matching
     the convention already used by `run_LSTM.py` (individual model) and
     `x_lstm_regional_modeling-master/main_lstm.py` (previous regional model).
@@ -37,6 +37,15 @@ assumptions. Only the data loading (this file + `papercode/datautils.py` +
 
 You should have received a copy of the Apache-2.0 license along with the code. If not,
 see <https://opensource.org/licenses/Apache-2.0>
+
+RUN USING (full production run: all basins, 30 epochs, defaults to --dataset camels):
+nohup python /data0/funato/hsp2/99_work/14_LSTM/ealstm_regional_modeling/main_lstm_regional.py train --loc US > main_lstm_regional_output.log 2>&1 &
+
+Or explicitly, with --dataset (also accepts 'caravan'):
+nohup python /data0/funato/hsp2/99_work/14_LSTM/ealstm_regional_modeling/main_lstm_regional.py train --loc US --dataset camels > main_lstm_regional_output.log 2>&1 &
+
+Quick smoke test (few basins, few epochs):
+python /data0/funato/hsp2/99_work/14_LSTM/ealstm_regional_modeling/main_lstm_regional.py train --loc US --dataset camels --n_basins 5 --epochs 2
 """
 
 import argparse
@@ -65,15 +74,30 @@ from papercode.lstm_run_registry import find_completed_run, find_resumable_run
 # Global Definitions      #
 # ####################### #
 
-# Dates match the individual-model cal/eval split (see run_LSTM.py, main_LSTM_indiv.py) and
-# the previous regional script (x_lstm_regional_modeling-master/main_lstm.py) so results are
-# directly comparable.
+# seq_length is dataset-independent; the cal/eval date split is not (each dataset covers a
+# different record length -- see DATASET_SETTINGS below).
 GLOBAL_SETTINGS = {
     'seq_length': 365,
-    'train_start': pd.to_datetime('1990-01-01', format='%Y-%m-%d'),
-    'train_end': pd.to_datetime('2000-12-31', format='%Y-%m-%d'),
-    'val_start': pd.to_datetime('2001-01-01', format='%Y-%m-%d'),
-    'val_end': pd.to_datetime('2006-12-31', format='%Y-%m-%d'),
+}
+
+# Per-dataset calibration ("train") / evaluation ("val") period, matching the split used to
+# build each dataset's varssim CSVs and MATLAB/MARRMoT inputs
+# (2_MERV/1.create_dataset_plain_camels.py, camels_us/create_basin_dataset_caravan.py):
+#   * 'camels'  -- built from raw CAMELS-US, full 1980-2014 record available.
+#   * 'caravan' -- older Caravan-derived extraction, only covers 1987-2006.
+DATASET_SETTINGS = {
+    'camels': {
+        'train_start': pd.to_datetime('1987-01-01', format='%Y-%m-%d'),
+        'train_end': pd.to_datetime('2000-12-31', format='%Y-%m-%d'),
+        'val_start': pd.to_datetime('2001-01-01', format='%Y-%m-%d'),
+        'val_end': pd.to_datetime('2006-12-31', format='%Y-%m-%d'),
+    },
+    'caravan': {
+        'train_start': pd.to_datetime('1987-01-01', format='%Y-%m-%d'),
+        'train_end': pd.to_datetime('2000-12-31', format='%Y-%m-%d'),
+        'val_start': pd.to_datetime('2001-01-01', format='%Y-%m-%d'),
+        'val_end': pd.to_datetime('2006-12-31', format='%Y-%m-%d'),
+    },
 }
 
 DYN_COLS = ['Precip', 'PET', 'Temp']  # exactly 3 dynamic inputs, per this project's data
@@ -133,9 +157,15 @@ class Model(nn.Module):
 # ####################### #
 
 
-def load_data_for_basin(loc: str, gauge_id) -> pd.DataFrame:
-    """Load one basin's forcing+discharge CSV. See module docstring for the data convention."""
-    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim_{loc}"
+def load_data_for_basin(loc: str, gauge_id, dataset: str = 'camels') -> pd.DataFrame:
+    """Load one basin's forcing+discharge CSV. See module docstring for the data convention.
+
+    `dataset` selects which forcing/streamflow source to read from:
+    /data0/funato/hsp2/2_MERV/{dataset}/varssim_{loc}/varssim_{gauge_id}.csv -- 'camels' (the
+    default, built from raw CAMELS-US, full 1980-2014 record) or 'caravan' (older
+    Caravan-derived extraction, 1987-2006 only; still the only source for GB).
+    """
+    varssim_dir = f"/data0/funato/hsp2/2_MERV/{dataset}/varssim_{loc}"
     df = pd.read_csv(f"{varssim_dir}/varssim_{gauge_id}.csv")
     df['Date'] = pd.to_datetime(df['Date'])
     df.set_index('Date', inplace=True)
@@ -209,7 +239,7 @@ class HydroDataset(Dataset):
             if basin not in self.scalers['basin_scalers']:
                 continue
 
-            df = load_data_for_basin(self.cfg['loc'], basin)
+            df = load_data_for_basin(self.cfg['loc'], basin, self.cfg.get('dataset', 'camels'))
             df_period = df.loc[self.dates[0]:self.dates[1]]
 
             bscaler = self.scalers['basin_scalers'][basin]
@@ -254,13 +284,13 @@ class HydroDataset(Dataset):
 
 
 def compute_basin_scalers(loc: str, basins: List[str], train_start: pd.Timestamp,
-                           train_end: pd.Timestamp) -> Dict:
+                           train_end: pd.Timestamp, dataset: str = 'camels') -> Dict:
     """Compute per-basin mean/std for discharge and dynamic inputs from clean (no-NaN) rows
     within the training period. See module docstring: this is the per-basin scaling that
     replaces a single pooled/global scaler."""
     basin_scalers = {}
     for basin in tqdm(basins, desc="Computing per-basin scalers"):
-        df = load_data_for_basin(loc, basin)
+        df = load_data_for_basin(loc, basin, dataset)
         df_period = df.loc[train_start:train_end]
 
         is_nan = df_period[DYN_COLS + [Q_COL]].isnull().any(axis=1).values
@@ -302,6 +332,12 @@ def get_args() -> Dict:
     parser = argparse.ArgumentParser()
     parser.add_argument('mode', choices=["train"])
     parser.add_argument('--loc', type=str, default='US', choices=['US', 'GB', 'JP'])
+    # 'camels': built directly from raw CAMELS-US (full 1980-2014 record) -- default, and the
+    # only source currently available for --loc US's full 674-basin set. 'caravan': older
+    # Caravan-derived extraction (1987-2006 only); still the only source for GB. Selects both
+    # the varssim_{loc}/varssim_{gauge_id}.csv directory (load_data_for_basin) and the
+    # train/val date split (DATASET_SETTINGS) below.
+    parser.add_argument('--dataset', type=str, default='camels', choices=['camels', 'caravan'])
     parser.add_argument('--seed', type=int, required=False)
     parser.add_argument('--num_workers', type=int, default=2)
     # Optional basin-count cap for quick tests/smoke runs (mirrors eval.py's --n_basins).
@@ -325,13 +361,14 @@ def get_args() -> Dict:
     if cfg["seed"] is None:
         cfg["seed"] = int(np.random.uniform(low=0, high=1e6))
     cfg.update(GLOBAL_SETTINGS)
+    cfg.update(DATASET_SETTINGS[cfg["dataset"]])
     return cfg
 
 
 def _setup_run(cfg: Dict) -> Dict:
     """Create folder structure for this run under ealstm_regional_modeling/runs/."""
     now = datetime.now()
-    run_name = f'run_{now.strftime("%m%d_%H%M%S")}_{cfg["loc"]}_seed{cfg["seed"]}'
+    run_name = f'run_{now.strftime("%m%d_%H%M%S")}_{cfg["loc"]}_{cfg["dataset"]}_seed{cfg["seed"]}'
     cfg['run_dir'] = Path(__file__).parent / "runs" / run_name
     cfg['run_dir'].mkdir(parents=True, exist_ok=True)
     return cfg
@@ -395,7 +432,7 @@ def train(cfg):
     torch.cuda.manual_seed(cfg["seed"])
     torch.manual_seed(cfg["seed"])
 
-    basins = get_basin_list(loc=cfg['loc'])
+    basins = get_basin_list(loc=cfg['loc'], dataset=cfg['dataset'])
     if cfg.get('n_basins'):
         basins = basins[:cfg['n_basins']]
 
@@ -412,7 +449,7 @@ def train(cfg):
     # invocations of the identical hyperparameters, neither passing --seed
     # explicitly, could never recognize each other and resumability would never
     # trigger (this was confirmed happening in practice).
-    match_keys = ['loc', 'n_basins', 'no_static', 'concat_static', 'use_mse', 'batch_size',
+    match_keys = ['loc', 'dataset', 'n_basins', 'no_static', 'concat_static', 'use_mse', 'batch_size',
                   'hidden_size', 'dropout', 'initial_forget_gate_bias', 'epochs',
                   'learning_rate']
     search_root = Path(__file__).parent / "runs"
@@ -435,7 +472,8 @@ def train(cfg):
         cfg = _setup_run(cfg)
 
     print("\nCalculating per-basin scalers from clean training-period data...")
-    basin_scalers = compute_basin_scalers(cfg['loc'], basins, cfg['train_start'], cfg['train_end'])
+    basin_scalers = compute_basin_scalers(cfg['loc'], basins, cfg['train_start'], cfg['train_end'],
+                                           dataset=cfg['dataset'])
     scalers = {'basin_scalers': basin_scalers}
     print(f"Usable basins (had a clean training block >= seq_length): {len(basin_scalers)}/{len(basins)}")
 

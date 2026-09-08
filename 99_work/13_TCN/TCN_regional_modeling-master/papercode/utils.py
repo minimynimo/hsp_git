@@ -109,21 +109,30 @@ def create_h5_files(
             out_f.flush()
 
 
-def get_basin_list(loc: str = None) -> List:
-    """Read list of basin gauge_ids from the location's file_num lookup CSV.
+def get_basin_list(loc: str = None, dataset: str = 'camels') -> List:
+    """Read list of basin gauge_ids from the location's (and, for US, dataset's)
+    file_num lookup CSV.
 
     Parameters
     ----------
     loc : str
         Location code (e.g. 'US', 'GB', 'JP')
+    dataset : str
+        One of 'camels', 'caravan'. Only affects loc='US' (GB/JP have a single Caravan-derived
+        source, no dataset split); default 'camels' matches this project's current default data
+        source (see ealstm_regional_modeling/main_lstm_regional.py's --dataset).
 
     Returns
     -------
     List
         List containing the gauge_id (plain string, no prefix) of all basins
     """
-    file_num_csv = (f"/data0/funato/hsp2/3_gis_data/{loc}/0_data/river_basin/"
-                     f"dataset_{loc}/{loc.lower()}_file_num.csv")
+    if loc == 'US':
+        file_num_csv = (f"/data0/funato/hsp2/3_gis_data/US/0_data/river_basin/"
+                         f"dataset_US/us_{dataset}_file_num.csv")
+    else:
+        file_num_csv = (f"/data0/funato/hsp2/3_gis_data/{loc}/0_data/river_basin/"
+                         f"dataset_{loc}/{loc.lower()}_file_num.csv")
     df = pd.read_csv(file_num_csv, dtype={'gauge_id': str})
     basins = sorted({str(g).split('_')[-1] for g in df['gauge_id']})
     return basins

@@ -36,6 +36,14 @@ washout = 0
 #loc, ver = "GB", 2
 loc, ver = "US", 2
 
+# dataset: 'camels' (default) -- built directly from raw CAMELS-US, full 1980-2014 record --
+# or 'caravan', the older Caravan-derived extraction (1987-2006 only). Only affects loc='US'.
+# See BMA.py's module docstring / ealstm_regional_modeling/main_lstm_regional.py's --dataset
+# for the same split, and BMA.py's note that /2_MERV/HYPER/{dataset}/{loc}/ does not currently
+# exist for either dataset (this whole pipeline needs its upstream ensemble input rebuilt
+# before it can run, independent of this --dataset plumbing).
+dataset = "camels"  # "caravan"
+
 
 file_tag = f"_r{reservoir_size}_s{spin}_sr{spectral_radius}_rr{ridge_param}{buf}"
 #####################
@@ -43,15 +51,15 @@ print(file_tag)
 
 ver_name = "ver1_1" if ver == 1 else "ver2_0"
 
-varssim_dir = f"/data0/funato/hsp2/2_MERV/HYPER/{loc}"
-reshape_input_dir = f"/data0/funato/hsp2/2_MERV/varssim_{loc}"
+varssim_dir = f"/data0/funato/hsp2/2_MERV/HYPER/{dataset}/{loc}"
+reshape_input_dir = f"/data0/funato/hsp2/2_MERV/{dataset}/varssim_{loc}"
 
-# Basin list, keyed by gauge_id: /2_MERV/HYPER/{loc}/{scenario}/{ver_name}/ now stores its
-# per-basin CSVs as varssim_{gauge_id}.csv (not the old sequential varssim{NNN}.csv), so the
+# Basin list, keyed by gauge_id: /2_MERV/HYPER/{dataset}/{loc}/{scenario}/{ver_name}/ now stores
+# its per-basin CSVs as varssim_{gauge_id}.csv (not the old sequential varssim{NNN}.csv), so the
 # driver data itself is loaded by gauge_id below. file_num_by_gauge is kept only for the
 # handful of things that still use the legacy sequential id: the BMA_predict_*.csv rows (see
-# BMA.py) and reshape_input_dir (/2_MERV/varssim_{loc}_1993_2006), which are still numbered.
-basin_list_csv = f"/data0/funato/hsp2/3_gis_data/{loc}/0_data/river_basin/dataset_{loc}/{loc.lower()}_file_num.csv"
+# BMA.py) and reshape_input_dir, which is still numbered.
+basin_list_csv = f"/data0/funato/hsp2/3_gis_data/{loc}/0_data/river_basin/dataset_{loc}/us_{dataset}_file_num.csv"
 basin_df = pd.read_csv(basin_list_csv, dtype={'gauge_id': str})
 basins = [g.split('_')[-1] for g in basin_df['gauge_id']]
 file_num_by_gauge = dict(zip(basins, basin_df['File_num']))
@@ -61,12 +69,21 @@ precip_cols = ['no_precip',
                'peak3_rate0', 'peak3_rate10', 'peak3_rate30', 'peak3_rate50',
                'peak5_rate0', 'peak5_rate10', 'peak5_rate30', 'peak5_rate50']
 
-start_date_cal = '1990-01-01'
-end_date_cal = '2000-12-31'
-start_date_eva = '2001-01-01'
-end_date_eva = '2006-12-31'
+if dataset == "camels":
+    start_date_cal = '1981-01-01'
+    end_date_cal = '1995-12-31'
+    start_date_eva = '1996-01-01'
+    end_date_eva = '2010-12-31'
+else:  # caravan
+    start_date_cal = '1990-01-01'
+    end_date_cal = '2000-12-31'
+    start_date_eva = '2001-01-01'
+    end_date_eva = '2006-12-31'
 
-output_dir = f'/data0/funato/hsp2/0_out/HYPER/{loc}'
+print(f"[main_HYPER] loc={loc} dataset={dataset!r} "
+      f"cal={start_date_cal}..{end_date_cal} eva={start_date_eva}..{end_date_eva}")
+
+output_dir = f'/data0/funato/hsp2/0_out/HYPER/{loc}/{dataset}'
 os.makedirs(output_dir, exist_ok=True)
 os.makedirs(output_dir + '/results', exist_ok=True)
 os.makedirs(output_dir + '/predict/synthetic', exist_ok=True)
@@ -294,8 +311,8 @@ for gauge_id in basins:
     df_eva = df[start_date_eva:end_date_eva].copy()
 
     # Load BMA predictions
-    bma_df_cal = pd.read_csv(f'/data0/funato/hsp2/0_out/BMA/{loc}/predict/BMA_predict_cal.csv', index_col=0)
-    bma_df_eva = pd.read_csv(f'/data0/funato/hsp2/0_out/BMA/{loc}/predict/BMA_predict_eva.csv', index_col=0)
+    bma_df_cal = pd.read_csv(f'/data0/funato/hsp2/0_out/BMA/{loc}/{dataset}/predict/BMA_predict_cal.csv', index_col=0)
+    bma_df_eva = pd.read_csv(f'/data0/funato/hsp2/0_out/BMA/{loc}/{dataset}/predict/BMA_predict_eva.csv', index_col=0)
 
     df_cal['Sim flow'] = bma_df_cal.loc[f'gauge_{gauge_id}'].values
     df_eva['Sim flow'] = bma_df_eva.loc[f'gauge_{gauge_id}'].values
@@ -446,8 +463,8 @@ for gauge_id in basins:
         syn_eva = syn_df[start_date_eva:end_date_eva].copy()   
 
         # Load BMA predictions for synthetic data
-        syn_bma_df_cal = pd.read_csv(f'/data0/funato/hsp2/0_out/BMA/{loc}/predict/synthetic/BMA_predict_{precip_col}_cal.csv', index_col=0)
-        syn_bma_df_eva = pd.read_csv(f'/data0/funato/hsp2/0_out/BMA/{loc}/predict/synthetic/BMA_predict_{precip_col}_eva.csv', index_col=0)
+        syn_bma_df_cal = pd.read_csv(f'/data0/funato/hsp2/0_out/BMA/{loc}/{dataset}/predict/synthetic/BMA_predict_{precip_col}_cal.csv', index_col=0)
+        syn_bma_df_eva = pd.read_csv(f'/data0/funato/hsp2/0_out/BMA/{loc}/{dataset}/predict/synthetic/BMA_predict_{precip_col}_eva.csv', index_col=0)
 
         syn_cal['Sim flow'] = syn_bma_df_cal.loc[f'gauge_{gauge_id}_cal'].values
         syn_eva['Sim flow'] = syn_bma_df_eva.loc[f'gauge_{gauge_id}_eva'].values

@@ -22,23 +22,7 @@ benchmark_list = ["KGE","NSE","E1", "VE", "d","RMSE","MAE"]
 # loc, ver = "GB", 2
 loc, ver = "US", 2
 
-ver_name = "ver1_1" if ver == 1 else "ver2_0"   
-
-
-if loc == "JP" and ver == 2:
-    varssim_dir = f"/data0/funato/2_MERV/{loc}/varssim_nocal/{ver_name}"
-elif loc == "GB" and ver == 2:
-    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim_GB"
-elif loc == "US" and ver == 2:
-    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim_US"
-
-gauge_id_list = get_basin_list(loc)
-
-# HP-search cal/val split -- must NOT touch the real 2001-01-01..2006-12-31 test period.
-start_date_cal = '1990-01-01'
-end_date_cal = '1998-12-31'
-start_date_eva = '1999-01-01'
-end_date_eva = '2000-12-31'
+ver_name = "ver1_1" if ver == 1 else "ver2_0"
 
 # Parse command-line arguments for hyperparameters
 parser = argparse.ArgumentParser(description='Random Forest Individual Basin Modeling with Hyperparameter Tuning')
@@ -46,12 +30,43 @@ parser.add_argument('--n_estimators', type=int, default=100, help='Number of tre
 parser.add_argument('--max_depth', type=int, default=None, help='Maximum depth of trees (None for unlimited)')
 parser.add_argument('--min_samples_leaf', type=int, default=5, help='Minimum samples required at leaf node')
 parser.add_argument('--max_features', type=str, default='sqrt', help='Max features: sqrt, 1/3, or float')
+parser.add_argument('--dataset', type=str, default='camels', choices=['camels', 'caravan'],
+                     help="'camels' (default): full 1980-2014 record, HP window sub-split "
+                          '1990-1998/1999-2000 inside the 1987-2000 production calibration '
+                          "period. 'caravan': older Caravan-derived extraction (1987-2006 "
+                          'only), HP window stays the original 1990-1998/1999-2000.')
 args = parser.parse_args()
 
 # Set hyperparameters from arguments
 n_estimators = args.n_estimators
 max_depth = args.max_depth
 min_samples_leaf = args.min_samples_leaf
+dataset = args.dataset
+
+if loc == "JP" and ver == 2:
+    varssim_dir = f"/data0/funato/2_MERV/{loc}/varssim_nocal/{ver_name}"
+elif loc == "GB" and ver == 2:
+    varssim_dir = f"/data0/funato/hsp2/2_MERV/caravan/varssim_GB"
+elif loc == "US" and ver == 2:
+    varssim_dir = f"/data0/funato/hsp2/2_MERV/{dataset}/varssim_US"
+
+gauge_id_list = get_basin_list(loc, dataset=dataset)
+
+# HP-search-only train/val window, kept strictly INSIDE production's real calibration period --
+# mirrors ealstm_regional_modeling/main_lstm_regional_hp.py's HP_SPLIT.
+if dataset == "camels":
+    start_date_cal = '1990-01-01'
+    end_date_cal = '1998-12-31'
+    start_date_eva = '1999-01-01'
+    end_date_eva = '2000-12-31'
+else:  # caravan
+    start_date_cal = '1990-01-01'
+    end_date_cal = '1998-12-31'
+    start_date_eva = '1999-01-01'
+    end_date_eva = '2000-12-31'
+
+print(f"[main_random_forest_indiv_hp] loc={loc} dataset={dataset!r} "
+      f"train={start_date_cal}..{end_date_cal} val={start_date_eva}..{end_date_eva}")
 
 # Handle max_features
 if args.max_features == 'sqrt':
@@ -68,7 +83,7 @@ min_samples_split = 2
 
 # Create output directory with hyperparameter settings
 hp_str = f"n{n_estimators}_d{max_depth if max_depth is not None else 'None'}_l{min_samples_leaf}_f{args.max_features}"
-output_dir = f"/data0/funato/hsp2/0_out/RF/{loc}/individual/hp/{hp_str}/"
+output_dir = f"/data0/funato/hsp2/0_out/RF/{loc}/{dataset}/individual/hp/{hp_str}/"
 os.makedirs(output_dir, exist_ok=True)
 os.makedirs(output_dir + "/predict", exist_ok=True)
 os.makedirs(output_dir + "/results", exist_ok=True)

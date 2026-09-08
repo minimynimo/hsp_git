@@ -29,13 +29,38 @@ GLOBAL_SETTINGS = {
     'loc': 'US',
     'ver': 2,
     'seq_length': 270,
-    # HP-search calibration/validation split -- must not touch the real held-out test period
-    # (2001-01-01..2006-12-31): calibration is 1990-1998, validation is 1999-2000.
-    'train_start': pd.to_datetime('1990-01-01', format='%Y-%m-%d'),
-    'train_end': pd.to_datetime('1998-12-31', format='%Y-%m-%d'),
-    'val_start': pd.to_datetime('1999-01-01', format='%Y-%m-%d'),
-    'val_end': pd.to_datetime('2000-12-31', format='%Y-%m-%d')
 }
+
+# HP-search-only cal/val split, matching main_xgb_hp.py's HP_SPLIT -- must not touch the real
+# held-out evaluation period. A trained HP run's own cfg.json train_start/train_end/val_start/
+# val_end (present for any run trained after --dataset support was added) always takes
+# precedence -- see _run_dates() below.
+HP_SPLIT = {
+    'camels': {
+        'train_start': pd.to_datetime('1990-01-01', format='%Y-%m-%d'),
+        'train_end': pd.to_datetime('1998-12-31', format='%Y-%m-%d'),
+        'val_start': pd.to_datetime('1999-01-01', format='%Y-%m-%d'),
+        'val_end': pd.to_datetime('2000-12-31', format='%Y-%m-%d'),
+    },
+    'caravan': {
+        'train_start': pd.to_datetime('1990-01-01', format='%Y-%m-%d'),
+        'train_end': pd.to_datetime('1998-12-31', format='%Y-%m-%d'),
+        'val_start': pd.to_datetime('1999-01-01', format='%Y-%m-%d'),
+        'val_end': pd.to_datetime('2000-12-31', format='%Y-%m-%d'),
+    },
+}
+
+
+def _run_dates(run_cfg):
+    dataset = run_cfg.get('dataset', 'camels')
+    fallback = HP_SPLIT[dataset]
+    return {
+        'train_start': pd.to_datetime(run_cfg.get('train_start', fallback['train_start'])),
+        'train_end': pd.to_datetime(run_cfg.get('train_end', fallback['train_end'])),
+        'val_start': pd.to_datetime(run_cfg.get('val_start', fallback['val_start'])),
+        'val_end': pd.to_datetime(run_cfg.get('val_end', fallback['val_end'])),
+    }
+
 
 benchmark_list = ["NSE", "KGE", "E1", "VE", "d", "RMSE", "MAE"]
 
@@ -43,11 +68,8 @@ benchmark_list = ["NSE", "KGE", "E1", "VE", "d", "RMSE", "MAE"]
 # Utility Functions       #
 # ####################### #
 
-def load_data_for_basin(gauge_id):
-    # NOTE: was hardcoded to the stale "/data0/funato/hsp2/2_MERV/varssim" (pre-rename path,
-    # no longer exists) -- fixed to match GLOBAL_SETTINGS['loc'], mirroring main_xgb_hp.py /
-    # eval_regional.py. See DEBUG_README.md for the stale-path bug class.
-    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim_{GLOBAL_SETTINGS['loc']}"
+def load_data_for_basin(gauge_id, dataset='camels'):
+    varssim_dir = f"/data0/funato/hsp2/2_MERV/{dataset}/varssim_{GLOBAL_SETTINGS['loc']}"
     df = pd.read_csv(f"{varssim_dir}/varssim_{gauge_id}.csv")
     df['Date'] = pd.to_datetime(df['Date'])
     df.set_index('Date', inplace=True)
@@ -131,7 +153,7 @@ def evaluate_period(model, basins, cfg, scalers, attributes, start_date, end_dat
     for basin in tqdm(basins, desc="Processing basins"):
         if basin not in scalers['basin_scalers']: continue
 
-        df = load_data_for_basin(basin)
+        df = load_data_for_basin(basin, cfg.get('dataset', 'camels'))
         warmup_start = start_date - pd.DateOffset(days=seq_length - 1)
         df_period = df.loc[warmup_start:end_date]
         
@@ -228,7 +250,7 @@ def evaluate_synthetic_period(model, basins, cfg, scalers, attributes, scenario_
         if basin not in scalers['basin_scalers']:
             continue
 
-        df = load_data_for_basin(basin)
+        df = load_data_for_basin(basin, cfg.get('dataset', 'camels'))
         warmup_start = start_date - pd.DateOffset(days=seq_length - 1)
         df_period = df.loc[warmup_start:end_date]
         
@@ -352,7 +374,7 @@ def main():
     model = xgb.XGBRegressor()
     model.load_model(model_file)
     
-    basins = get_basin_list(GLOBAL_SETTINGS['loc'])
+    basins = get_basin_list(GLOBAL_SETTINGS['loc'], dataset=cfg.get('dataset', 'camels'))
     if args.n_basins:
         basins = basins[:args.n_basins]
         print(f"Processing only first {args.n_basins} basins for testing.")
@@ -365,10 +387,11 @@ def main():
         db_path = str(run_dir / 'attributes.db')
         attributes = load_attributes(db_path=db_path, basins=basins, drop_lat_lon=True, keep_features=VALID_ATTR)
 
-    train_start = pd.to_datetime(cfg['train_start'])
-    train_end = pd.to_datetime(cfg['train_end'])
-    val_start = pd.to_datetime(GLOBAL_SETTINGS['val_start'])
-    val_end = pd.to_datetime(GLOBAL_SETTINGS['val_end'])
+    _dates = _run_dates(cfg)
+    train_start = _dates['train_start']
+    train_end = _dates['train_end']
+    val_start = _dates['val_start']
+    val_end = _dates['val_end']
 
     periods = {'cal': (train_start, train_end), 'eva': (val_start, val_end)}
     output_base = Path(args.output_dir)

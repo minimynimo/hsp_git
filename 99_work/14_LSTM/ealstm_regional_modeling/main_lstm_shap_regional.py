@@ -81,10 +81,11 @@ sample is wanted later.
 
 OUTPUTS
 -------
-Written to `/data0/funato/hsp2/0_out/LSTM/{loc}/shap_ealstm/`, following the same
-per-location-folder convention as `regional_ealstm/` and `adapted_ealstm/` so results from
-different locations (US/GB/JP) or differently-configured runs never collide (tag includes the
-same no_static/concat_static/hidden_size/dropout/epoch/seq_length encoding as
+Written to `/data0/funato/hsp2/0_out/LSTM/{loc}/{dataset}/regional/shap/` (`dataset` being the
+run's --dataset, 'camels' or 'caravan' -- see main_lstm_regional.py), following the same
+per-location-per-dataset-folder convention as `regional/` and `adapted/` so results from
+different locations (US/GB/JP), datasets, or differently-configured runs never collide (tag
+includes the same no_static/concat_static/hidden_size/dropout/epoch/seq_length encoding as
 `eval._param_tag`, plus the SHAP-specific sample-size/seed parameters):
 
   shap_values_dynamic_<tag>.npy   raw per-timestep-lag SHAP values, shape
@@ -104,10 +105,12 @@ same no_static/concat_static/hidden_size/dropout/epoch/seq_length encoding as
                                    relies on, in the spirit of Kratzert et al.'s own
                                    interpretability follow-up work on this architecture
 
-USAGE
+USAGE / RUN USING (--run_dir is the output directory printed by main_lstm_regional.py's
+training run; loc/dataset/hyperparameters are all read back from that run's own cfg.json, not
+passed here)
 -----
-    python shap_regional.py --run_dir runs/run_<timestamp>_US_seed<N>
-    python shap_regional.py --run_dir runs/run_<timestamp>_US_seed<N> \\
+    python main_lstm_shap_regional.py --run_dir runs/run_<timestamp>_US_camels_seed<N>
+    python main_lstm_shap_regional.py --run_dir runs/run_<timestamp>_US_camels_seed<N> \\
         --n_basins 10 --n_dates_per_basin 5 --n_background 50 --nsamples 50 --seed 0
 """
 
@@ -185,10 +188,11 @@ def _check_wrapper_equivalence(model: Model, wrapped: _PredictionOnly,
 # ####################### #
 
 
-def _select_basins(scalers: Dict, attributes: pd.DataFrame, loc: str, n_basins: int) -> List[str]:
+def _select_basins(scalers: Dict, attributes: pd.DataFrame, loc: str, n_basins: int,
+                    dataset: str = 'camels') -> List[str]:
     """Deterministic (sorted, reproducible) choice of the first n_basins basins that have both
     a fitted per-basin scaler and static attributes available."""
-    all_basins = get_basin_list(loc=loc)
+    all_basins = get_basin_list(loc=loc, dataset=dataset)
     usable = [b for b in all_basins if b in scalers['basin_scalers'] and b in attributes.index]
     if len(usable) < n_basins:
         print(f"WARNING: only {len(usable)} usable basins available (< requested {n_basins}); "
@@ -240,7 +244,7 @@ def build_background_set(loc: str, cfg: Dict, scalers: Dict, attributes: pd.Data
     train_start = pd.to_datetime(cfg['train_start'])
     train_end = pd.to_datetime(cfg['train_end'])
 
-    all_basins = get_basin_list(loc=loc)
+    all_basins = get_basin_list(loc=loc, dataset=cfg.get('dataset', 'camels'))
     usable = [b for b in all_basins if b in scalers['basin_scalers'] and b in attributes.index]
     pool_basins = usable[:background_basin_pool]
 
@@ -355,6 +359,7 @@ def main():
     print(f"Loading model from: {model_file}")
 
     loc = cfg['loc']
+    dataset = cfg.get('dataset', 'camels')
     input_size_stat = cfg.get('input_size_stat', 0)
     input_size_dyn = cfg.get('input_size_dyn', 3)
 
@@ -366,11 +371,11 @@ def main():
     model.eval()
 
     db_path = str(run_dir / 'attributes.db')
-    all_basins = get_basin_list(loc=loc)
+    all_basins = get_basin_list(loc=loc, dataset=dataset)
     attributes = load_attributes(db_path, all_basins)
     attr_names = list(attributes.columns)
 
-    basins = _select_basins(scalers, attributes, loc, args.n_basins)
+    basins = _select_basins(scalers, attributes, loc, args.n_basins, dataset=dataset)
     print(f"Explain set basins ({len(basins)}): {basins}")
 
     print("\nBuilding explain samples (evenly-spaced validation dates per basin)...")
@@ -427,7 +432,7 @@ def main():
     # ------------------------------------------------------------------ #
     # Save outputs
     # ------------------------------------------------------------------ #
-    output_base = Path(f"/data0/funato/hsp2/0_out/LSTM/{loc}/regional/shap")
+    output_base = Path(f"/data0/funato/hsp2/0_out/LSTM/{loc}/{dataset}/regional/shap")
     output_base.mkdir(parents=True, exist_ok=True)
 
     tag = (_param_tag(cfg, model_epoch) +

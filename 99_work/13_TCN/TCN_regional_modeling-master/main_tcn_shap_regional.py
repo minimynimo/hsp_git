@@ -38,8 +38,20 @@ from papercode.tcn_run_registry import load_tcn_state_dict
 GLOBAL_SETTINGS = {
     'loc': 'US',
     'seq_length': 270,
-    'train_start': pd.to_datetime('1990-01-01', format='%Y-%m-%d'),
-    'train_end': pd.to_datetime('2000-12-31', format='%Y-%m-%d'),
+}
+
+# Per-dataset training-period fallback, matching main_tcn.py's DATASET_SETTINGS. A trained
+# run's own cfg.json train_start/train_end (present for any run trained after --dataset
+# support was added) always takes precedence -- see build_samples() below.
+DATASET_SETTINGS = {
+    'camels': {
+        'train_start': pd.to_datetime('1987-01-01', format='%Y-%m-%d'),
+        'train_end': pd.to_datetime('2000-12-31', format='%Y-%m-%d'),
+    },
+    'caravan': {
+        'train_start': pd.to_datetime('1990-01-01', format='%Y-%m-%d'),
+        'train_end': pd.to_datetime('2000-12-31', format='%Y-%m-%d'),
+    },
 }
 
 DEVICE = torch.device("cpu")  # SHAP GradientExplainer runs fine on CPU for this model size
@@ -49,8 +61,8 @@ gauge_id_list = get_basin_list(GLOBAL_SETTINGS['loc'])
 DYN_COLS = ['Precip', 'PET', 'Temp']
 
 
-def load_data_for_basin(gauge_id):
-    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim_{GLOBAL_SETTINGS['loc']}"
+def load_data_for_basin(gauge_id, dataset='camels'):
+    varssim_dir = f"/data0/funato/hsp2/2_MERV/{dataset}/varssim_{GLOBAL_SETTINGS['loc']}"
     df = pd.read_csv(f"{varssim_dir}/varssim_{gauge_id}.csv")
     df['Date'] = pd.to_datetime(df['Date'])
     df.set_index('Date', inplace=True)
@@ -134,8 +146,11 @@ def build_samples(basins, n_dates, cfg, basin_scalers, static_means, static_stds
     for basin in basins:
         if basin not in basin_scalers:
             continue
-        df = load_data_for_basin(basin)
-        df_period = df.loc[GLOBAL_SETTINGS['train_start']:GLOBAL_SETTINGS['train_end']]
+        dataset = cfg.get('dataset', 'camels')
+        df = load_data_for_basin(basin, dataset)
+        train_start = pd.to_datetime(cfg.get('train_start', DATASET_SETTINGS[dataset]['train_start']))
+        train_end = pd.to_datetime(cfg.get('train_end', DATASET_SETTINGS[dataset]['train_end']))
+        df_period = df.loc[train_start:train_end]
         bscaler = basin_scalers[basin]
 
         clean = df_period[DYN_COLS + ['Obs flow']].dropna()
@@ -197,11 +212,15 @@ def main():
     static_means = np.array(scalers_data['static_means']) if 'static_means' in scalers_data else None
     static_stds = np.array(scalers_data['static_stds']) if 'static_stds' in scalers_data else None
 
+    # Recompute the basin list for the dataset this run was actually trained on (the
+    # module-level default computed at import time is always 'camels').
+    basins_for_run = get_basin_list(GLOBAL_SETTINGS['loc'], dataset=cfg.get('dataset', 'camels'))
+
     attributes = None
     static_cols = []
     if not cfg['no_static']:
         db_path = run_dir / "attributes.db"
-        attributes = load_attributes(db_path, basins=gauge_id_list, keep_features=VALID_ATTR,
+        attributes = load_attributes(db_path, basins=basins_for_run, keep_features=VALID_ATTR,
                                       loc=GLOBAL_SETTINGS['loc'])
         static_cols = list(attributes.columns)
 
@@ -251,7 +270,7 @@ def main():
         direct_out = model(explain_t).numpy().flatten()
     print(f"Sanity check - direct model output range: [{direct_out.min():.4f}, {direct_out.max():.4f}]")
 
-    out_dir = Path(f"/data0/funato/hsp2/0_out/TCN/{GLOBAL_SETTINGS['loc']}/regional/shap")
+    out_dir = Path(f"/data0/funato/hsp2/0_out/TCN/{GLOBAL_SETTINGS['loc']}/{cfg.get('dataset', 'camels')}/regional/shap")
     out_dir.mkdir(parents=True, exist_ok=True)
 
     dyn_shap = shap_values[:, :, :3]  # (n_samples, seq_length, 3 dynamic inputs)

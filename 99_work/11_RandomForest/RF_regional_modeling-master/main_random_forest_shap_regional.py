@@ -38,7 +38,7 @@ from papercode.datautils import load_attributes, VALID_ATTR
 def build_basin_samples(basin, period_start, period_end, run_cfg, basin_scalers, static_scaled):
     """Build the model's raw input feature matrix for one basin/period (same convention
     main_rf.py trained on: flattened seq_length-day window of [Precip, PET, Temp] + static)."""
-    df = load_data_for_basin(basin)
+    df = load_data_for_basin(basin, run_cfg.get('dataset', 'camels'))
     warmup_start = period_start - pd.DateOffset(days=run_cfg["seq_length"] - 1)
     period_data = df[warmup_start:period_end].copy()
     if len(period_data) < run_cfg["seq_length"]:
@@ -155,7 +155,7 @@ def main():
     max_err = np.max(np.abs(shap_pred_check - direct_pred))
     print(f"Max |SHAP-reconstructed prediction - direct model prediction| = {max_err:.6g}")
 
-    output_dir = Path(f"/data0/funato/hsp2/0_out/RF/{loc}/regional/shap")
+    output_dir = Path(f"/data0/funato/hsp2/0_out/RF/{loc}/{run_cfg.get('dataset', 'camels')}/regional/shap")
     output_dir.mkdir(parents=True, exist_ok=True)
 
     np.save(output_dir / "shap_values.npy", shap_values.values)

@@ -30,9 +30,31 @@ input_size = 3
 output_size = 1
 
 
+# HP-search-only cal/val split, kept strictly INSIDE each dataset's production calibration
+# period -- mirrors ealstm_regional_modeling/main_lstm_regional_hp.py's HP_SPLIT.
+#   * 'camels'  -- production calibration is 1981-1995; HP search sub-splits that into
+#     1981-1990 (train) / 1991-1995 (val), staying clear of the 1996-2010 held-out period.
+#   * 'caravan' -- production calibration is 1990-2000 (main_HYPER.py's own dates); HP search
+#     sub-splits that into 1990-1998 (train) / 1999-2000 (val), staying clear of the 2001-2006
+#     held-out period. Unchanged from before this script supported multiple datasets.
+HP_SPLIT = {
+    'camels': {
+        'start_date_cal': '1981-01-01', 'end_date_cal': '1990-12-31',
+        'start_date_eva': '1991-01-01', 'end_date_eva': '1995-12-31',
+    },
+    'caravan': {
+        'start_date_cal': '1990-01-01', 'end_date_cal': '1998-12-31',
+        'start_date_eva': '1999-01-01', 'end_date_eva': '2000-12-31',
+    },
+}
+
+
 def get_args():
     parser = argparse.ArgumentParser(description="ESN hyperparameter search (HYPER bias-correction model)")
     parser.add_argument('--loc', type=str, default='US', choices=['US'])
+    # 'camels' (default): built directly from raw CAMELS-US, full 1980-2014 record. 'caravan':
+    # older Caravan-derived extraction (1987-2006 only). See HP_SPLIT above.
+    parser.add_argument('--dataset', type=str, default='camels', choices=['camels', 'caravan'])
     parser.add_argument('--reservoir_size', type=int, default=700)
     parser.add_argument('--spectral_radius', type=float, default=0.4)
     parser.add_argument('--ridge_param', type=float, default=0.001)
@@ -44,6 +66,7 @@ def get_args():
 
 args = get_args()
 loc = args.loc
+dataset = args.dataset
 reservoir_size = args.reservoir_size
 spectral_radius = args.spectral_radius
 ridge_param = args.ridge_param
@@ -53,24 +76,24 @@ adjacency_density = args.adjacency_density
 washout = 0
 ver = 2
 
-# Cal/val split follows main_lstm_regional_hp.py's HP-search convention (see that file's
-# module docstring): the hyperparameter search only ever touches train (cal) and validation
-# (eva) data, never the 2001-2006 held-out test period used for the final, published fit.
-start_date_cal = '1990-01-01'
-end_date_cal = '1998-12-31'
-start_date_eva = '1999-01-01'
-end_date_eva = '2000-12-31'
+start_date_cal = HP_SPLIT[dataset]['start_date_cal']
+end_date_cal = HP_SPLIT[dataset]['end_date_cal']
+start_date_eva = HP_SPLIT[dataset]['start_date_eva']
+end_date_eva = HP_SPLIT[dataset]['end_date_eva']
+
+print(f"[hparam_main_HYPER] loc={loc} dataset={dataset!r} "
+      f"train={start_date_cal}..{end_date_cal} val={start_date_eva}..{end_date_eva}")
 
 ver_name = "ver1_1" if ver == 1 else "ver2_0"
 
-# /2_MERV/HYPER/{loc}/varssim_nocal_og/{ver_name}/ stores its per-basin CSVs as
+# /2_MERV/HYPER/{dataset}/{loc}/varssim_nocal_og/{ver_name}/ stores its per-basin CSVs as
 # varssim_{gauge_id}.csv (the same directory main_HYPER.py reads its "og" input from).
-varssim_dir = f"/data0/funato/hsp2/2_MERV/HYPER/{loc}/varssim_nocal_og/{ver_name}"
+varssim_dir = f"/data0/funato/hsp2/2_MERV/HYPER/{dataset}/{loc}/varssim_nocal_og/{ver_name}"
 
 # Basin list, keyed by gauge_id (matches ealstm_regional_modeling/papercode/utils.py's
-# get_basin_list): read from us_file_num.csv's gauge_id column, stripped of the "camels_"
-# prefix.
-basin_list_csv = f"/data0/funato/hsp2/3_gis_data/{loc}/0_data/river_basin/dataset_{loc}/{loc.lower()}_file_num.csv"
+# get_basin_list): read from us_{dataset}_file_num.csv's gauge_id column, stripped of the
+# "camels_" prefix.
+basin_list_csv = f"/data0/funato/hsp2/3_gis_data/{loc}/0_data/river_basin/dataset_{loc}/us_{dataset}_file_num.csv"
 basin_df = pd.read_csv(basin_list_csv, dtype={'gauge_id': str})
 basins = [g.split('_')[-1] for g in basin_df['gauge_id']]
 
@@ -78,7 +101,7 @@ file_tag = f"_r{reservoir_size}_s{spinup}_sr{spectral_radius}_rr{ridge_param}_ad
 #####################
 print(file_tag)
 
-output_dir = f'/data0/funato/hsp2/0_out/HYPER/{loc}/HYPER_hp/spin{spinup}/reservoir{reservoir_size}/HYPER{file_tag}_is{input_scale}'
+output_dir = f'/data0/funato/hsp2/0_out/HYPER/{loc}/{dataset}/HYPER_hp/spin{spinup}/reservoir{reservoir_size}/HYPER{file_tag}_is{input_scale}'
 os.makedirs(output_dir, exist_ok=True)
 os.makedirs(output_dir + '/Win_A', exist_ok=True)
 os.makedirs(output_dir + '/Wout', exist_ok=True)
@@ -191,10 +214,10 @@ for gauge_id in basins:
     df_eva = df[start_date_eva:end_date_eva].copy()
 
     # loading the sim flow data for the BMA and 44 MARRMoT models
-    # BMA_predict_cal.csv covers 1990-2000 (BMA.py's own cal period), so it spans
-    # both our train (1990-1998) and val (1999-2000) windows -- reindex by date
+    # BMA_predict_cal.csv covers BMA.py's own (dataset-dependent) cal period, which spans
+    # both our train and val windows here (HP_SPLIT is a sub-split of it) -- reindex by date
     # rather than assuming a train/val file split.
-    bma_df_cal = pd.read_csv(f'/data0/funato/hsp2/0_out/BMA/{loc}/predict/BMA_predict_cal.csv', index_col=0)
+    bma_df_cal = pd.read_csv(f'/data0/funato/hsp2/0_out/BMA/{loc}/{dataset}/predict/BMA_predict_cal.csv', index_col=0)
     bma_row = bma_df_cal.loc[f'gauge_{gauge_id}']
     bma_row.index = pd.to_datetime(bma_row.index)
 

@@ -51,6 +51,12 @@ REGIONAL_N_BASINS=40
 REGIONAL_EPOCHS=10
 REGIONAL_LOC="US"
 REGIONAL_SEED=42
+# 'camels' (default): built directly from raw CAMELS-US, full 1980-2014 record --
+# main_lstm_regional_hp.py sub-splits its own HP-search cal/val window (1990-1998/1999-2000)
+# out of that record, strictly inside main_lstm_regional.py's production 1987-2000 calibration
+# period so HP search never touches the 2001-2006 held-out evaluation period. 'caravan': older
+# Caravan-derived extraction (1987-2006 only); still the only source for GB.
+REGIONAL_DATASET="camels"
 
 # ============================================
 # END OF PARAMETER CONFIGURATION
@@ -89,7 +95,7 @@ echo $$ > "${LOCK_DIR}/pid"
 trap 'rm -rf "$LOCK_DIR"' EXIT
 
 echo "Starting regional (canonical true EA-LSTM) LSTM hyperparameter tuning"
-echo "Location: $REGIONAL_LOC, n_basins: $REGIONAL_N_BASINS, epochs: $REGIONAL_EPOCHS"
+echo "Location: $REGIONAL_LOC, dataset: $REGIONAL_DATASET, n_basins: $REGIONAL_N_BASINS, epochs: $REGIONAL_EPOCHS"
 echo "Using cores: $START_CORE to $END_CORE"
 echo "Total cores: $NUM_CORES"
 echo "Hyperparameter grid:"
@@ -141,7 +147,7 @@ echo "Total hyperparameter combinations: $TOTAL_COMBINATIONS"
 pending_combinations=()
 for combo in "${combinations[@]}"; do
     IFS=',' read -r h_size drop lr sl batch_size <<< "$combo"
-    search_root="${SCRIPT_DIR}/runs/hp/${REGIONAL_LOC}/h${h_size}_d${drop}_lr${lr}_sl${sl}"
+    search_root="${SCRIPT_DIR}/runs/hp/${REGIONAL_LOC}/${REGIONAL_DATASET}/h${h_size}_d${drop}_lr${lr}_sl${sl}"
     done_found=0
     for run_dir in "$search_root"/*/; do
         [ -d "$run_dir" ] || continue
@@ -189,6 +195,7 @@ run_job() {
     # GPU is free, so no CUDA_VISIBLE_DEVICES override is applied here.
     taskset -c $core "$PYTHON_CMD" "$SCRIPT_PATH" \
         --loc "$REGIONAL_LOC" \
+        --dataset "$REGIONAL_DATASET" \
         --n_basins "$REGIONAL_N_BASINS" \
         --epochs "$REGIONAL_EPOCHS" \
         --seed "$REGIONAL_SEED" \
@@ -212,6 +219,7 @@ export SCRIPT_PATH
 export LOG_DIR
 export TOTAL_COMBINATIONS
 export REGIONAL_LOC
+export REGIONAL_DATASET
 export REGIONAL_N_BASINS
 export REGIONAL_EPOCHS
 export REGIONAL_SEED
@@ -258,6 +266,6 @@ echo "============================================"
 echo "All regional hyperparameter tuning jobs completed!"
 echo "Total combinations tested: $TOTAL_COMBINATIONS"
 echo "Logs saved in: $LOG_DIR"
-echo "Run directories under: ${SCRIPT_DIR}/runs/hp/${REGIONAL_LOC}/"
+echo "Run directories under: ${SCRIPT_DIR}/runs/hp/${REGIONAL_LOC}/${REGIONAL_DATASET}/"
 echo "Each run directory contains hp_metrics_cal.csv / hp_metrics_eva.csv for comparison."
 echo "============================================"

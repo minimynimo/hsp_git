@@ -16,9 +16,13 @@ START_CORE=100
 NUM_CORES=8
 N_BASINS=""
 PYTHON_PATH="/data0/funato/.venv/bin/python3"
+# 'camels' (default): built directly from raw CAMELS-US, full 1980-2014 record. 'caravan':
+# older Caravan-derived extraction (1987-2006 only). Must match the --dataset the HP runs under
+# runs_rf/hp/ were trained with (main_rf_hp.py nests its run dirs by dataset).
+DATASET="camels"
 RUNS_BASE_DIR="/data0/funato/hsp2/99_work/11_RandomForest/RF_regional_modeling-master/runs_rf"
 EVAL_SCRIPT="/data0/funato/hsp2/99_work/11_RandomForest/RF_regional_modeling-master/eval_regional_hp.py"
-OUTPUT_BASE="/data0/funato/hsp2/0_out/RF/US/regional/hp"
+OUTPUT_BASE="/data0/funato/hsp2/0_out/RF/US/$DATASET/regional/hp"
 LOG_DIR="/data0/funato/hsp2/99_work/11_RandomForest/RF_regional_modeling-master/logs"
 
 # Parse command line arguments
@@ -115,7 +119,7 @@ find_run_dir() {
     local hp_dir="n${n_est}_d${max_d}_l${min_leaf}_${max_f_dir}"
 
     # Find most recent run directory inside the HP directory
-    local run_dir=$(ls -td "$RUNS_BASE_DIR"/hp/"${hp_dir}"/rf_run_* 2>/dev/null | head -1)
+    local run_dir=$(ls -td "$RUNS_BASE_DIR"/hp/"$DATASET"/"${hp_dir}"/rf_run_* 2>/dev/null | head -1)
 
     echo "$run_dir"
 }
@@ -181,6 +185,7 @@ export EVAL_SCRIPT
 export OUTPUT_BASE
 export LOG_DIR
 export RUNS_BASE_DIR
+export DATASET
 export TOTAL_COMBINATIONS
 export N_BASINS
 

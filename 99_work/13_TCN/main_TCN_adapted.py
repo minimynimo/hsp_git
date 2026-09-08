@@ -33,6 +33,12 @@ benchmark_list = ["KGE","NSE","E1", "VE", "d","RMSE","MAE"]
 #loc, ver = "JP", 2
 loc, ver = "GB", 2
 
+# dataset: 'camels' (default) -- built directly from raw CAMELS-US, full 1980-2014 record --
+# or 'caravan', the older Caravan-derived extraction (1987-2006 only). Only affects loc='US'
+# (GB/JP have a single Caravan-derived source, no 'camels' option). See
+# ealstm_regional_modeling/main_lstm_regional.py's --dataset for the same split.
+dataset = "camels"  # "caravan"
+
 ver_name = "ver1_1" if ver == 1 else "ver2_0"
 
 attribute_dir = f'/data0/funato/hsp2/3_gis_data/{loc}/0_data/river_basin/dataset_{loc}'
@@ -60,13 +66,13 @@ if loc == "JP" and ver == 2:
     varssim_dir = f"/data0/funato/2_MERV/{loc}/varssim_nocal/{ver_name}"
 elif loc == "GB" and ver == 2:
     attribute_values = pd.read_csv(f'{attribute_dir}/camelsgb_attribute_combined.csv', encoding= 'UTF-8', index_col='gauge_id', header=0, dtype={'gauge_id': str})
-    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim"
+    varssim_dir = f"/data0/funato/hsp2/2_MERV/caravan/varssim_GB"
 elif loc == "US" and ver == 2:
     # Use the 27-attribute CAMELS-original combined CSV (built from the raw
     # camels_clim/topo/vege/soil/geol.txt files), not the old HydroATLAS-derived
     # camels_attribute_combined.csv, which does not contain any of VALID_ATTR's names.
     attribute_values = pd.read_csv(f'{attribute_dir}/camels_original_attribute_combined.csv', encoding= 'UTF-8', index_col='gauge_id', header=0, dtype={'gauge_id': str})
-    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim_US"
+    varssim_dir = f"/data0/funato/hsp2/2_MERV/{dataset}/varssim_US"
 
 if loc in ("US", "GB"):
     # Restrict to VALID_ATTR (intersected with whatever is actually present -- GB's
@@ -82,7 +88,7 @@ if loc in ("US", "GB"):
 
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "TCN_regional_modeling-master"))
 from papercode.utils import get_basin_list
-gauge_id_list = get_basin_list(loc)
+gauge_id_list = get_basin_list(loc, dataset=dataset)
 
 # TCN parameters
 timesteps = 25
@@ -92,12 +98,19 @@ nb_filters = 128
 kernel_size = 4
 nb_stacks = 3
 
-start_date_cal = '1990-01-01'
-end_date_cal = '2000-12-31'
-start_date_eva = '2001-01-01'
-end_date_eva = '2006-12-31'
+if loc == "US" and dataset == "camels":
+    start_date_cal = '1987-01-01'
+    end_date_cal = '2000-12-31'
+    start_date_eva = '2001-01-01'
+    end_date_eva = '2006-12-31'
+else:  # caravan (or GB/JP, which only ever had this Caravan-era split)
+    start_date_cal = '1990-01-01'
+    end_date_cal = '2000-12-31'
+    start_date_eva = '2001-01-01'
+    end_date_eva = '2006-12-31'
 
-output_dir = f"/data0/funato/hsp2/0_out/TCN/{loc}/adapted_424"
+output_dir = f"/data0/funato/hsp2/0_out/TCN/{loc}/{dataset}/adapted_424" if loc == "US" \
+    else f"/data0/funato/hsp2/0_out/TCN/{loc}/adapted_424"
 os.makedirs(output_dir, exist_ok=True)
 os.makedirs(output_dir + "/predict/og", exist_ok=True)
 os.makedirs(output_dir + "/results", exist_ok=True)

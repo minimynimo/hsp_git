@@ -30,19 +30,45 @@ from papercode.datasets import CamelsH5
 from papercode.datautils import add_basin_attributes, load_attributes, rescale_features, VALID_ATTR
 from papercode.utils import create_h5_files, get_basin_list
 
-# Global Settings (matching main_rf_hp.py). HP-search cal/val split -- must NOT touch the
-# real 2001-01-01..2006-12-31 test period.
+# Global Settings (matching main_rf_hp.py).
 GLOBAL_SETTINGS = {
     'loc': 'US',
     'ver': 2,
     'seq_length': 270,
-    'train_start': pd.to_datetime('1990-01-01', format='%Y-%m-%d'),
-    'train_end': pd.to_datetime('1998-12-31', format='%Y-%m-%d'),
-    'val_start': pd.to_datetime('1999-01-01', format='%Y-%m-%d'),
-    'val_end': pd.to_datetime('2000-12-31', format='%Y-%m-%d')
 }
 
-benchmark_list = ["NSE", "KGE", "E1", "VE", "d", "RMSE", "MAE"] 
+# HP-search-only cal/val split, matching main_rf_hp.py's HP_SPLIT -- must not touch the real
+# held-out evaluation period. A trained HP run's own cfg.json train_start/train_end/val_start/
+# val_end (present for any run trained after --dataset support was added) always takes
+# precedence -- see _run_dates() below.
+HP_SPLIT = {
+    'camels': {
+        'train_start': pd.to_datetime('1990-01-01', format='%Y-%m-%d'),
+        'train_end': pd.to_datetime('1998-12-31', format='%Y-%m-%d'),
+        'val_start': pd.to_datetime('1999-01-01', format='%Y-%m-%d'),
+        'val_end': pd.to_datetime('2000-12-31', format='%Y-%m-%d'),
+    },
+    'caravan': {
+        'train_start': pd.to_datetime('1990-01-01', format='%Y-%m-%d'),
+        'train_end': pd.to_datetime('1998-12-31', format='%Y-%m-%d'),
+        'val_start': pd.to_datetime('1999-01-01', format='%Y-%m-%d'),
+        'val_end': pd.to_datetime('2000-12-31', format='%Y-%m-%d'),
+    },
+}
+
+
+def _run_dates(run_cfg):
+    dataset = run_cfg.get('dataset', 'camels')
+    fallback = HP_SPLIT[dataset]
+    return {
+        'train_start': pd.to_datetime(run_cfg.get('train_start', fallback['train_start'])),
+        'train_end': pd.to_datetime(run_cfg.get('train_end', fallback['train_end'])),
+        'val_start': pd.to_datetime(run_cfg.get('val_start', fallback['val_start'])),
+        'val_end': pd.to_datetime(run_cfg.get('val_end', fallback['val_end'])),
+    }
+
+
+benchmark_list = ["NSE", "KGE", "E1", "VE", "d", "RMSE", "MAE"]
 
 # Define synthetic precipitation columns (matching main.py)
 syn_precip_cols = ['syn_no_precip', 'syn_p_pet', 
@@ -61,9 +87,9 @@ elif GLOBAL_SETTINGS['loc'] == "GB":
 
 gauge_id_list = get_basin_list(GLOBAL_SETTINGS['loc'])
 
-def load_data_for_basin(gauge_id):
+def load_data_for_basin(gauge_id, dataset='camels'):
     """Load data for a specific basin"""
-    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim_{GLOBAL_SETTINGS['loc']}"
+    varssim_dir = f"/data0/funato/hsp2/2_MERV/{dataset}/varssim_{GLOBAL_SETTINGS['loc']}"
     df = pd.read_csv(f"{varssim_dir}/varssim_{gauge_id}.csv")
     df['Date'] = pd.to_datetime(df['Date'])
     df.set_index('Date', inplace=True)
@@ -111,7 +137,7 @@ def create_sequences_rf(data, seq_length, static_features=None):
 def evaluate_basin_period(model, basin, start_date, end_date, run_cfg, static_attrs=None, basin_scalers=None):
     """Evaluate the model on a basin for a specific period"""
     # Load data for this basin
-    df = load_data_for_basin(basin)
+    df = load_data_for_basin(basin, run_cfg.get('dataset', 'camels'))
 
     # Filter by date range with warmup
     warmup_start = start_date - pd.DateOffset(days=run_cfg["seq_length"] - 1)
@@ -169,7 +195,7 @@ def evaluate_basin_period(model, basin, start_date, end_date, run_cfg, static_at
 def evaluate_synthetic_basin_period(model, basin, scenario_col, start_date, end_date, run_cfg, static_attrs=None, basin_scalers=None):
     """Evaluate the model on synthetic data for a basin"""
     # Load data for this basin
-    df = load_data_for_basin(basin)
+    df = load_data_for_basin(basin, run_cfg.get('dataset', 'camels'))
 
     # Filter by date range with warmup
     warmup_start = start_date - pd.DateOffset(days=run_cfg["seq_length"] - 1)
@@ -237,8 +263,8 @@ def evaluate_original_data(model, run_cfg, basins, static_attrs=None, args=None)
     
     # Define periods
     periods = {
-        'cal': (GLOBAL_SETTINGS["train_start"], GLOBAL_SETTINGS["train_end"]),
-        'eva': (GLOBAL_SETTINGS["val_start"], GLOBAL_SETTINGS["val_end"])
+        'cal': (_run_dates(run_cfg)["train_start"], _run_dates(run_cfg)["train_end"]),
+        'eva': (_run_dates(run_cfg)["val_start"], _run_dates(run_cfg)["val_end"])
     }
     
     output_dir = Path(args.output_dir if args and args.output_dir else "/data0/funato/hsp2/0_out/RF/US/regional")
@@ -343,8 +369,8 @@ def evaluate_synthetic_data(model, run_cfg, basins, static_attrs=None, args=None
     print("\n--- Evaluating Synthetic Scenarios ---")
     
     output_dir = Path(args.output_dir if args and args.output_dir else "/data0/funato/hsp2/0_out/RF/US/regional/hp")
-    start_date = GLOBAL_SETTINGS["val_start"]
-    end_date = GLOBAL_SETTINGS["val_end"]
+    start_date = _run_dates(run_cfg)["val_start"]
+    end_date = _run_dates(run_cfg)["val_end"]
     
     for scenario_col in syn_precip_cols:
         print(f"\nProcessing scenario: {scenario_col}")
@@ -513,6 +539,7 @@ def main():
     
     # Limit number of basins for testing if specified
     global gauge_id_list
+    gauge_id_list = get_basin_list(GLOBAL_SETTINGS['loc'], dataset=run_cfg.get('dataset', 'camels'))
     if args.n_basins is not None:
         gauge_id_list = gauge_id_list[:args.n_basins]
         print(f"Processing only first {args.n_basins} basins for testing")

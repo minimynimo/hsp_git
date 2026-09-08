@@ -32,11 +32,37 @@ GLOBAL_SETTINGS = {
     'loc': 'US',
     'ver': 2,
     'seq_length': 270,
-    'train_start': pd.to_datetime('1990-01-01', format='%Y-%m-%d'),
-    'train_end': pd.to_datetime('2000-12-31', format='%Y-%m-%d'),
-    'val_start': pd.to_datetime('2001-01-01', format='%Y-%m-%d'),
-    'val_end': pd.to_datetime('2006-12-31', format='%Y-%m-%d')
 }
+
+# Per-dataset calibration/evaluation period, matching main_tcn.py's DATASET_SETTINGS. A trained
+# run's own cfg.json train_start/train_end/val_start/val_end (present for any run trained after
+# --dataset support was added) always takes precedence -- see _run_dates() below.
+DATASET_SETTINGS = {
+    'camels': {
+        'train_start': pd.to_datetime('1987-01-01', format='%Y-%m-%d'),
+        'train_end': pd.to_datetime('2000-12-31', format='%Y-%m-%d'),
+        'val_start': pd.to_datetime('2001-01-01', format='%Y-%m-%d'),
+        'val_end': pd.to_datetime('2006-12-31', format='%Y-%m-%d'),
+    },
+    'caravan': {
+        'train_start': pd.to_datetime('1990-01-01', format='%Y-%m-%d'),
+        'train_end': pd.to_datetime('2000-12-31', format='%Y-%m-%d'),
+        'val_start': pd.to_datetime('2001-01-01', format='%Y-%m-%d'),
+        'val_end': pd.to_datetime('2006-12-31', format='%Y-%m-%d'),
+    },
+}
+
+
+def _run_dates(run_cfg):
+    dataset = run_cfg.get('dataset', 'camels')
+    fallback = DATASET_SETTINGS[dataset]
+    return {
+        'train_start': pd.to_datetime(run_cfg.get('train_start', fallback['train_start'])),
+        'train_end': pd.to_datetime(run_cfg.get('train_end', fallback['train_end'])),
+        'val_start': pd.to_datetime(run_cfg.get('val_start', fallback['val_start'])),
+        'val_end': pd.to_datetime(run_cfg.get('val_end', fallback['val_end'])),
+    }
+
 
 benchmarks = ["NSE", "KGE", "E1", "VE", "RMSE", "MAE"]
 
@@ -116,8 +142,8 @@ class TCNModel(nn.Module):
 # Utility Functions       #
 # ####################### #
 
-def load_data_for_basin(gauge_id):
-    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim_{GLOBAL_SETTINGS['loc']}"
+def load_data_for_basin(gauge_id, dataset='camels'):
+    varssim_dir = f"/data0/funato/hsp2/2_MERV/{dataset}/varssim_{GLOBAL_SETTINGS['loc']}"
     df = pd.read_csv(f"{varssim_dir}/varssim_{gauge_id}.csv", index_col='Date', parse_dates=True)
     return df
 
@@ -237,7 +263,7 @@ class FineTuneDataset(Dataset):
         self._prepare_data(basin, dates, cfg, static_attrs, basin_scalers)
 
     def _prepare_data(self, basin, dates, cfg, static_attrs, basin_scalers):
-        df = load_data_for_basin(basin)
+        df = load_data_for_basin(basin, cfg.get('dataset', 'camels'))
         df_period = df.loc[dates[0]:dates[1]]
         dyn_cols, q_col = ['Precip', 'PET', 'Temp'], 'Obs flow'
 
@@ -296,7 +322,7 @@ class SyntheticFineTuneDataset(Dataset):
         self._prepare_synthetic_data(basin, scenario_col, dates, cfg, static_attrs)
 
     def _prepare_synthetic_data(self, basin, scenario_col, dates, cfg, static_attrs):
-        df = load_data_for_basin(basin)
+        df = load_data_for_basin(basin, cfg.get('dataset', 'camels'))
         warmup_start = dates[0] - pd.DateOffset(days=cfg['seq_length'] - 1)
         df_period = df.loc[warmup_start:dates[1]]
         
@@ -394,7 +420,8 @@ def load_basin_model(basin, base_model, save_dir, epoch_tag):
 
 def fine_tune_basin_model(base_model, basin, cfg, static_attrs, basin_scalers):
     """Fine-tune the base model once for a basin using calibration period data."""
-    ft_dataset = FineTuneDataset(basin, (GLOBAL_SETTINGS['train_start'], GLOBAL_SETTINGS['train_end']), cfg, static_attrs, basin_scalers)
+    _dates = _run_dates(cfg)
+    ft_dataset = FineTuneDataset(basin, (_dates['train_start'], _dates['train_end']), cfg, static_attrs, basin_scalers)
     if len(ft_dataset) == 0:
         return None, None
 
@@ -496,10 +523,14 @@ def main():
                           f"the per-basin scalers this run was trained with.")
 
     print("Adapted TCN Evaluation")
-    
-    basins_to_process = gauge_id_list
+
+    # Recompute the basin list for the dataset this run was actually trained on (the
+    # module-level default computed at import time is always 'camels').
+    run_gauge_id_list = get_basin_list(GLOBAL_SETTINGS['loc'], dataset=cfg.get('dataset', 'camels'))
+
+    basins_to_process = run_gauge_id_list
     if args.n_basins:
-        basins_to_process = gauge_id_list[:args.n_basins]
+        basins_to_process = run_gauge_id_list[:args.n_basins]
         
     model_file = run_dir / f"tcn_model_epoch{args.model_epoch}.pt"
     if not model_file.exists(): model_file = run_dir / "tcn_model_final.pt"
@@ -554,7 +585,7 @@ def main():
                           dropout=cfg["dropout"]).to(DEVICE)
     base_model.load_state_dict(load_tcn_state_dict(model_file, map_location=DEVICE))
 
-    output_dir = Path(f"/data0/funato/hsp2/0_out/TCN/{GLOBAL_SETTINGS['loc']}/adapted")
+    output_dir = Path(f"/data0/funato/hsp2/0_out/TCN/{GLOBAL_SETTINGS['loc']}/{cfg.get('dataset', 'camels')}/adapted")
     
     # Directory for saving/loading fine-tuned models - specific to this run
     # Use the run directory name to keep adapted models separate for each training run
@@ -588,8 +619,9 @@ def main():
     param_tag = get_param_string(cfg)
     
     # Evaluate on cal and eva periods using the fine-tuned models
-    for name, dates in {'cal': (GLOBAL_SETTINGS['train_start'], GLOBAL_SETTINGS['train_end']), 
-                        'eva': (GLOBAL_SETTINGS['val_start'], GLOBAL_SETTINGS['val_end'])}.items():
+    _dates = _run_dates(cfg)
+    for name, dates in {'cal': (_dates['train_start'], _dates['train_end']),
+                        'eva': (_dates['val_start'], _dates['val_end'])}.items():
         print(f"\nEvaluating {name.upper()} period...")
         
         pred_path = output_dir / "predict" / f"TCN_predict_{param_tag}_{name}.csv"
@@ -644,8 +676,8 @@ def main():
     print("Starting Synthetic Scenario Evaluation...")
     print("="*60)
     
-    val_start = GLOBAL_SETTINGS["val_start"]
-    val_end = GLOBAL_SETTINGS["val_end"]
+    val_start = _dates['val_start']
+    val_end = _dates['val_end']
     
     for scenario_col in syn_precip_cols:
         print(f"\nProcessing scenario: {scenario_col}")

@@ -26,20 +26,25 @@ benchmark_list = ["KGE","NSE","E1", "VE", "d","RMSE","MAE"]
 #loc, ver = "GB", 2
 loc, ver = "US", 2
 
+# dataset: 'camels' (default) -- built directly from raw CAMELS-US, full 1980-2014 record --
+# or 'caravan', the older Caravan-derived extraction (1987-2006 only). Only affects loc='US'.
+# See ealstm_regional_modeling/main_lstm_regional.py's --dataset for the same split.
+dataset = "camels"  # "caravan"
+
 ver_name = "ver1_1" if ver == 1 else "ver2_0"
 
 
 if loc == "JP" and ver == 2:
     varssim_dir = f"/data0/funato/2_MERV/{loc}/varssim_nocal/{ver_name}"
 elif loc == "GB" and ver == 2:
-    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim_GB"
+    varssim_dir = f"/data0/funato/hsp2/2_MERV/caravan/varssim_GB"
 elif loc == "US" and ver == 2:
-    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim_US"
+    varssim_dir = f"/data0/funato/hsp2/2_MERV/{dataset}/varssim_US"
 
 import sys
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "TCN_regional_modeling-master"))
 from papercode.utils import get_basin_list
-gauge_id_list = get_basin_list(loc)
+gauge_id_list = get_basin_list(loc, dataset=dataset)
 
 from tcn_indiv_resume import load_completed_basins
 
@@ -77,12 +82,21 @@ num_channels = [nb_filters] * num_levels
 # DEBUG_README.md for why main_TCN_indiv_hp.py's tag (which DOES sweep them) differs.
 param_tag = f"f{nb_filters}_k{kernel_size}_d{dropout_rate}_w{timesteps}"
 
-start_date_cal = '1990-01-01'
-end_date_cal = '2000-12-31'
-start_date_eva = '2001-01-01'
-end_date_eva = '2006-12-31'
+if dataset == "camels":
+    start_date_cal = '1987-01-01'
+    end_date_cal = '2000-12-31'
+    start_date_eva = '2001-01-01'
+    end_date_eva = '2006-12-31'
+else:  # caravan
+    start_date_cal = '1990-01-01'
+    end_date_cal = '2000-12-31'
+    start_date_eva = '2001-01-01'
+    end_date_eva = '2006-12-31'
 
-output_dir = f"/data0/funato/hsp2/0_out/TCN/{loc}/individual/{param_tag}"
+print(f"[main_TCN_indiv] loc={loc} dataset={dataset!r} "
+      f"cal={start_date_cal}..{end_date_cal} eva={start_date_eva}..{end_date_eva}")
+
+output_dir = f"/data0/funato/hsp2/0_out/TCN/{loc}/{dataset}/individual/{param_tag}"
 os.makedirs(output_dir, exist_ok=True)
 os.makedirs(output_dir + "/predict", exist_ok=True)
 os.makedirs(output_dir + "/results", exist_ok=True)

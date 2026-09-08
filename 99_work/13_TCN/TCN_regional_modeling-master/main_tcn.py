@@ -33,19 +33,34 @@ from papercode.tcn_run_registry import find_completed_run, find_resumable_run
 # Global Definitions      #
 # ####################### #
 
+# seq_length/loc/ver are dataset-independent; the cal/eval date split is not (each dataset
+# covers a different record length -- see DATASET_SETTINGS below).
 GLOBAL_SETTINGS = {
     'loc': 'US',
     'ver': 2,
     'seq_length': 270,
-    'train_start': pd.to_datetime('1990-01-01', format='%Y-%m-%d'),
-    'train_end': pd.to_datetime('2000-12-31', format='%Y-%m-%d'),
-    'val_start': pd.to_datetime('2001-01-01', format='%Y-%m-%d'),
-    'val_end': pd.to_datetime('2006-12-31', format='%Y-%m-%d')
+}
+
+# Per-dataset calibration ("train") / evaluation ("val") period, matching
+# ealstm_regional_modeling/main_lstm_regional.py's DATASET_SETTINGS:
+#   * 'camels'  -- built directly from raw CAMELS-US, full 1980-2014 record available.
+#   * 'caravan' -- older Caravan-derived extraction, only covers 1987-2006.
+DATASET_SETTINGS = {
+    'camels': {
+        'train_start': pd.to_datetime('1987-01-01', format='%Y-%m-%d'),
+        'train_end': pd.to_datetime('2000-12-31', format='%Y-%m-%d'),
+        'val_start': pd.to_datetime('2001-01-01', format='%Y-%m-%d'),
+        'val_end': pd.to_datetime('2006-12-31', format='%Y-%m-%d'),
+    },
+    'caravan': {
+        'train_start': pd.to_datetime('1990-01-01', format='%Y-%m-%d'),
+        'train_end': pd.to_datetime('2000-12-31', format='%Y-%m-%d'),
+        'val_start': pd.to_datetime('2001-01-01', format='%Y-%m-%d'),
+        'val_end': pd.to_datetime('2006-12-31', format='%Y-%m-%d'),
+    },
 }
 
 ver_name = "ver1_1" if GLOBAL_SETTINGS['ver'] == 1 else "ver2_0"
-
-gauge_id_list = get_basin_list(GLOBAL_SETTINGS['loc'])
 
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -53,8 +68,8 @@ DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 # Utility Functions       #
 # ####################### #
 
-def load_data_for_basin(gauge_id):
-    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim_{GLOBAL_SETTINGS['loc']}"
+def load_data_for_basin(gauge_id, dataset='camels'):
+    varssim_dir = f"/data0/funato/hsp2/2_MERV/{dataset}/varssim_{GLOBAL_SETTINGS['loc']}"
     df = pd.read_csv(f"{varssim_dir}/varssim_{gauge_id}.csv")
     df['Date'] = pd.to_datetime(df['Date'])
     df.set_index('Date', inplace=True)
@@ -155,7 +170,7 @@ class HydroDataset(Dataset):
         for basin in tqdm(self.basins, desc="Processing basins"):
             if basin not in self.scalers['basin_scalers']: continue
 
-            df = load_data_for_basin(basin)
+            df = load_data_for_basin(basin, self.cfg.get('dataset', 'camels'))
             df_period = df.loc[self.cfg['train_start']:self.cfg['train_end']]
 
             bscaler = self.scalers['basin_scalers'][basin]
@@ -216,6 +231,10 @@ def get_args() -> Dict:
     parser.add_argument('--run_dir', type=str, help="For evaluation mode.")
     parser.add_argument('--num_workers', type=int, default=2)
     parser.add_argument('--no_static', type=str2bool, default=False)
+    # 'camels' (default): built directly from raw CAMELS-US, full 1980-2014 record. 'caravan':
+    # older Caravan-derived extraction (1987-2006 only). See
+    # ealstm_regional_modeling/main_lstm_regional.py's --dataset for the same split.
+    parser.add_argument('--dataset', type=str, default='camels', choices=['camels', 'caravan'])
     # Fixed at 6 (dilations [1,2,4,8,16,32]) per HYPERPARAMETERS.md's "LAYERS 1 2 4 8 16 32" row,
     # same convention as the individual TCN script -- see DEBUG_README.md §15.1. Was previously
     # 8 here, inconsistent with that convention (run_main_tcn.sh doesn't pass --num_levels, so
@@ -235,6 +254,7 @@ def get_args() -> Dict:
 
     cfg = vars(parser.parse_args())
     cfg.update(GLOBAL_SETTINGS)
+    cfg.update(DATASET_SETTINGS[cfg["dataset"]])
     # Ensure TCN channel definition matches eval_regional/eval_adapted logic.
     # If num_filters/num_levels are provided, derive num_channels from them.
     if cfg.get("num_filters") is not None and cfg.get("num_levels") is not None:
@@ -244,7 +264,7 @@ def get_args() -> Dict:
 def _setup_run(cfg: Dict) -> Dict:
     """Create folder structure for this run"""
     now = datetime.now()
-    run_name = f'tcn_run_{now.strftime("%m%d_%H%M")}_seed{cfg["seed"]}'
+    run_name = f'tcn_run_{now.strftime("%m%d_%H%M")}_{cfg["dataset"]}_seed{cfg["seed"]}'
     cfg['run_dir'] = Path(__file__).parent / "runs_tcn" / run_name
     cfg['run_dir'].mkdir(parents=True, exist_ok=True)
     
@@ -265,7 +285,7 @@ def train(cfg):
     if torch.cuda.is_available():
         torch.cuda.manual_seed(cfg["seed"])
     
-    basins = gauge_id_list
+    basins = get_basin_list(cfg['loc'], dataset=cfg['dataset'])
 
     # _setup_run's run_dir is timestamped, so a restart after a kill would
     # otherwise retrain from scratch even if training already ran to
@@ -276,7 +296,7 @@ def train(cfg):
     # EA-LSTM reference implementation, which logs that random seed in the run
     # folder name purely for traceability), so requiring it to match would defeat
     # resumability for any invocation that doesn't pin --seed.
-    match_keys = ['batch_size', 'epochs', 'learning_rate', 'dropout', 'kernel_size',
+    match_keys = ['dataset', 'batch_size', 'epochs', 'learning_rate', 'dropout', 'kernel_size',
                   'num_filters', 'num_levels', 'no_static']
     search_root = Path(__file__).parent / "runs_tcn"
     target_checkpoint = f"tcn_model_epoch{cfg['epochs']}.pt"
@@ -307,7 +327,7 @@ def train(cfg):
     basin_scalers = {}
 
     for basin in tqdm(basins, desc="Loading basin data for scaling"):
-        df = load_data_for_basin(basin)
+        df = load_data_for_basin(basin, cfg.get('dataset', 'camels'))
         df_period = df.loc[cfg['train_start']:cfg['train_end']]
 
         is_nan = df_period[dyn_cols + [q_col]].isnull().any(axis=1)

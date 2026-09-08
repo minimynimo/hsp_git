@@ -11,8 +11,13 @@
 # takes that run_dir as a required argument rather than training a base model itself. Run
 # main_lstm_regional.py (or run_lstm_hp_tuning_regional.sh, then pick a winning run_dir) first.
 #
+# No --dataset flag here: main_lstm_adapted.py reads loc/dataset ('camels' or 'caravan') back
+# from RunDir's own cfg.json, so whichever dataset that regional run was trained on is what
+# gets fine-tuned/evaluated here too -- nothing to select at this script's level.
+#
 # Usage: ./run_lstm_hp_tuning_adapted.sh <StartCore> <NumCores> <RunDir>
-# Example: ./run_lstm_hp_tuning_adapted.sh 0 8 runs/run_0821_134031_US_seed42
+# Example (RunDir from a --dataset camels regional run):
+#   ./run_lstm_hp_tuning_adapted.sh 0 8 runs/run_0821_134031_US_camels_seed42
 #
 # CPU-only machine: adapted fine-tuning re-trains a small number of epochs PER BASIN, so cost
 # scales with n_basins x ft_epochs, not with the whole basin pool at once like regional training
@@ -218,5 +223,5 @@ echo "Total combinations tested: $TOTAL_COMBINATIONS"
 echo "Base regional run_dir: $RUN_DIR"
 echo "Logs saved in: $LOG_DIR"
 echo "Results (per combo, tagged _ft{epochs}_ftlr{lr}) under:"
-echo "  /data0/funato/hsp2/0_out/LSTM/{loc}/adapted_ealstm/results/"
+echo "  /data0/funato/hsp2/0_out/LSTM/{loc}/{dataset}/adapted/results/  (dataset per RunDir's cfg.json)"
 echo "============================================"

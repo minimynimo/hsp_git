@@ -76,6 +76,11 @@ REGIONAL_BATCH_SIZE=(256 512)
 REGIONAL_N_BASINS=40
 REGIONAL_EPOCHS=10
 REGIONAL_LOC="US"
+# 'camels' (default): built directly from raw CAMELS-US, full 1980-2014 record --
+# main_lstm_regional_hp.py sub-splits its own HP-search cal/val window (1990-1998/1999-2000)
+# strictly inside production's 1987-2000 calibration period. 'caravan': older Caravan-derived
+# extraction (1987-2006 only); still the only source for GB.
+REGIONAL_DATASET="camels"
 
 # Individual model hyperparameters. Grid now matches HYPERPARAMETERS.md's Individual section
 # exactly (that file is the source of truth, superseding the earlier literature-derived grid):
@@ -90,6 +95,11 @@ INDIVIDUAL_DROPOUT=(0.4 0.5)
 INDIVIDUAL_LEARNING_RATE=(0.001 0.0005)
 INDIVIDUAL_SEQ_LENGTH=(270 365)
 INDIVIDUAL_BATCH_SIZE=(64 128)
+# 'camels' (default): built directly from raw CAMELS-US, full 1980-2014 record --
+# main_LSTM_indiv_hp.py sub-splits its own HP-search train/val window (1990-1998/1999-2000)
+# strictly inside production's 1987-2000 calibration period. 'caravan': older Caravan-derived
+# extraction (1987-2006 only).
+INDIVIDUAL_DATASET="camels"
 
 # ============================================
 # END OF BCPARAMETER CONFIGURATION
@@ -234,12 +244,12 @@ pending_combinations=()
 for combo in "${combinations[@]}"; do
     IFS=',' read -r h_size drop lr sl bs <<< "$combo"
     if [ "$MODEL_TYPE" == "individual" ]; then
-        hp_dir="/data0/funato/hsp2/0_out/LSTM/US/individual/hp/h${h_size}_d${drop}_lr${lr}_sl${sl}_b${bs}"
+        hp_dir="/data0/funato/hsp2/0_out/LSTM/US/${INDIVIDUAL_DATASET}/individual/hp/h${h_size}_d${drop}_lr${lr}_sl${sl}_b${bs}"
         if [ -f "${hp_dir}/LSTM_log.txt" ] && grep -q "^DONE$" "${hp_dir}/LSTM_log.txt" 2>/dev/null; then
             continue
         fi
     else
-        search_root="/data0/funato/hsp2/99_work/14_LSTM/ealstm_regional_modeling/runs/hp/${REGIONAL_LOC}/h${h_size}_d${drop}_lr${lr}_sl${sl}"
+        search_root="/data0/funato/hsp2/99_work/14_LSTM/ealstm_regional_modeling/runs/hp/${REGIONAL_LOC}/${REGIONAL_DATASET}/h${h_size}_d${drop}_lr${lr}_sl${sl}"
         done_found=0
         for run_dir in "$search_root"/*/; do
             [ -d "$run_dir" ] || continue
@@ -289,7 +299,7 @@ run_job() {
     # skip completed runs internally in main_lstm_regional_hp.py, so no check is needed here for
     # that model type.)
     if [ "$MODEL_TYPE" == "individual" ]; then
-        local hp_dir="/data0/funato/hsp2/0_out/LSTM/US/individual/hp/h${h_size}_d${drop}_lr${lr}_sl${sl}_b${bs}"
+        local hp_dir="/data0/funato/hsp2/0_out/LSTM/US/${INDIVIDUAL_DATASET}/individual/hp/h${h_size}_d${drop}_lr${lr}_sl${sl}_b${bs}"
         if [ -f "${hp_dir}/LSTM_log.txt" ] && grep -q "^DONE$" "${hp_dir}/LSTM_log.txt" 2>/dev/null; then
             echo "[$job_id/$TOTAL_COMBINATIONS] Skipping (already complete): hidden_size=$h_size, dropout=$drop, learning_rate=$lr, seq_length=$sl, batch_size=$bs"
             return
@@ -313,6 +323,7 @@ run_job() {
     if [ "$MODEL_TYPE" == "regional" ]; then
         taskset -c $core "$PYTHON_CMD" "$SCRIPT_PATH" \
             --loc "$REGIONAL_LOC" \
+            --dataset "$REGIONAL_DATASET" \
             --n_basins "$REGIONAL_N_BASINS" \
             --epochs "$REGIONAL_EPOCHS" \
             --hidden_size "$h_size" \
@@ -327,7 +338,8 @@ run_job() {
             --dropout "$drop" \
             --learning_rate "$lr" \
             --seq_length "$sl" \
-            --batch_size "$bs" >> "$log_file" 2>&1
+            --batch_size "$bs" \
+            --dataset "$INDIVIDUAL_DATASET" >> "$log_file" 2>&1
     fi
 
     local exit_code=$?
@@ -346,8 +358,10 @@ export LOG_DIR
 export MODEL_TYPE
 export TOTAL_COMBINATIONS
 export REGIONAL_LOC
+export REGIONAL_DATASET
 export REGIONAL_N_BASINS
 export REGIONAL_EPOCHS
+export INDIVIDUAL_DATASET
 
 # Run jobs in parallel with GNU parallel if available, otherwise use background jobs
 if command -v parallel &> /dev/null; then

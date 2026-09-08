@@ -36,6 +36,11 @@ SUBSAMPLE=0.8
 COLSAMPLE_BYTREE=0.7
 MIN_CHILD_WEIGHT=5
 
+# 'camels' (default): built directly from raw CAMELS-US, full 1980-2014 record -- main_xgb.py's
+# DATASET_SETTINGS gives it a 1987-2000 cal / 2001-2006 eval split. 'caravan': older
+# Caravan-derived extraction (1987-2006 only, 1990-2000/2001-2006 split, unchanged).
+DATASET="camels"
+
 # ============================================
 # END CONFIGURATION SECTION
 # ============================================
@@ -72,20 +77,20 @@ for (( seed = $firstseed ; seed < $((nseeds+$firstseed)) ; seed++ )); do
 
     if [ "$model" = "xgb" ]; then
         if [ "$static_bool" = true ]; then
-            outfile="/data0/funato/hsp2/0_out/XGB/$loc/reports_static/xgb.$seed.$(date +%Y-%m-%d_%H-%M-%S).out"
+            outfile="/data0/funato/hsp2/0_out/XGB/$loc/$DATASET/reports_static/xgb.$seed.$(date +%Y-%m-%d_%H-%M-%S).out"
         else
-            outfile="/data0/funato/hsp2/0_out/XGB/$loc/reports_nostatic/xgb.$seed.$(date +%Y-%m-%d_%H-%M-%S).out"
+            outfile="/data0/funato/hsp2/0_out/XGB/$loc/$DATASET/reports_nostatic/xgb.$seed.$(date +%Y-%m-%d_%H-%M-%S).out"
         fi
         mkdir -p "$(dirname "$outfile")" # Create output directory if it doesn't exist
         start_time=$(date '+%Y-%m-%d %H:%M:%S') # Log start time
         echo "Start Time: $start_time | Seed: $seed" >> "$output_dir/$log_name"
 
         if [ "$static_bool" = true ]; then  ## static data is used
-            echo "Running: taskset -c $core python3 /data0/funato/hsp2/99_work/12_XGBoost/XGB_regional_modeling-master/main_xgb.py train --no_static=False --n_estimators=$N_ESTIMATORS --max_depth=$MAX_DEPTH --learning_rate=$LEARNING_RATE --subsample=$SUBSAMPLE --colsample_bytree=$COLSAMPLE_BYTREE --min_child_weight=$MIN_CHILD_WEIGHT --seed=$seed" >> "$output_dir/$log_name"
-            taskset -c $core python3 /data0/funato/hsp2/99_work/12_XGBoost/XGB_regional_modeling-master/main_xgb.py train --no_static=False --n_estimators=$N_ESTIMATORS --max_depth=$MAX_DEPTH --learning_rate=$LEARNING_RATE --subsample=$SUBSAMPLE --colsample_bytree=$COLSAMPLE_BYTREE --min_child_weight=$MIN_CHILD_WEIGHT --seed=$seed > $outfile 2>> "$output_dir/$log_name" &
+            echo "Running: taskset -c $core python3 /data0/funato/hsp2/99_work/12_XGBoost/XGB_regional_modeling-master/main_xgb.py train --no_static=False --n_estimators=$N_ESTIMATORS --max_depth=$MAX_DEPTH --learning_rate=$LEARNING_RATE --subsample=$SUBSAMPLE --colsample_bytree=$COLSAMPLE_BYTREE --min_child_weight=$MIN_CHILD_WEIGHT --dataset=$DATASET --seed=$seed" >> "$output_dir/$log_name"
+            taskset -c $core python3 /data0/funato/hsp2/99_work/12_XGBoost/XGB_regional_modeling-master/main_xgb.py train --no_static=False --n_estimators=$N_ESTIMATORS --max_depth=$MAX_DEPTH --learning_rate=$LEARNING_RATE --subsample=$SUBSAMPLE --colsample_bytree=$COLSAMPLE_BYTREE --min_child_weight=$MIN_CHILD_WEIGHT --dataset=$DATASET --seed=$seed > $outfile 2>> "$output_dir/$log_name" &
         else ## no static data is used
-            echo "Running: taskset -c $core python3 /data0/funato/hsp2/99_work/12_XGBoost/XGB_regional_modeling-master/main_xgb.py train --no_static=True --n_estimators=$N_ESTIMATORS --max_depth=$MAX_DEPTH --learning_rate=$LEARNING_RATE --subsample=$SUBSAMPLE --colsample_bytree=$COLSAMPLE_BYTREE --min_child_weight=$MIN_CHILD_WEIGHT --seed=$seed" >> "$output_dir/$log_name"
-            taskset -c $core python3 /data0/funato/hsp2/99_work/12_XGBoost/XGB_regional_modeling-master/main_xgb.py train --no_static=True --n_estimators=$N_ESTIMATORS --max_depth=$MAX_DEPTH --learning_rate=$LEARNING_RATE --subsample=$SUBSAMPLE --colsample_bytree=$COLSAMPLE_BYTREE --min_child_weight=$MIN_CHILD_WEIGHT --seed=$seed > $outfile 2>> "$output_dir/$log_name" &
+            echo "Running: taskset -c $core python3 /data0/funato/hsp2/99_work/12_XGBoost/XGB_regional_modeling-master/main_xgb.py train --no_static=True --n_estimators=$N_ESTIMATORS --max_depth=$MAX_DEPTH --learning_rate=$LEARNING_RATE --subsample=$SUBSAMPLE --colsample_bytree=$COLSAMPLE_BYTREE --min_child_weight=$MIN_CHILD_WEIGHT --dataset=$DATASET --seed=$seed" >> "$output_dir/$log_name"
+            taskset -c $core python3 /data0/funato/hsp2/99_work/12_XGBoost/XGB_regional_modeling-master/main_xgb.py train --no_static=True --n_estimators=$N_ESTIMATORS --max_depth=$MAX_DEPTH --learning_rate=$LEARNING_RATE --subsample=$SUBSAMPLE --colsample_bytree=$COLSAMPLE_BYTREE --min_child_weight=$MIN_CHILD_WEIGHT --dataset=$DATASET --seed=$seed > $outfile 2>> "$output_dir/$log_name" &
         fi
         wait
         end_time=$(date '+%Y-%m-%d %H:%M:%S') # Log end time

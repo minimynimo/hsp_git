@@ -51,6 +51,11 @@ INPUT_SCALE=(0.1 0.5 1.0 5.0 10.0)
 ADJACENCY_DENSITY=(0.05 0.1 0.2 0.3 0.5 1.0)
 SPINUP=(1)
 LOC="US"
+# 'camels' (default): built directly from raw CAMELS-US, full 1980-2014 record --
+# hparam_main_HYPER.py sub-splits its own HP-search window (1981-1990/1991-1995) strictly
+# inside production's 1981-1995 calibration period. 'caravan': older Caravan-derived
+# extraction (1987-2006 only).
+DATASET="camels"
 
 # ============================================
 # END OF PARAMETER CONFIGURATION
@@ -95,7 +100,7 @@ echo $$ > "${LOCK_DIR}/pid"
 trap 'rm -rf "$LOCK_DIR"' EXIT
 
 echo "Starting HYPER hyperparameter tuning"
-echo "Location: $LOC"
+echo "Location: $LOC, dataset: $DATASET"
 echo "Using cores: $START_CORE to $END_CORE"
 echo "Total cores: $NUM_CORES"
 echo "Hyperparameter grid:"
@@ -139,7 +144,7 @@ for combo in "${combinations[@]}"; do
     IFS=',' read -r rs sr rp is ad sp <<< "$combo"
     # Must match hparam_main_HYPER.py's file_tag/output_dir construction exactly.
     file_tag="_r${rs}_s${sp}_sr${sr}_rr${rp}_ad${ad}"
-    log_file="/data0/funato/hsp2/0_out/HYPER/${LOC}/HYPER_hp/spin${sp}/reservoir${rs}/HYPER${file_tag}_is${is}/HYPER${file_tag}_log.txt"
+    log_file="/data0/funato/hsp2/0_out/HYPER/${LOC}/${DATASET}/HYPER_hp/spin${sp}/reservoir${rs}/HYPER${file_tag}_is${is}/HYPER${file_tag}_log.txt"
     if [ -f "$log_file" ] && tail -n 1 "$log_file" 2>/dev/null | grep -q "^DONE$"; then
         continue
     fi
@@ -171,6 +176,7 @@ run_job() {
 
     taskset -c $core "$PYTHON_CMD" "$SCRIPT_PATH" \
         --loc "$LOC" \
+        --dataset "$DATASET" \
         --reservoir_size "$rs" \
         --spectral_radius "$sr" \
         --ridge_param "$rp" \
@@ -191,6 +197,7 @@ export PYTHON_CMD
 export SCRIPT_PATH
 export LOG_DIR
 export LOC
+export DATASET
 export TOTAL_COMBINATIONS
 
 if command -v parallel &> /dev/null; then

@@ -20,18 +20,21 @@ import pandas as pd
 from papercode.datautils import add_basin_attributes, load_attributes, VALID_ATTR
 from papercode.utils import get_basin_list
 from papercode.rf_features import load_or_build_dataset
-from main_rf_hp import GLOBAL_SETTINGS, ver_name, DATASET_CACHE_ROOT, str2bool
+from main_rf_hp import GLOBAL_SETTINGS, HP_SPLIT, ver_name, DATASET_CACHE_ROOT, str2bool
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--no_static', type=str2bool, default=False)
+    parser.add_argument('--dataset', type=str, default='camels', choices=['camels', 'caravan'])
     args = parser.parse_args()
 
     cfg = dict(GLOBAL_SETTINGS)
+    cfg['dataset'] = args.dataset
+    cfg.update(HP_SPLIT[args.dataset])
     cfg['no_static'] = args.no_static
 
-    basins = get_basin_list(cfg['loc'])
+    basins = get_basin_list(cfg['loc'], dataset=cfg['dataset'])
 
     db_dir = Path(__file__).parent / "cache"
     db_dir.mkdir(parents=True, exist_ok=True)

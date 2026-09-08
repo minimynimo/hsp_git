@@ -45,6 +45,11 @@ LEARNING_RATE=0.0005
 # already matches the selected window size -- no variable/flag needed here.
 NUM_WORKERS=2
 
+# 'camels' (default): built directly from raw CAMELS-US, full 1980-2014 record --
+# main_tcn.py's DATASET_SETTINGS gives it a 1987-2000 cal / 2001-2006 eval split. 'caravan':
+# older Caravan-derived extraction (1987-2006 only, 1990-2000/2001-2006 split, unchanged).
+DATASET="camels"
+
 # ============================================
 # END CONFIGURATION SECTION
 # ============================================
@@ -81,9 +86,9 @@ for (( seed = $firstseed ; seed < $((nseeds+$firstseed)) ; seed++ )); do
 
     if [ "$model" = "tcn" ]; then
         if [ "$static_bool" = true ]; then
-            outfile="/data0/funato/hsp2/0_out/TCN/$loc/reports_static/tcn.$seed.$(date +%Y-%m-%d_%H-%M-%S).out"
+            outfile="/data0/funato/hsp2/0_out/TCN/$loc/$DATASET/reports_static/tcn.$seed.$(date +%Y-%m-%d_%H-%M-%S).out"
         else
-            outfile="/data0/funato/hsp2/0_out/TCN/$loc/reports_nostatic/tcn.$seed.$(date +%Y-%m-%d_%H-%M-%S).out"
+            outfile="/data0/funato/hsp2/0_out/TCN/$loc/$DATASET/reports_nostatic/tcn.$seed.$(date +%Y-%m-%d_%H-%M-%S).out"
         fi
         mkdir -p "$(dirname "$outfile")" # Create output directory if it doesn't exist
         start_time=$(date '+%Y-%m-%d %H:%M:%S') # Log start time
@@ -91,7 +96,7 @@ for (( seed = $firstseed ; seed < $((nseeds+$firstseed)) ; seed++ )); do
 
         # Build parameter strings from configuration
         TCN_PARAMS="--num_filters=$NUM_FILTERS --num_levels=$NUM_LEVELS"
-        OTHER_PARAMS="--batch_size=$BATCH_SIZE --epochs=$EPOCHS --kernel_size=$KERNEL_SIZE --dropout=$DROPOUT --learning_rate=$LEARNING_RATE --seed=$seed --num_workers=$NUM_WORKERS"
+        OTHER_PARAMS="--batch_size=$BATCH_SIZE --epochs=$EPOCHS --kernel_size=$KERNEL_SIZE --dropout=$DROPOUT --learning_rate=$LEARNING_RATE --seed=$seed --num_workers=$NUM_WORKERS --dataset=$DATASET"
 
 
         if [ "$static_bool" = true ]; then ## static data is used

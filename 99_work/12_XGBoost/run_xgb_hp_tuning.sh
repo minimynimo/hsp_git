@@ -98,6 +98,12 @@ INDIVIDUAL_MAX_DEPTHS=(2 3 4)
 REGIONAL_MIN_CHILD_WEIGHT=(1 3 5)
 INDIVIDUAL_MIN_CHILD_WEIGHT=(5 10 20)
 
+# 'camels' (default): built directly from raw CAMELS-US, full 1980-2014 record -- both
+# main_xgb_hp.py and main_xgboost_indiv_hp.py sub-split their own HP-search window
+# (1990-1998/1999-2000) strictly inside production's 1987-2000 calibration period. 'caravan':
+# older Caravan-derived extraction (1987-2006 only).
+DATASET="camels"
+
 echo "Starting XGBoost Hyperparameter Tuning ($MODEL_TYPE)"
 echo "========================================"
 echo "Combinations: 486"
@@ -161,6 +167,7 @@ for n_est in "${N_ESTIMATORS[@]}"; do
                             --subsample "$ss" \
                             --colsample_bytree "$cbt" \
                             --min_child_weight "$mcw" \
+                            --dataset "$DATASET" \
                             "${SEED_ARGS[@]}" \
                             > "$LOG_FILE" 2>&1 &
                     done

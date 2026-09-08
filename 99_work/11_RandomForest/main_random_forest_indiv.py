@@ -21,7 +21,12 @@ benchmark_list = ["KGE","NSE","E1", "VE", "d","RMSE","MAE"]
 #loc, ver = "GB", 2
 loc, ver = "US", 2
 
-ver_name = "ver1_1" if ver == 1 else "ver2_0"   
+# dataset: 'camels' (default) -- built directly from raw CAMELS-US, full 1980-2014 record --
+# or 'caravan', the older Caravan-derived extraction (1987-2006 only). Only affects loc='US'.
+# See ealstm_regional_modeling/main_lstm_regional.py's --dataset for the same split.
+dataset = "camels"  # "caravan"
+
+ver_name = "ver1_1" if ver == 1 else "ver2_0"
 
 
 if loc == "JP" and ver == 2:
@@ -29,18 +34,27 @@ if loc == "JP" and ver == 2:
     varssim_dir = f"/data0/funato/2_MERV/{loc}/varssim_nocal/{ver_name}"
 elif loc == "GB" and ver == 2:
     columns_drop = ['gauge_id','gauge_name','country','gauge_lat','gauge_lon']
-    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim_GB"
+    varssim_dir = f"/data0/funato/hsp2/2_MERV/caravan/varssim_GB"
 elif loc == "US" and ver == 2:
     columns_drop = ['gauge_id','gauge_name','country','gauge_lat','gauge_lon']
-    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim_US"
+    varssim_dir = f"/data0/funato/hsp2/2_MERV/{dataset}/varssim_US"
 
 
-gauge_id_list = get_basin_list(loc)
+gauge_id_list = get_basin_list(loc, dataset=dataset)
 
-start_date_cal = '1990-01-01'
-end_date_cal = '2000-12-31'
-start_date_eva = '2001-01-01'
-end_date_eva = '2006-12-31'
+if dataset == "camels":
+    start_date_cal = '1987-01-01'
+    end_date_cal = '2000-12-31'
+    start_date_eva = '2001-01-01'
+    end_date_eva = '2006-12-31'
+else:  # caravan
+    start_date_cal = '1990-01-01'
+    end_date_cal = '2000-12-31'
+    start_date_eva = '2001-01-01'
+    end_date_eva = '2006-12-31'
+
+print(f"[main_random_forest_indiv] loc={loc} dataset={dataset!r} "
+      f"cal={start_date_cal}..{end_date_cal} eva={start_date_eva}..{end_date_eva}")
 
 # Selected via the individual HP grid search (post shift-alignment-fix rerun, 198 basins,
 # all 54 combos complete) -- see SELECTED_HYPERPARAMETERS.md and DEBUG_README.md §15.8.
@@ -53,7 +67,7 @@ max_depth = 5
 max_samples = 0.5
 min_samples_split = 2
 param_tag = f"n{n_estimators}_d{max_depth}_l{min_samples_leaf}_fsqrt"
-output_dir = f"/data0/funato/hsp2/0_out/RF/{loc}/individual/"
+output_dir = f"/data0/funato/hsp2/0_out/RF/{loc}/{dataset}/individual/"
 os.makedirs(output_dir, exist_ok=True)
 os.makedirs(output_dir + "/predict", exist_ok=True)
 os.makedirs(output_dir + "/results", exist_ok=True)

@@ -1,3 +1,8 @@
+# Individual-basin LSTM training (no argparse -- edit `loc`/`dataset` below directly).
+#
+# RUN USING (edit `loc`/`dataset` in this file first; defaults to loc="US", dataset="camels"):
+# nohup python /data0/funato/hsp2/99_work/14_LSTM/main_LSTM_indiv.py > main_LSTM_indiv_output.log 2>&1 &
+
 # Imports
 from pathlib import Path
 from typing import Tuple, List
@@ -37,6 +42,13 @@ loc, ver = "US", 2
 #loc, ver = "GB", 2
 #loc, ver = "AUS", 2
 
+# dataset: 'camels' (default) -- built directly from raw CAMELS-US, full 1980-2014 record
+# (2_MERV/1.create_dataset_plain_camels.py) -- or 'caravan', the older Caravan-derived
+# extraction (1987-2006 only). Only affects loc='US' (GB/JP have a single Caravan-derived
+# source, no 'camels' option yet). See ealstm_regional_modeling/main_lstm_regional.py's
+# --dataset for the same split applied to the regional model.
+dataset = "camels"  # "caravan"
+
 benchmark_list = ["KGE","NSE","E1", "VE", "d","RMSE","MAE"]
 
 # _lossnse distinguishes this from the old MSE-loss output (which used no loss tag at all) so a
@@ -46,28 +58,48 @@ file_tag = f"_h{hidden_size}_lr{learning_rate}_e{num_epochs}_w{window_size}_b{ba
 ver_name = "ver1_1" if ver == 1 else "ver2_0"
 
 # Basin identity: gauge_id (plain string, no `camels_` prefix), read from the `gauge_id`
-# column of {loc.lower()}_file_num.csv. US's gauge_id column is prefixed (`camels_01022500`),
-# normalized here via str(g).split('_')[-1]; GB's is already plain (e.g. `96001`).
+# column of {loc.lower()}_{dataset}_file_num.csv for US (availability-filtered separately per
+# dataset -- see 3_gis_data/US/.../us_basin_filter.py), or {loc.lower()}_file_num.csv for
+# GB/JP (single source, no dataset split). US's gauge_id column is prefixed
+# (`camels_01022500`), normalized here via str(g).split('_')[-1]; GB's is already plain
+# (e.g. `96001`).
 FILE_NUM_CSV = {
-    'US': '/data0/funato/hsp2/3_gis_data/US/0_data/river_basin/dataset_US/us_file_num.csv',
+    'US': {
+        'camels': '/data0/funato/hsp2/3_gis_data/US/0_data/river_basin/dataset_US/us_camels_file_num.csv',
+        'caravan': '/data0/funato/hsp2/3_gis_data/US/0_data/river_basin/dataset_US/us_caravan_file_num.csv',
+    },
     'GB': '/data0/funato/hsp2/3_gis_data/GB/0_data/river_basin/dataset_GB/gb_file_num.csv',
     'JP': '/data0/funato/hsp2/3_gis_data/JP/0_data/river_basin/dataset_JP/jp_file_num.csv',
 }
-_file_num_df = pd.read_csv(FILE_NUM_CSV[loc], dtype={'gauge_id': str})
+_file_num_entry = FILE_NUM_CSV[loc]
+_file_num_csv_path = _file_num_entry[dataset] if isinstance(_file_num_entry, dict) else _file_num_entry
+_file_num_df = pd.read_csv(_file_num_csv_path, dtype={'gauge_id': str})
 gauge_id_list = [str(g).split('_')[-1] for g in _file_num_df['gauge_id']]
 
 if loc == "JP" and ver == 2:
     varssim_dir = f"/data0/funato/2_MERV/{loc}/varssim_nocal/{ver_name}"
 elif loc == "GB" and ver == 2:
-    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim_GB"
+    varssim_dir = f"/data0/funato/hsp2/2_MERV/caravan/varssim_GB"
 elif loc == "US" and ver == 2:
-    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim_US"
+    varssim_dir = f"/data0/funato/hsp2/2_MERV/{dataset}/varssim_US"
 
-# Date ranges for calibration and evaluation
-start_date_cal = pd.to_datetime("1990-01-01", format="%Y-%m-%d")
-end_date_cal = pd.to_datetime("2000-12-31", format="%Y-%m-%d")
-start_date_eva = pd.to_datetime("2001-01-01", format="%Y-%m-%d")
-end_date_eva = pd.to_datetime("2006-12-31", format="%Y-%m-%d")
+# Date ranges for calibration and evaluation -- 'camels' uses the full 1980-2014 record
+# (matches ealstm_regional_modeling/main_lstm_regional.py's DATASET_SETTINGS); 'caravan' keeps
+# the original dates unchanged (that data only covers 1987-2006).
+if dataset == "camels":
+    start_date_cal = pd.to_datetime("1987-01-01", format="%Y-%m-%d")
+    end_date_cal = pd.to_datetime("2000-12-31", format="%Y-%m-%d")
+    start_date_eva = pd.to_datetime("2001-01-01", format="%Y-%m-%d")
+    end_date_eva = pd.to_datetime("2006-12-31", format="%Y-%m-%d")
+else:  # caravan
+    start_date_cal = pd.to_datetime("1990-01-01", format="%Y-%m-%d")
+    end_date_cal = pd.to_datetime("2000-12-31", format="%Y-%m-%d")
+    start_date_eva = pd.to_datetime("2001-01-01", format="%Y-%m-%d")
+    end_date_eva = pd.to_datetime("2006-12-31", format="%Y-%m-%d")
+
+print(f"[main_LSTM_indiv] loc={loc} dataset={dataset!r} "
+      f"cal={start_date_cal.date()}..{end_date_cal.date()} "
+      f"eva={start_date_eva.date()}..{end_date_eva.date()}")
 
 
 # Globals
@@ -75,7 +107,7 @@ end_date_eva = pd.to_datetime("2006-12-31", format="%Y-%m-%d")
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu") # This line checks if GPU is available
 print(f"Using device: {DEVICE}")
 
-output_dir = f"/data0/funato/hsp2/0_out/LSTM/{loc}/individual/"
+output_dir = f"/data0/funato/hsp2/0_out/LSTM/{loc}/{dataset}/individual/"
 os.makedirs(output_dir, exist_ok=True)
 os.makedirs(output_dir + '/predict', exist_ok=True)
 os.makedirs(output_dir + '/results', exist_ok=True)

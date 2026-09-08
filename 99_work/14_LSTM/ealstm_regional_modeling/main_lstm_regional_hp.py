@@ -43,6 +43,10 @@ covers more dimensions than that legacy script did):
 
 CPU-only machine: --n_basins/--epochs defaults are deliberately small for fast HP-search
 iteration; scale both up (or run main_lstm_regional.py directly) for a final confirmation run.
+
+RUN USING (single HP combo, defaults to --dataset camels; usually launched in bulk via
+run_lstm_hp_tuning_regional.sh instead of calling this directly):
+python main_lstm_regional_hp.py --loc US --dataset camels --hidden_size 256 --dropout 0.4 --learning_rate 0.001 --seq_length 270
 """
 
 import argparse
@@ -70,15 +74,29 @@ from papercode.nseloss import NSELoss
 
 from eval import Model as EvalModel, evaluate_basin, BMK, benchmark_list
 
-# HP-search-only cal/val split: calibration 1990-1998, validation 1999-2000. This
-# deliberately does NOT match main_lstm_regional.py's production GLOBAL_SETTINGS
-# (train 1990-2000 / val 2001-2006) -- HP search must never touch the real 2001-2006
-# held-out test period, so results from this script are NOT directly comparable to
-# production regional-train runs or to the individual-model baseline.
-TRAIN_START = pd.to_datetime('1990-01-01', format='%Y-%m-%d')
-TRAIN_END = pd.to_datetime('1998-12-31', format='%Y-%m-%d')
-VAL_START = pd.to_datetime('1999-01-01', format='%Y-%m-%d')
-VAL_END = pd.to_datetime('2000-12-31', format='%Y-%m-%d')
+# HP-search-only cal/val split, kept strictly INSIDE each dataset's production calibration
+# period (main_lstm_regional.py's DATASET_SETTINGS) so HP search never touches that script's
+# real held-out evaluation period -- results from this script are therefore NOT directly
+# comparable to production regional-train runs or to the individual-model baseline.
+#   * 'camels'  -- production calibration is 1987-2000; HP search sub-splits that into
+#     1990-1998 (train) / 1999-2000 (val), staying clear of the 2001-2006 held-out period.
+#   * 'caravan' -- production calibration is 1987-2000; HP search sub-splits that into
+#     1990-1998 (train) / 1999-2000 (val), staying clear of the 2001-2006 held-out period
+#     (unchanged from before this script supported multiple datasets).
+HP_SPLIT = {
+    'camels': {
+        'train_start': pd.to_datetime('1990-01-01', format='%Y-%m-%d'),
+        'train_end': pd.to_datetime('1998-12-31', format='%Y-%m-%d'),
+        'val_start': pd.to_datetime('1999-01-01', format='%Y-%m-%d'),
+        'val_end': pd.to_datetime('2000-12-31', format='%Y-%m-%d'),
+    },
+    'caravan': {
+        'train_start': pd.to_datetime('1990-01-01', format='%Y-%m-%d'),
+        'train_end': pd.to_datetime('1998-12-31', format='%Y-%m-%d'),
+        'val_start': pd.to_datetime('1999-01-01', format='%Y-%m-%d'),
+        'val_end': pd.to_datetime('2000-12-31', format='%Y-%m-%d'),
+    },
+}
 
 
 def get_args() -> Dict:
@@ -86,6 +104,9 @@ def get_args() -> Dict:
         description='EA-LSTM Regional Model Hyperparameter Search '
                      '(true EA-LSTM only -- no_static=False, concat_static=False, fixed)')
     parser.add_argument('--loc', type=str, default='US', choices=['US', 'GB', 'JP'])
+    # See main_lstm_regional.py's --dataset for what this selects (varssim source + implied
+    # HP_SPLIT below); default 'camels' matches that script's default.
+    parser.add_argument('--dataset', type=str, default='camels', choices=['camels', 'caravan'])
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--num_workers', type=int, default=2)
     parser.add_argument(
@@ -116,10 +137,7 @@ def get_args() -> Dict:
     # Fixed to true EA-LSTM -- see module docstring. Not CLI-overridable by design.
     cfg['no_static'] = False
     cfg['concat_static'] = False
-    cfg['train_start'] = TRAIN_START
-    cfg['train_end'] = TRAIN_END
-    cfg['val_start'] = VAL_START
-    cfg['val_end'] = VAL_END
+    cfg.update(HP_SPLIT[cfg['dataset']])
     return cfg
 
 
@@ -131,7 +149,7 @@ def _setup_run(cfg: Dict) -> Dict:
     now = datetime.now()
     hp_str = _hp_str(cfg)
     run_name = f'{hp_str}/run_{now.strftime("%m%d_%H%M%S")}_seed{cfg["seed"]}'
-    cfg['run_dir'] = Path(__file__).parent / "runs" / "hp" / cfg['loc'] / run_name
+    cfg['run_dir'] = Path(__file__).parent / "runs" / "hp" / cfg['loc'] / cfg['dataset'] / run_name
     cfg['run_dir'].mkdir(parents=True, exist_ok=True)
     return cfg
 
@@ -145,7 +163,7 @@ def train(cfg: Dict):
     torch.cuda.manual_seed(cfg["seed"])
     torch.manual_seed(cfg["seed"])
 
-    basins = get_basin_list(loc=cfg['loc'])
+    basins = get_basin_list(loc=cfg['loc'], dataset=cfg['dataset'])
     if cfg.get('n_basins'):
         basins = basins[:cfg['n_basins']]
 
@@ -162,9 +180,9 @@ def train(cfg: Dict):
     # traceability-only use of the seed, not an experiment identity). This
     # particular driver does pin --seed via $REGIONAL_SEED, but excluding it
     # keeps this check correct even for a manual invocation that doesn't.
-    match_keys = ['loc', 'n_basins', 'hidden_size', 'dropout', 'learning_rate', 'seq_length',
+    match_keys = ['loc', 'dataset', 'n_basins', 'hidden_size', 'dropout', 'learning_rate', 'seq_length',
                   'epochs', 'batch_size', 'initial_forget_gate_bias', 'use_mse']
-    search_root = Path(__file__).parent / "runs" / "hp" / cfg['loc'] / _hp_str(cfg)
+    search_root = Path(__file__).parent / "runs" / "hp" / cfg['loc'] / cfg['dataset'] / _hp_str(cfg)
     required_files = ['lstm_model_final.pt', 'hp_metrics_cal.csv', 'hp_metrics_eva.csv']
     existing_run = find_completed_run(search_root, cfg, match_keys, required_files)
     if existing_run is not None:
@@ -174,7 +192,8 @@ def train(cfg: Dict):
     cfg = _setup_run(cfg)
 
     print("\n[HP] Calculating per-basin scalers from clean training-period data...")
-    basin_scalers = compute_basin_scalers(cfg['loc'], basins, cfg['train_start'], cfg['train_end'])
+    basin_scalers = compute_basin_scalers(cfg['loc'], basins, cfg['train_start'], cfg['train_end'],
+                                           dataset=cfg['dataset'])
     scalers = {'basin_scalers': basin_scalers}
     print(f"[HP] Usable basins (had a clean training block >= seq_length): "
           f"{len(basin_scalers)}/{len(basins)}")

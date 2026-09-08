@@ -28,21 +28,38 @@ nb_stacks_list = [1]
 
 loc, ver = "JP", 2
 
-ver_name = "ver1_1" if ver == 1 else "ver2_0"   
+# dataset: only meaningful for loc='US' -- 'camels' (built directly from raw CAMELS-US, full
+# 1980-2014 record) or 'caravan' (older Caravan-derived extraction, 1987-2006 only). loc='JP'
+# above only ever had a single 'varssim_nocal' source (see varssim_dir below), no dataset
+# split, so this has no effect unless loc is changed to 'US'. See
+# ealstm_regional_modeling/main_lstm_regional.py's --dataset for the same split.
+dataset = "camels"  # "caravan"
 
-varssim_dir = f"/data0/funato/2_MERV/{loc}/varssim_nocal/{ver_name}"
+ver_name = "ver1_1" if ver == 1 else "ver2_0"
+
+if loc == "US":
+    varssim_dir = f"/data0/funato/hsp2/2_MERV/{dataset}/varssim_US"
+else:
+    varssim_dir = f"/data0/funato/2_MERV/{loc}/varssim_nocal/{ver_name}"
 
 import sys
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "TCN_regional_modeling-master"))
 from papercode.utils import get_basin_list
-gauge_id_list = get_basin_list(loc)
+gauge_id_list = get_basin_list(loc, dataset=dataset)
 
-start_date_cal = '1990-01-01'
-end_date_cal = '1998-12-31'
-start_date_eva = '1999-01-01'
-end_date_eva = '2000-12-31'
+if loc == "US" and dataset == "camels":
+    start_date_cal = '1990-01-01'
+    end_date_cal = '1998-12-31'
+    start_date_eva = '1999-01-01'
+    end_date_eva = '2000-12-31'
+else:
+    start_date_cal = '1990-01-01'
+    end_date_cal = '1998-12-31'
+    start_date_eva = '1999-01-01'
+    end_date_eva = '2000-12-31'
 
-output_dir = f"/data0/funato/hsp2/0_out/TCN/{loc}/hyperparam"
+output_dir = f"/data0/funato/hsp2/0_out/TCN/{loc}/{dataset}/hyperparam" if loc == "US" \
+    else f"/data0/funato/hsp2/0_out/TCN/{loc}/hyperparam"
 os.makedirs(output_dir, exist_ok=True)
 os.makedirs(output_dir + "/predict", exist_ok=True)
 os.makedirs(output_dir + "/results", exist_ok=True)

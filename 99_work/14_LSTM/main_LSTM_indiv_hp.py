@@ -1,3 +1,10 @@
+# Individual-basin LSTM hyperparameter search (usually launched in bulk via
+# run_lstm_hp_tuning.sh instead of calling this directly).
+#
+# RUN USING (single HP combo; defaults to --dataset camels; edit `loc` in this file to change
+# location):
+# python main_LSTM_indiv_hp.py --hidden_size 32 --dropout 0.4 --learning_rate 0.001 --seq_length 270 --batch_size 128 --dataset camels
+
 # Imports
 from pathlib import Path
 from typing import Tuple, List
@@ -47,6 +54,15 @@ parser.add_argument('--loss', type=str, default='mse', choices=['mse', 'nse'],
                           'weighted NSE loss from ealstm_regional_modeling/papercode/nseloss.py '
                           '(eps=0.1), matching the loss regional/adapted LSTM training already '
                           'uses by default.')
+parser.add_argument('--dataset', type=str, default='camels', choices=['camels', 'caravan'],
+                     help="'camels' (default): built directly from raw CAMELS-US, full "
+                          '1980-2014 record. HP search sub-splits its own train/val window '
+                          '1990-1998/1999-2000 strictly inside main_LSTM_indiv.py\'s production '
+                          "1987-2000 calibration period, mirroring "
+                          'ealstm_regional_modeling/main_lstm_regional_hp.py\'s HP_SPLIT -- so '
+                          'HP search never touches the 2001-2006 held-out period. \'caravan\': '
+                          'older Caravan-derived extraction (1987-2006 only); HP window stays '
+                          'the original 1990-1998/1999-2000, unchanged.')
 args = parser.parse_args()
 
 # Set hyperparameters from arguments
@@ -64,6 +80,8 @@ loc, ver = "US", 2
 #loc, ver = "GB", 2
 #loc, ver = "AUS", 2
 
+dataset = args.dataset
+
 benchmark_list = ["KGE","NSE","E1", "VE", "d","RMSE","MAE"]
 
 # Create hyperparameter string for output directory
@@ -79,25 +97,56 @@ file_tag = f"_h{hidden_size}_lr{learning_rate}_e{num_epochs}_w{window_size}_b{ba
 ver_name = "ver1_1" if ver == 1 else "ver2_0"
 
 # Basin identity: gauge_id (plain string, no `camels_` prefix), read from the `gauge_id`
-# column of {loc.lower()}_file_num.csv. US's gauge_id column is prefixed (`camels_01022500`),
-# normalized here via str(g).split('_')[-1]; GB's is already plain (e.g. `96001`).
+# column of {loc.lower()}_{dataset}_file_num.csv for US (availability-filtered separately per
+# dataset), or {loc.lower()}_file_num.csv for GB/JP (single source, no dataset split). US's
+# gauge_id column is prefixed (`camels_01022500`), normalized here via
+# str(g).split('_')[-1]; GB's is already plain (e.g. `96001`).
 FILE_NUM_CSV = {
-    'US': '/data0/funato/hsp2/3_gis_data/US/0_data/river_basin/dataset_US/us_file_num.csv',
+    'US': {
+        'camels': '/data0/funato/hsp2/3_gis_data/US/0_data/river_basin/dataset_US/us_camels_file_num.csv',
+        'caravan': '/data0/funato/hsp2/3_gis_data/US/0_data/river_basin/dataset_US/us_caravan_file_num.csv',
+    },
     'GB': '/data0/funato/hsp2/3_gis_data/GB/0_data/river_basin/dataset_GB/gb_file_num.csv',
     'JP': '/data0/funato/hsp2/3_gis_data/JP/0_data/river_basin/dataset_JP/jp_file_num.csv',
 }
-_file_num_df = pd.read_csv(FILE_NUM_CSV[loc], dtype={'gauge_id': str})
+_file_num_entry = FILE_NUM_CSV[loc]
+_file_num_csv_path = _file_num_entry[dataset] if isinstance(_file_num_entry, dict) else _file_num_entry
+_file_num_df = pd.read_csv(_file_num_csv_path, dtype={'gauge_id': str})
 _full_gauge_id_list = [str(g).split('_')[-1] for g in _file_num_df['gauge_id']]
 
 if loc == "JP" and ver == 2:
     varssim_dir = f"/data0/funato/2_MERV/{loc}/varssim_nocal/{ver_name}"
 elif loc == "GB" and ver == 2:
-    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim_GB"
+    varssim_dir = f"/data0/funato/hsp2/2_MERV/caravan/varssim_GB"
 elif loc == "US" and ver == 2:
-    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim_US"
+    varssim_dir = f"/data0/funato/hsp2/2_MERV/{dataset}/varssim_US"
 
 #gauge_id_list = _full_gauge_id_list
 gauge_id_list = _full_gauge_id_list[::4]
+
+# HP-search-only train/val window, kept strictly INSIDE main_LSTM_indiv.py's production
+# calibration period so HP search never touches its real held-out evaluation period --
+# mirrors ealstm_regional_modeling/main_lstm_regional_hp.py's HP_SPLIT exactly.
+#   * 'camels'  -- production calibration is 1987-2000; HP search sub-splits that into
+#     1990-1998 (train) / 1999-2000 (val), staying clear of the 2001-2006 held-out period.
+#   * 'caravan' -- production calibration is 1990-2000 (this script's own dates -- see
+#     main_LSTM_indiv.py); HP search sub-splits that into 1990-1998 (train) / 1999-2000 (val),
+#     staying clear of the 2001-2006 held-out period. Unchanged from before this script
+#     supported multiple datasets.
+if dataset == "camels":
+    HP_TRAIN_START = pd.to_datetime("1990-01-01", format="%Y-%m-%d")
+    HP_TRAIN_END = pd.to_datetime("1998-12-31", format="%Y-%m-%d")
+    HP_VAL_START = pd.to_datetime("1999-01-01", format="%Y-%m-%d")
+    HP_VAL_END = pd.to_datetime("2000-12-31", format="%Y-%m-%d")
+else:  # caravan
+    HP_TRAIN_START = pd.to_datetime("1990-01-01", format="%Y-%m-%d")
+    HP_TRAIN_END = pd.to_datetime("1998-12-31", format="%Y-%m-%d")
+    HP_VAL_START = pd.to_datetime("1999-01-01", format="%Y-%m-%d")
+    HP_VAL_END = pd.to_datetime("2000-12-31", format="%Y-%m-%d")
+
+print(f"[main_LSTM_indiv_hp] loc={loc} dataset={dataset!r} "
+      f"train={HP_TRAIN_START.date()}..{HP_TRAIN_END.date()} "
+      f"val={HP_VAL_START.date()}..{HP_VAL_END.date()}")
 
 # Globals
 #FILE_SYSTEM = gcsfs.core.GCSFileSystem(requester_pays=True)
@@ -105,7 +154,7 @@ DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu") # This l
 print(f"Using device: {DEVICE}")
 
 # Create output directory with hyperparameter settings
-output_dir = f"/data0/funato/hsp2/0_out/LSTM/{loc}/individual/hp/{hp_str}/"
+output_dir = f"/data0/funato/hsp2/0_out/LSTM/{loc}/{dataset}/individual/hp/{hp_str}/"
 os.makedirs(output_dir, exist_ok=True)
 os.makedirs(output_dir + '/predict', exist_ok=True)
 os.makedirs(output_dir + '/results', exist_ok=True)
@@ -141,12 +190,10 @@ for gauge_id in gauge_id_list:
     # Data set up#
     ##############
 
-    # Training data: calibration period 1990-1998. HP scripts must not touch the real
-    # 2001-2006 held-out test period -- see below, the "eva" split here is the genuinely
-    # distinct 1999-2000 validation period, not a re-use of the calibration dates.
-    start_date = pd.to_datetime("1990-01-01", format="%Y-%m-%d")
-    end_date = pd.to_datetime("1998-12-31", format="%Y-%m-%d")
-    ds_train = CamelsTXT(gauge_id, seq_length=window_size, period="train", dates=[start_date, end_date], varssim_dir=varssim_dir, loc =loc)
+    # Training data: HP-search-only calibration sub-window (see HP_TRAIN_START/END above),
+    # strictly inside production's real calibration period. The "eva" split below uses
+    # HP_VAL_START/END, a genuinely distinct validation sub-window, not a re-use of these dates.
+    ds_train = CamelsTXT(gauge_id, seq_length=window_size, period="train", dates=[HP_TRAIN_START, HP_TRAIN_END], varssim_dir=varssim_dir, loc =loc)
     tr_loader = DataLoader(ds_train, batch_size=batch_size, shuffle=True)
 
     # "Cal" evaluation: performance on the training period itself. We use the feature
@@ -154,18 +201,15 @@ for gauge_id in gauge_id_list:
     means = ds_train.get_means()
     stds = ds_train.get_stds()
 
-    start_date = pd.to_datetime("1990-01-01", format="%Y-%m-%d")
-    end_date = pd.to_datetime("1998-12-31", format="%Y-%m-%d")
-    ds_val = CamelsTXT(gauge_id, seq_length=window_size, period="eval", dates=[start_date, end_date],
+    ds_val = CamelsTXT(gauge_id, seq_length=window_size, period="eval", dates=[HP_TRAIN_START, HP_TRAIN_END],
                         means=means, stds=stds, varssim_dir=varssim_dir, loc =loc)
     val_loader = DataLoader(ds_val, batch_size=batch_size, shuffle=False)
 
-    # "Eva" evaluation: genuinely held-out validation period 1999-2000 (distinct from the
-    # 1990-1998 calibration period above). We use the feature means/stds of the training
-    # period for normalization.
-    start_date = pd.to_datetime("1999-01-01", format="%Y-%m-%d")
-    end_date = pd.to_datetime("2000-12-31", format="%Y-%m-%d")
-    ds_test = CamelsTXT(gauge_id, seq_length=window_size, period="eval", dates=[start_date, end_date],
+    # "Eva" evaluation: genuinely held-out HP-search validation sub-window (distinct from the
+    # training sub-window above, but still inside production's real calibration period -- see
+    # HP_VAL_START/END comment above). We use the feature means/stds of the training period for
+    # normalization.
+    ds_test = CamelsTXT(gauge_id, seq_length=window_size, period="eval", dates=[HP_VAL_START, HP_VAL_END],
                         means=means, stds=stds, varssim_dir=varssim_dir, loc =loc)
     test_loader = DataLoader(ds_test, batch_size=batch_size, shuffle=False)
 

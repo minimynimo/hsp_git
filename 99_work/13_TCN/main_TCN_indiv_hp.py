@@ -30,18 +30,9 @@ loc, ver = "US", 2
 ver_name = "ver1_1" if ver == 1 else "ver2_0"
 
 
-if loc == "JP" and ver == 2:
-    varssim_dir = f"/data0/funato/2_MERV/{loc}/varssim_nocal/{ver_name}"
-elif loc == "GB" and ver == 2:
-    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim_GB"
-elif loc == "US" and ver == 2:
-    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim_US"
-
 import sys
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "TCN_regional_modeling-master"))
 from papercode.utils import get_basin_list
-gauge_id_list = get_basin_list(loc)[::4]
-
 from tcn_indiv_resume import load_completed_basins
 
 input_dim = 3
@@ -52,6 +43,11 @@ parser.add_argument('--num_filters', type=int, default=16, help='Number of filte
 parser.add_argument('--kernel_size', type=int, default=2, help='Kernel size for TCN')
 parser.add_argument('--dropout', type=float, default=0.2, help='Dropout rate')
 parser.add_argument('--learning_rate', type=float, default=1e-3, help='Adam learning rate (was hardcoded 1e-3)')
+parser.add_argument('--dataset', type=str, default='camels', choices=['camels', 'caravan'],
+                     help="'camels' (default): full 1980-2014 record, HP window sub-split "
+                          '1990-1998/1999-2000 inside the 1987-2000 production calibration '
+                          "period. 'caravan': older Caravan-derived extraction (1987-2006 "
+                          'only), HP window stays the original 1990-1998/1999-2000.')
 # PyTorch's TemporalConvNet derives dilations from num_channels directly (dilation=2**i per level,
 # see TemporalConvNet below) - no separate `dilations=` list needed anymore (that was a
 # Keras-`tcn`-package-specific workaround from before this port). --num_levels now controls
@@ -74,15 +70,36 @@ learning_rate = args.learning_rate
 num_levels = args.num_levels
 num_channels = [nb_filters] * num_levels
 timesteps = args.timesteps
+dataset = args.dataset
 epochs = 30  # Fixed at 30 for consistency
 batch_size = 64  # Keep as is for individual basins
 early_stopping_patience = 5  # matches the old Keras EarlyStopping(patience=5)
 val_split = 0.2  # matches the old Keras .fit(..., validation_split=0.2)
 
-start_date_cal = '1990-01-01'
-end_date_cal = '1998-12-31'
-start_date_eva = '1999-01-01'
-end_date_eva = '2000-12-31'
+if loc == "JP" and ver == 2:
+    varssim_dir = f"/data0/funato/2_MERV/{loc}/varssim_nocal/{ver_name}"
+elif loc == "GB" and ver == 2:
+    varssim_dir = f"/data0/funato/hsp2/2_MERV/caravan/varssim_GB"
+elif loc == "US" and ver == 2:
+    varssim_dir = f"/data0/funato/hsp2/2_MERV/{dataset}/varssim_US"
+
+gauge_id_list = get_basin_list(loc, dataset=dataset)[::4]
+
+# HP-search-only train/val window, kept strictly INSIDE production's real calibration period --
+# mirrors ealstm_regional_modeling/main_lstm_regional_hp.py's HP_SPLIT.
+if dataset == "camels":
+    start_date_cal = '1990-01-01'
+    end_date_cal = '1998-12-31'
+    start_date_eva = '1999-01-01'
+    end_date_eva = '2000-12-31'
+else:  # caravan
+    start_date_cal = '1990-01-01'
+    end_date_cal = '1998-12-31'
+    start_date_eva = '1999-01-01'
+    end_date_eva = '2000-12-31'
+
+print(f"[main_TCN_indiv_hp] loc={loc} dataset={dataset!r} "
+      f"train={start_date_cal}..{end_date_cal} val={start_date_eva}..{end_date_eva}")
 
 # Create output directory with hyperparameter settings
 # learning_rate and num_levels are swept/overridable here (unlike main_TCN_indiv.py's hardcoded
@@ -90,7 +107,7 @@ end_date_eva = '2000-12-31'
 # silently overwrite each other's results (same collision-avoidance principle as
 # DEBUG_README.md's TCN/LSTM filename-tag fixes).
 hp_str = f"f{nb_filters}_k{kernel_size}_d{dropout}_lr{learning_rate}_lv{num_levels}_w{timesteps}"
-output_dir = f"/data0/funato/hsp2/0_out/TCN/{loc}/individual/hp/{hp_str}"
+output_dir = f"/data0/funato/hsp2/0_out/TCN/{loc}/{dataset}/individual/hp/{hp_str}"
 os.makedirs(output_dir, exist_ok=True)
 os.makedirs(output_dir + "/predict", exist_ok=True)
 os.makedirs(output_dir + "/results", exist_ok=True)

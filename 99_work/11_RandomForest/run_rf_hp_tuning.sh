@@ -64,6 +64,12 @@ else
     exit 1
 fi
 
+# 'camels' (default): built directly from raw CAMELS-US, full 1980-2014 record -- both
+# main_rf_hp.py and main_random_forest_indiv_hp.py sub-split their own HP-search window
+# (1990-1998/1999-2000) strictly inside production's 1987-2000 calibration period. 'caravan':
+# older Caravan-derived extraction (1987-2006 only).
+DATASET="camels"
+
 # Create log directory
 mkdir -p "$LOG_DIR"
 
@@ -74,7 +80,7 @@ mkdir -p "$LOG_DIR"
 # the same cache entry simultaneously could corrupt it.
 if [ "$MODEL_TYPE" == "regional" ]; then
     echo "Precomputing/caching regional feature matrix (one-time, single process)..."
-    (cd "$(dirname "$SCRIPT_PATH")" && "$PYTHON_CMD" precompute_dataset.py)
+    (cd "$(dirname "$SCRIPT_PATH")" && "$PYTHON_CMD" precompute_dataset.py --dataset "$DATASET")
     if [ $? -ne 0 ]; then
         echo "Error: dataset precompute failed"
         exit 1
@@ -127,6 +133,7 @@ run_job() {
                 --min_samples_leaf $min_leaf \
                 --max_features "$max_f" \
                 --n_jobs $THREADS_PER_JOB \
+                --dataset "$DATASET" \
                 --seed 42 > "$log_file" 2>&1
         else
             taskset -c $core "$PYTHON_CMD" "$SCRIPT_PATH" train \
@@ -135,6 +142,7 @@ run_job() {
                 --max_depth $max_d \
                 --max_features "$max_f" \
                 --n_jobs $THREADS_PER_JOB \
+                --dataset "$DATASET" \
                 --seed 42 > "$log_file" 2>&1
         fi
     else
@@ -142,7 +150,8 @@ run_job() {
             --n_estimators $n_est \
             --min_samples_leaf $min_leaf \
             --max_depth $max_d \
-            --max_features "$max_f" > "$log_file" 2>&1
+            --max_features "$max_f" \
+            --dataset "$DATASET" > "$log_file" 2>&1
     fi
     
     local exit_code=$?
@@ -161,6 +170,7 @@ export LOG_DIR
 export MODEL_TYPE
 export TOTAL_COMBINATIONS
 export THREADS_PER_JOB
+export DATASET
 
 # Run jobs in parallel with GNU parallel if available, otherwise use background jobs
 if command -v parallel &> /dev/null; then

@@ -35,20 +35,32 @@ GLOBAL_SETTINGS = {
     'loc': 'US',
     'ver': 2,
     'seq_length': 270,
-    'train_start': pd.to_datetime('1990-01-01', format='%Y-%m-%d'),
-    'train_end': pd.to_datetime('2000-12-31', format='%Y-%m-%d'),
-    'val_start': pd.to_datetime('2001-01-01', format='%Y-%m-%d'),
-    'val_end': pd.to_datetime('2006-12-31', format='%Y-%m-%d')
+}
+
+# Per-dataset calibration ("train") / evaluation ("val") period, matching
+# ealstm_regional_modeling/main_lstm_regional.py's DATASET_SETTINGS:
+#   * 'camels'  -- built directly from raw CAMELS-US, full 1980-2014 record available.
+#   * 'caravan' -- older Caravan-derived extraction, only covers 1987-2006.
+DATASET_SETTINGS = {
+    'camels': {
+        'train_start': pd.to_datetime('1987-01-01', format='%Y-%m-%d'),
+        'train_end': pd.to_datetime('2000-12-31', format='%Y-%m-%d'),
+        'val_start': pd.to_datetime('2001-01-01', format='%Y-%m-%d'),
+        'val_end': pd.to_datetime('2006-12-31', format='%Y-%m-%d'),
+    },
+    'caravan': {
+        'train_start': pd.to_datetime('1990-01-01', format='%Y-%m-%d'),
+        'train_end': pd.to_datetime('2000-12-31', format='%Y-%m-%d'),
+        'val_start': pd.to_datetime('2001-01-01', format='%Y-%m-%d'),
+        'val_end': pd.to_datetime('2006-12-31', format='%Y-%m-%d'),
+    },
 }
 
 ver_name = "ver1_1" if GLOBAL_SETTINGS['ver'] == 1 else "ver2_0"
 
-# Basin configuration
-gauge_id_list = get_basin_list(GLOBAL_SETTINGS['loc'])
-
-def load_data_for_basin(gauge_id):
+def load_data_for_basin(gauge_id, dataset='camels'):
     """Load data for a specific basin"""
-    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim_{GLOBAL_SETTINGS['loc']}"
+    varssim_dir = f"/data0/funato/hsp2/2_MERV/{dataset}/varssim_{GLOBAL_SETTINGS['loc']}"
     df = pd.read_csv(f"{varssim_dir}/varssim_{gauge_id}.csv")
     df['Date'] = pd.to_datetime(df['Date'])
     df.set_index('Date', inplace=True)
@@ -78,7 +90,11 @@ def get_args() -> Dict:
     parser.add_argument('--seed', type=int, required=False, default=np.random.randint(10000000))
     parser.add_argument('--run_dir', type=str, help="For evaluation mode.")
     parser.add_argument('--no_static', type=str2bool, default=False)
-    
+    # 'camels' (default): built directly from raw CAMELS-US, full 1980-2014 record. 'caravan':
+    # older Caravan-derived extraction (1987-2006 only). See
+    # ealstm_regional_modeling/main_lstm_regional.py's --dataset for the same split.
+    parser.add_argument('--dataset', type=str, default='camels', choices=['camels', 'caravan'])
+
     # XGBoost specific arguments. Defaults are the selected regional combo from the full
     # 486-combo HP grid (614 basins, NSE_median=0.399) -- see SELECTED_HYPERPARAMETERS.md and
     # DEBUG_README.md §16.8. --min_child_weight was previously entirely absent from this
@@ -101,12 +117,13 @@ def get_args() -> Dict:
     
     cfg = vars(parser.parse_args())
     cfg.update(GLOBAL_SETTINGS)
+    cfg.update(DATASET_SETTINGS[cfg["dataset"]])
     return cfg
 
 def _setup_run(cfg: Dict) -> Dict:
     """Create folder structure for this run"""
     now = datetime.now()
-    run_name = f'xgb_run_{now.strftime("%m%d_%H%M")}_seed{cfg["seed"]}'
+    run_name = f'xgb_run_{now.strftime("%m%d_%H%M")}_{cfg["dataset"]}_seed{cfg["seed"]}'
     cfg['run_dir'] = Path(__file__).parent / "runs_xgb" /GLOBAL_SETTINGS['loc'] / run_name
     cfg['run_dir'].mkdir(parents=True, exist_ok=True)
     
@@ -137,7 +154,7 @@ def train(cfg):
     random.seed(cfg["seed"])
     np.random.seed(cfg["seed"])
     
-    basins = gauge_id_list
+    basins = get_basin_list(GLOBAL_SETTINGS['loc'], dataset=cfg['dataset'])
 
     # _setup_run's run_dir is timestamped, so a restart after a kill would
     # otherwise retrain from scratch. Skip if a completed run with these exact
@@ -146,7 +163,7 @@ def train(cfg):
     # convention as the upstream EA-LSTM reference implementation, which logs that
     # random seed in the run folder name purely for traceability), so requiring it to
     # match would defeat resumability for any invocation that doesn't pin --seed.
-    match_keys = ['n_estimators', 'max_depth', 'learning_rate', 'subsample',
+    match_keys = ['dataset', 'n_estimators', 'max_depth', 'learning_rate', 'subsample',
                   'colsample_bytree', 'min_child_weight', 'peak_weight', 'no_static']
     search_root = Path(__file__).parent / "runs_xgb" / GLOBAL_SETTINGS['loc']
     existing_run = find_completed_run(search_root, cfg, match_keys)
@@ -163,7 +180,7 @@ def train(cfg):
     basin_scalers = {}
 
     for basin in tqdm(basins, desc="Loading basin data for scaling"):
-        df = load_data_for_basin(basin)
+        df = load_data_for_basin(basin, cfg['dataset'])
         df_period = df.loc[cfg['train_start']:cfg['train_end']]
 
         # Calculate scalers ONLY from clean, contiguous data (mirrors main_xgb_hp.py)
@@ -228,7 +245,7 @@ def train(cfg):
         if basin not in scalers['basin_scalers']:
             continue  # Skip if no scalers were generated (no clean data)
 
-        df = load_data_for_basin(basin)
+        df = load_data_for_basin(basin, cfg['dataset'])
         df_period = df.loc[cfg['train_start']:cfg['train_end']]
         bscaler = scalers['basin_scalers'][basin]
 
@@ -351,7 +368,7 @@ def train(cfg):
         ax2.grid(True, linestyle='--', alpha=0.6)
 
         ax3.set_title('Original Input Data (Training Period)', fontsize=14)
-        df_basin_raw = load_data_for_basin(basin_id)
+        df_basin_raw = load_data_for_basin(basin_id, cfg['dataset'])
         df_basin_period = df_basin_raw.loc[cfg['train_start']:cfg['train_end']]
 
         ax3.plot(df_basin_period.index, df_basin_period['PET'], label='PET', color='orange')

@@ -29,11 +29,11 @@ def generate_full_basin_list(dataset, varssim_dir, output_path):
     print(f"{output_path} not found - generating full basin list for '{dataset}' "
           f"from {varssim_dir} ...")
 
-    gauge_ids = sorted(
+    all_gauge_ids = sorted(
         os.path.basename(f)[len("varssim_"):-len(".csv")]
         for f in glob.glob(f"{varssim_dir}/varssim_*.csv")
     )
-    if not gauge_ids:
+    if not all_gauge_ids:
         raise RuntimeError(f"No varssim_*.csv files found in {varssim_dir}")
 
     df_meta = pd.read_csv(region_metadata_source)
@@ -42,6 +42,16 @@ def generate_full_basin_list(dataset, varssim_dir, output_path):
 
     df_topo = pd.read_csv(camels_topo_file, sep=";", dtype={"gauge_id": str})
     df_topo = df_topo.set_index("gauge_id")
+
+    # Restrict to the canonical CAMELS-US gauge set (camels_topo.txt). A handful of
+    # varssim_*.csv files correspond to gauges outside that set (not real CAMELS basins,
+    # e.g. no static-attribute row in camels_original_attribute_combined.csv) -- keeping
+    # them here would only propagate into get_basin_list() and crash the LSTM's static-
+    # attribute lookup (KeyError) later, so drop them up front instead.
+    gauge_ids = [g for g in all_gauge_ids if g in df_topo.index]
+    dropped = sorted(set(all_gauge_ids) - set(gauge_ids))
+    if dropped:
+        print(f"  Dropping {len(dropped)} non-canonical gauge(s) not in camels_topo.txt: {dropped}")
 
     rows = []
     for gauge_id in gauge_ids:

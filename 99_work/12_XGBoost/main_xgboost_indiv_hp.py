@@ -20,27 +20,7 @@ benchmark_list = ["KGE","NSE","E1", "VE", "d","RMSE","MAE"]
 # loc, ver = "GB", 2
 loc, ver = "US", 2
 
-
-ver_name = "ver1_1" if ver == 1 else "ver2_0"   
-
-if loc == "JP" and ver == 2:
-    varssim_dir = f"/data0/funato/2_MERV/{loc}/varssim_nocal/{ver_name}"
-elif loc == "GB" and ver == 2:
-    # NOTE: was hardcoded to the stale "/data0/funato/hsp2/2_MERV/varssim" (pre-rename path, no
-    # longer exists -- data now lives under varssim_GB). See DEBUG_README.md stale-path bug class.
-    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim_GB"
-elif loc == "US" and ver == 2:
-    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim_US"
-
-gauge_id_list = get_basin_list(loc)
-#gauge_id_list = gauge_id_list[20:30]
-
-# HP-search calibration/validation split -- must not touch the real held-out test period
-# (2001-01-01..2006-12-31): calibration is 1990-1998, validation is 1999-2000.
-start_date_cal = '1990-01-01'
-end_date_cal = '1998-12-31'
-start_date_eva = '1999-01-01'
-end_date_eva = '2000-12-31'
+ver_name = "ver1_1" if ver == 1 else "ver2_0"
 
 # Parse hyperparameters from command line. Grid per HYPERPARAMETERS.md (individual):
 # N_ESTIMATORS{500,1000}, SUBSAMPLE{0.5,0.6,0.7}, COLSAMPLE_BY_TREE{0.7,0.8,1.0},
@@ -54,6 +34,11 @@ parser.add_argument('--learning_rate', type=float, default=0.05, help='Learning 
 parser.add_argument('--subsample', type=float, default=0.7, help='Row sampling ratio (I: 0.5/0.6/0.7)')
 parser.add_argument('--colsample_bytree', type=float, default=0.8, help='Column sampling ratio (I: 0.7/0.8/1.0)')
 parser.add_argument('--min_child_weight', type=int, default=10, help='Minimum child weight (I: 5/10/20)')
+parser.add_argument('--dataset', type=str, default='camels', choices=['camels', 'caravan'],
+                     help="'camels' (default): full 1980-2014 record, HP window sub-split "
+                          '1990-1998/1999-2000 inside the 1987-2000 production calibration '
+                          "period. 'caravan': older Caravan-derived extraction (1987-2006 "
+                          'only), HP window stays the original 1990-1998/1999-2000.')
 args = parser.parse_args()
 
 n_estimators = args.n_estimators
@@ -62,9 +47,36 @@ learning_rate = args.learning_rate
 subsample = args.subsample
 colsample_bytree = args.colsample_bytree
 min_child_weight = args.min_child_weight
+dataset = args.dataset
+
+if loc == "JP" and ver == 2:
+    varssim_dir = f"/data0/funato/2_MERV/{loc}/varssim_nocal/{ver_name}"
+elif loc == "GB" and ver == 2:
+    varssim_dir = f"/data0/funato/hsp2/2_MERV/caravan/varssim_GB"
+elif loc == "US" and ver == 2:
+    varssim_dir = f"/data0/funato/hsp2/2_MERV/{dataset}/varssim_US"
+
+gauge_id_list = get_basin_list(loc, dataset=dataset)
+#gauge_id_list = gauge_id_list[20:30]
+
+# HP-search-only train/val window, kept strictly INSIDE production's real calibration period --
+# mirrors ealstm_regional_modeling/main_lstm_regional_hp.py's HP_SPLIT.
+if dataset == "camels":
+    start_date_cal = '1990-01-01'
+    end_date_cal = '1998-12-31'
+    start_date_eva = '1999-01-01'
+    end_date_eva = '2000-12-31'
+else:  # caravan
+    start_date_cal = '1990-01-01'
+    end_date_cal = '1998-12-31'
+    start_date_eva = '1999-01-01'
+    end_date_eva = '2000-12-31'
+
+print(f"[main_xgboost_indiv_hp] loc={loc} dataset={dataset!r} "
+      f"train={start_date_cal}..{end_date_cal} val={start_date_eva}..{end_date_eva}")
 
 hp_str = f"n{n_estimators}_d{max_depth}_lr{learning_rate}_ss{subsample}_cbt{colsample_bytree}_mcw{min_child_weight}"
-output_dir = f"/data0/funato/hsp2/0_out/XGB/{loc}/individual/hp/{hp_str}"
+output_dir = f"/data0/funato/hsp2/0_out/XGB/{loc}/{dataset}/individual/hp/{hp_str}"
 os.makedirs(output_dir, exist_ok=True)
 os.makedirs(output_dir + "/predict", exist_ok=True)
 os.makedirs(output_dir + "/results", exist_ok=True)

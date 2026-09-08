@@ -12,8 +12,12 @@ set -e  # Exit on any error
 # Configuration
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PYTHON_PATH="/data0/funato/.venv/bin/python"
-RUNS_BASE="$SCRIPT_DIR/runs_xgb/hp"
-OUTPUT_DIR="/data0/funato/hsp2/0_out/XGB/US/regional/hp"
+# 'camels' (default): built directly from raw CAMELS-US, full 1980-2014 record. 'caravan':
+# older Caravan-derived extraction (1987-2006 only). Must match the --dataset the HP runs under
+# runs_xgb/hp/ were trained with (main_xgb_hp.py nests its run dirs by dataset).
+DATASET="camels"
+RUNS_BASE="$SCRIPT_DIR/runs_xgb/hp/$DATASET"
+OUTPUT_DIR="/data0/funato/hsp2/0_out/XGB/US/$DATASET/regional/hp"
 
 # Core assignment for parallel execution
 START_CORE=0

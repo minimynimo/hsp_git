@@ -40,15 +40,28 @@ GLOBAL_SETTINGS = {
     'loc': 'US',
     'ver': 2,
     'seq_length': 270,
-    'train_start': pd.to_datetime('1990-01-01', format='%Y-%m-%d'),
-    'train_end': pd.to_datetime('2000-12-31', format='%Y-%m-%d'),
-    'val_start': pd.to_datetime('2001-01-01', format='%Y-%m-%d'),
-    'val_end': pd.to_datetime('2006-12-31', format='%Y-%m-%d')
+}
+
+# Per-dataset calibration ("train") / evaluation ("val") period, matching
+# ealstm_regional_modeling/main_lstm_regional.py's DATASET_SETTINGS:
+#   * 'camels'  -- built directly from raw CAMELS-US, full 1980-2014 record available.
+#   * 'caravan' -- older Caravan-derived extraction, only covers 1987-2006.
+DATASET_SETTINGS = {
+    'camels': {
+        'train_start': pd.to_datetime('1987-01-01', format='%Y-%m-%d'),
+        'train_end': pd.to_datetime('2000-12-31', format='%Y-%m-%d'),
+        'val_start': pd.to_datetime('2001-01-01', format='%Y-%m-%d'),
+        'val_end': pd.to_datetime('2006-12-31', format='%Y-%m-%d'),
+    },
+    'caravan': {
+        'train_start': pd.to_datetime('1990-01-01', format='%Y-%m-%d'),
+        'train_end': pd.to_datetime('2000-12-31', format='%Y-%m-%d'),
+        'val_start': pd.to_datetime('2001-01-01', format='%Y-%m-%d'),
+        'val_end': pd.to_datetime('2006-12-31', format='%Y-%m-%d'),
+    },
 }
 
 ver_name = "ver1_1" if GLOBAL_SETTINGS['ver'] == 1 else "ver2_0"
-
-gauge_id_list = get_basin_list(GLOBAL_SETTINGS['loc'])
 
 # ####################### #
 # Utility Functions       #
@@ -81,7 +94,11 @@ def get_args() -> Dict:
     parser.add_argument('--seed', type=int, required=False, default=np.random.randint(10000000))
     parser.add_argument('--run_dir', type=str, help="For evaluation mode.")
     parser.add_argument('--no_static', type=str2bool, default=False)
-    
+    # 'camels' (default): built directly from raw CAMELS-US, full 1980-2014 record. 'caravan':
+    # older Caravan-derived extraction (1987-2006 only). See
+    # ealstm_regional_modeling/main_lstm_regional.py's --dataset for the same split.
+    parser.add_argument('--dataset', type=str, default='camels', choices=['camels', 'caravan'])
+
     # Random Forest specific arguments. Defaults are the selected combo from the completed
     # 24/24-combo regional HP grid (n_estimators=500, min_samples_leaf=10, max_depth=15,
     # max_features=sqrt; NSE_median=0.110 across all 614 basins) -- see
@@ -96,12 +113,13 @@ def get_args() -> Dict:
     
     cfg = vars(parser.parse_args())
     cfg.update(GLOBAL_SETTINGS)
+    cfg.update(DATASET_SETTINGS[cfg["dataset"]])
     return cfg
 
 def _setup_run(cfg: Dict) -> Dict:
     """Create folder structure for this run"""
     now = datetime.now()
-    run_name = f'rf_run_{now.strftime("%m%d_%H%M")}_seed{cfg["seed"]}'
+    run_name = f'rf_run_{now.strftime("%m%d_%H%M")}_{cfg["dataset"]}_seed{cfg["seed"]}'
     cfg['run_dir'] = Path(__file__).parent / "runs_rf" / GLOBAL_SETTINGS['loc'] / run_name
     cfg['run_dir'].mkdir(parents=True, exist_ok=True)
     
@@ -119,7 +137,7 @@ def train(cfg):
     random.seed(cfg["seed"])
     np.random.seed(cfg["seed"])
     
-    basins = gauge_id_list
+    basins = get_basin_list(cfg['loc'], dataset=cfg['dataset'])
 
     # _setup_run's run_dir is timestamped, so a restart after a kill would
     # otherwise retrain from scratch. Skip if a completed run with these exact
@@ -129,7 +147,7 @@ def train(cfg):
     # folder name purely for traceability) -- requiring it to match would mean two
     # invocations of the identical hyperparameters, neither passing --seed explicitly,
     # could never recognize each other and resumability would never trigger.
-    match_keys = ['n_estimators', 'max_depth', 'max_features', 'max_samples', 'min_samples_split', 'min_samples_leaf', 'no_static']
+    match_keys = ['dataset', 'n_estimators', 'max_depth', 'max_features', 'max_samples', 'min_samples_split', 'min_samples_leaf', 'no_static']
     search_root = Path(__file__).parent / "runs_rf" / GLOBAL_SETTINGS['loc']
     existing_run = find_completed_run(search_root, cfg, match_keys)
     if existing_run is not None:
