@@ -30,25 +30,30 @@ loc = "US"
 output_dir = f"/data0/funato/hsp2/0_out/1_fig/{loc}/summary_ranking_multi"
 os.makedirs(output_dir, exist_ok=True)
 
-model_list = ["HBV", "BC", "RF", "XGB", "TCN", "LSTM"]
+model_list = ["HBV", "RF", "XGB", "TCN", "LSTM"]
+worst_rank = len(model_list)
 fs = 24
 
 # Define colors for each model
 color_list = {
     "HBV": "#7B7B7B",    # Medium Grey
-    "BC": "#628AE8",  # Steel Blue
     "RF": "#FF7F00",     # Orange
     "XGB": "#9C4803",    # Dark Orange
     "TCN": "#E41A1C",    # Red
     "LSTM": "#9808B2"    # Purple
 }
 
+# Same regional tags as 01_fig/benchmark/f01_fig_benchmark_models.py
 param_tag_dict = {
-    "RF": "_n100_d5_s2_l1_mf0.7_ms0.5_w270",
-    "XGB": "",
-    "TCN": "_n64_k4_d0.4",
-    "LSTM": "_hs256_do0.2"
+    "RF": "_n300_d30_s5_l20_mfsqrt_ms0.8_w270_nsFalse",
+    "XGB": "_ns0_n1000_d7_lr0.1_sub0.7_col0.7_sl270",
+    "TCN": "_n64_k5_d0.2_nsFalse_sl180",
+    "LSTM": "_nsFalse_csFalse_hs64_do0.4_e30_sl365"
 }
+
+# us_camels_file_num.csv is filtered (by us_basin_filter.py) to only the basins with complete
+# Obs flow/Precip/Temp/PET data over the full calibration+evaluation period.
+basin_ids = pd.read_csv(f"/data0/funato/hsp2/3_gis_data/{loc}/0_data/river_basin/dataset_{loc}/us_camels_file_num.csv")["gauge_id"].str.replace("camels_", "", regex=False).astype(int).tolist()
 
 print("Loading and processing model performance data...")
 
@@ -57,28 +62,26 @@ kge_scores = {}
 benchmark = "KGE"
 
 for model in model_list:
-    base_path = f"/data0/funato/hsp2/0_out/{model}/GB/regional/results"  
+    # Same input paths as 01_fig/benchmark/f01_fig_benchmark_models.py (camels layout)
+    base_path = f"/data0/funato/hsp2/0_out/{model}/{loc}/camels/regional/results"
 
-    if model == "BC":
-        input_file_cal = f"/data0/funato/hsp2/0_out/BC/results/BC_results_cal.csv"
-        input_file_eva = f"/data0/funato/hsp2/0_out/BC/results/BC_results_eva.csv"
-        # Use BC for column names since that's what's in the files
-        col_name_cal = f"BC_{benchmark}_cal"
-        col_name_eva = f"BC_{benchmark}_eva"
-    elif model == "HBV":
-        input_file_cal = f"/data0/funato/hsp2/0_out/HBV/GB/shap/regional/results/HBV_results_cal.csv"
-        input_file_eva = f"/data0/funato/hsp2/0_out/HBV/GB/shap/regional/results/HBV_results_eva.csv"
+    if model == "HBV":
+        input_file_cal = f"/data0/funato/hsp2/0_out/HBV/{loc}/camels/results/HBV_results_cal.csv"
+        input_file_eva = f"/data0/funato/hsp2/0_out/HBV/{loc}/camels/results/HBV_results_eva.csv"
         col_name_cal = f"HBV_{benchmark}_cal"
         col_name_eva = f"HBV_{benchmark}_eva"
     else:
-        input_file_cal = f"/data0/funato/hsp2/0_out/{model}/GB/regional/results/{model}_results{param_tag_dict.get(model, '')}_cal.csv"
-        input_file_eva = f"/data0/funato/hsp2/0_out/{model}/GB/regional/results/{model}_results{param_tag_dict.get(model, '')}_eva.csv"
+        input_file_cal = f"{base_path}/{model}_results{param_tag_dict.get(model, '')}_cal.csv"
+        input_file_eva = f"{base_path}/{model}_results{param_tag_dict.get(model, '')}_eva.csv"
         col_name_cal = benchmark
         col_name_eva = benchmark
-    
+
     try:
         df_cal = pd.read_csv(input_file_cal)
         df_eva = pd.read_csv(input_file_eva)
+        # Filter to the basin list (LSTM/HBV results use 'gauge_id' instead of 'basin')
+        df_cal = df_cal[df_cal['basin' if 'basin' in df_cal.columns else 'gauge_id'].isin(basin_ids)]
+        df_eva = df_eva[df_eva['basin' if 'basin' in df_eva.columns else 'gauge_id'].isin(basin_ids)]
         if col_name_cal in df_cal.columns and col_name_eva in df_eva.columns:
             kge_values_cal = df_cal[col_name_cal].dropna().values
             kge_values_eva = df_eva[col_name_eva].dropna().values
@@ -94,7 +97,7 @@ for model in model_list:
 # Step 2: Load Mass Conservation data (absolute mass bias)
 mass_bias_scores = {}
 
-mass_bias_file = f"/data0/funato/hsp2/0_out/analysis/mass_conservation/mass_bias_data.csv"
+mass_bias_file = f"/data0/funato/hsp2/0_out/analysis/{loc}/mass_conservation/mass_bias_data.csv"
 mass_df = pd.read_csv(mass_bias_file)
 
 for model in model_list:
@@ -115,7 +118,7 @@ for model in model_list:
 # Step 3: Load Drought Condition data (mean discharge during zero precipitation)
 drought_scores = {}
 
-drought_file = f"/data0/funato/hsp2/0_out/analysis/no_precip_discharge/no_precip_model_summary.csv"
+drought_file = f"/data0/funato/hsp2/0_out/analysis/{loc}/no_precip_discharge/no_precip_model_summary.csv"
 drought_df = pd.read_csv(drought_file)
 
 for model in model_list:
@@ -131,7 +134,7 @@ for model in model_list:
         print(f"Warning: No drought discharge data found for {model}")
         drought_scores[model] = np.nan
 # Step 4: Load Flood Condition ranks from automated ranking
-rank_df = pd.read_csv("/data0/funato/hsp2/0_out/analysis/summary_ranking_multi/automated_ranks/automated_plausibility_ranks.csv")
+rank_df = pd.read_csv(f"/data0/funato/hsp2/0_out/analysis/{loc}/summary_ranking_multi/automated_ranks/automated_plausibility_ranks.csv")
 flood_ranks = rank_df.set_index('Model')['Flood_Rank'].to_dict()
 
 print("\nCalculating ranks...")
@@ -190,7 +193,7 @@ for model in model_list:
                    fontsize=fs*0.9)
 
 # Formatting
-ax.set_xlabel('Composite Plausibility Rank Score (Max 216)', fontsize=fs)
+ax.set_xlabel(f'Composite Plausibility Rank Score (Max {worst_rank**3})', fontsize=fs)
 ax.set_ylabel('Median KGE', fontsize=fs)
 #ax.set_title('Model Performance', fontsize=fs)
 ax.tick_params(labelsize=fs*0.8)
@@ -200,7 +203,7 @@ ax.grid(True, alpha=0.3)
 x_min, x_max = min(composite_scores.values()) - 0.5, max(composite_scores.values()) + 0.5
 y_min, y_max = min([v for v in kge_scores.values() if not np.isnan(v)]) - 0.05, \
                max([v for v in kge_scores.values() if not np.isnan(v)]) + 0.05
-ax.set_xlim(0,60)
+ax.set_xlim(0, worst_rank**3 + 5)
 ax.set_ylim(y_min -0.1, 1.0)
 
 # Add quadrant labels

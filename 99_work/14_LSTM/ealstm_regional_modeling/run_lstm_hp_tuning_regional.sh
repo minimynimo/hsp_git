@@ -34,14 +34,22 @@
 #     than 270 (longer sequences -> more compute per batch), so budget wall-clock accordingly
 #     when this dimension is included.
 #   - batch_size: {256,512}
-# Grid size: 3 x 2 x 3 x 2 x 2 = 72 combinations. No n_basins-cost-based excuse to keep this
-# grid artificially small -- HYPERPARAMETERS.md is authoritative; trim REGIONAL_N_BASINS/
-# REGIONAL_EPOCHS below instead if wall-clock is too high for your core budget.
-REGIONAL_HIDDEN_SIZE=(64 128 256)
-REGIONAL_DROPOUT=(0.2 0.4)
-REGIONAL_LEARNING_RATE=(0.001 0.0005 0.0001)
-REGIONAL_SEQ_LENGTH=(270 365)
-BATCH_SIZE=(256 512)
+# Grid size: 3 x 2 x 3 x 2 x 2 = 72 combinations (full grid). No n_basins-cost-based excuse to
+# keep this grid artificially small -- HYPERPARAMETERS.md is authoritative; trim
+# REGIONAL_N_BASINS/REGIONAL_EPOCHS below instead if wall-clock is too high for your core budget.
+#
+# CAMELS HP re-check (see SELECTED_HYPERPARAMETERS.md "Camels" section): only the
+# caravan-selected value + immediate grid neighbor(s) per parameter are tested. Reduced grid
+# size: 3 x 2 x 2 x 2 x 2 = 48 combinations.
+REGIONAL_HIDDEN_SIZE=(64 128 256) # unchanged -- caravan-selected=128 is the middle of 3
+REGIONAL_DROPOUT=(0.2 0.4) # unchanged -- only 2 values, both always tested
+REGIONAL_LEARNING_RATE=(
+    0.001
+    0.0005
+    # 0.0001  # camels re-check: dropped -- caravan-selected=0.001 (highest of 3), neighbor is 0.0005
+)
+REGIONAL_SEQ_LENGTH=(270 365) # unchanged -- only 2 values, both always tested
+BATCH_SIZE=(256 512) # unchanged -- only 2 values, both always tested
 
 # Compute budget passed to every combo as --n_basins/--epochs. Reduced-scope defaults for HP
 # *search* (relative ranking of configs), not a final publishable fit -- edit these up/down to

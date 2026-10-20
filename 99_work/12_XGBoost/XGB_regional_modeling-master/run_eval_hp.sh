@@ -19,19 +19,36 @@ DATASET="camels"
 RUNS_BASE="$SCRIPT_DIR/runs_xgb/hp/$DATASET"
 OUTPUT_DIR="/data0/funato/hsp2/0_out/XGB/US/$DATASET/regional/hp"
 
-# Core assignment for parallel execution
+# Core assignment for parallel execution. MAX_PARALLEL was previously derived straight from
+# nproc (~25 concurrent jobs on this 128-core box), which silently OOM-killed the entire
+# script mid-run on 2026-09-11 (every combo loads its own full 637-basin, ~1.9M-row feature
+# matrix -- 25 of those at once exceeded available memory with no error printed, just an
+# abrupt SIGKILL and zero eva results produced). Capped to a fixed, safe concurrency instead.
 START_CORE=0
 CORES_PER_JOB=5
-NUM_CORES=$(nproc)
-MAX_PARALLEL=$(( (NUM_CORES - START_CORE) / CORES_PER_JOB ))
+MAX_PARALLEL=8
 
-# Hyperparameter grid
+# Hyperparameter grid -- CAMELS HP re-check (see SELECTED_HYPERPARAMETERS.md "Camels" section
+# and run_xgb_hp_tuning.sh's REGIONAL_* arrays): must match run_xgb_hp_tuning.sh's actual
+# regional training grid exactly, or this script won't find the trained run directories.
 N_ESTIMATORS=(500 1000)
-MAX_DEPTHS=(3 5 7)
-LEARNING_RATES=(0.01 0.05 0.1)
-SUBSAMPLE=(0.7 0.8 1.0)
-COLSAMPLE_BYTREE=(0.7 0.8 1.0)
-MIN_CHILD_WEIGHT=(1 3 5)
+MAX_DEPTHS=(
+    # 3  # camels re-check: dropped -- caravan-selected=7 (highest of 3), neighbor is 5
+    5
+    7
+)
+LEARNING_RATES=(0.01 0.05 0.1) # unchanged -- caravan-selected=0.05 is the middle of 3
+SUBSAMPLE=(0.7 0.8 1.0) # unchanged -- caravan-selected=0.8 is the middle of 3
+COLSAMPLE_BYTREE=(
+    0.7
+    0.8
+    # 1.0  # camels re-check: dropped -- caravan-selected=0.7 (lowest of 3), neighbor is 0.8
+)
+MIN_CHILD_WEIGHT=(
+    # 1  # camels re-check: dropped -- caravan-selected=5 (highest of 3), neighbor is 3
+    3
+    5
+)
 
 # Function to find the run directory for given hyperparameters
 find_run_dir() {

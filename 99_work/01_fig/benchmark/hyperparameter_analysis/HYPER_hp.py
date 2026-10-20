@@ -10,11 +10,13 @@ loc = "US"
 benchmark_list = ["KGE", "NSE", "RMSE", "MAE"]
 TOP_N = 5
 
+dataset = "camels"
+
 # Grid must match run_hparam_HYPER.sh exactly (see its "PARAMETER CONFIGURATION" section).
 # SPINUP has only one value there (1) so it isn't a real grid dimension -- kept fixed below
 # rather than swept, to keep labels/legend readable.
 RESERVOIR_SIZE = [10, 50, 100, 200, 300, 400, 500, 700]
-SPECTRAL_RADIUS = [0.85, 0.9, 0.95, 1.0, 1.05]
+SPECTRAL_RADIUS = [0.85, 0.9, 0.95, 1.0]
 RIDGE_PARAM = [0.1, 0.01, 0.001]
 INPUT_SCALE = [0.1, 0.5, 1.0, 5.0, 10.0]
 ADJACENCY_DENSITY = [0.05, 0.1, 0.2, 0.3, 0.5, 1.0]
@@ -32,7 +34,7 @@ for RESERVOIR in RESERVOIR_SIZE:
                     # has "_is{input_scale}" appended after file_tag.
                     file_tag = f"_r{RESERVOIR}_s{SPINUP}_sr{SPECTRAL}_rr{RIDGE}_ad{ADJACENCY}"
                     run_dir = (
-                        f"/data0/funato/hsp2/0_out/HYPER/{loc}/HYPER_hp/spin{SPINUP}/"
+                        f"/data0/funato/hsp2/0_out/HYPER/{loc}/{dataset}/HYPER_hp/spin{SPINUP}/"
                         f"reservoir{RESERVOIR}/HYPER{file_tag}_is{SCALE}"
                     )
                     input_path = os.path.join(

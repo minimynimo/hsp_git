@@ -50,14 +50,17 @@ from tcn_indiv_resume import load_completed_basins
 
 input_dim = 3
 
-# Selected via the individual HP grid search -- see SELECTED_HYPERPARAMETERS.md.
+# Selected via the camels individual HP re-check (32/32 combos, 160-basin HP-search subset) --
+# see SELECTED_HYPERPARAMETERS_camels.md. nb_filters/dropout_rate/learning_rate differ from the
+# old caravan selection (was nb_filters=32, dropout=0.5, lr=1e-3 -- see
+# SELECTED_HYPERPARAMETERS_caravan.md).
 timesteps = 90
 epochs = 100
 batch_size = 32
-nb_filters = 32
+nb_filters = 16
 kernel_size = 5
-dropout_rate = 0.5
-learning_rate = 1e-3  # was implicit in Keras's optimizer='adam' default (1e-3) - now explicit
+dropout_rate = 0.4
+learning_rate = 0.0005
 early_stopping_patience = 5  # matches the old Keras EarlyStopping(patience=5)
 val_split = 0.2  # matches the old Keras .fit(..., validation_split=0.2)
 

@@ -31,16 +31,19 @@ output_size = 1
 
 
 # HP-search-only cal/val split, kept strictly INSIDE each dataset's production calibration
-# period -- mirrors ealstm_regional_modeling/main_lstm_regional_hp.py's HP_SPLIT.
-#   * 'camels'  -- production calibration is 1981-1995; HP search sub-splits that into
-#     1981-1990 (train) / 1991-1995 (val), staying clear of the 1996-2010 held-out period.
+# period -- mirrors ealstm_regional_modeling/main_lstm_regional_hp.py's HP_SPLIT, and is now
+# identical to the HP split used by main_random_forest_indiv_hp.py, main_xgboost_indiv_hp.py,
+# main_TCN_indiv_hp.py and main_LSTM_indiv_hp.py for both datasets.
+#   * 'camels'  -- production calibration is 1987-2000 (main_HYPER.py's own dates); HP search
+#     sub-splits that into 1990-1998 (train) / 1999-2000 (val), staying clear of the 2001-2006
+#     held-out period.
 #   * 'caravan' -- production calibration is 1990-2000 (main_HYPER.py's own dates); HP search
 #     sub-splits that into 1990-1998 (train) / 1999-2000 (val), staying clear of the 2001-2006
-#     held-out period. Unchanged from before this script supported multiple datasets.
+#     held-out period.
 HP_SPLIT = {
     'camels': {
-        'start_date_cal': '1981-01-01', 'end_date_cal': '1990-12-31',
-        'start_date_eva': '1991-01-01', 'end_date_eva': '1995-12-31',
+        'start_date_cal': '1990-01-01', 'end_date_cal': '1998-12-31',
+        'start_date_eva': '1999-01-01', 'end_date_eva': '2000-12-31',
     },
     'caravan': {
         'start_date_cal': '1990-01-01', 'end_date_cal': '1998-12-31',
@@ -52,8 +55,8 @@ HP_SPLIT = {
 def get_args():
     parser = argparse.ArgumentParser(description="ESN hyperparameter search (HYPER bias-correction model)")
     parser.add_argument('--loc', type=str, default='US', choices=['US'])
-    # 'camels' (default): built directly from raw CAMELS-US, full 1980-2014 record. 'caravan':
-    # older Caravan-derived extraction (1987-2006 only). See HP_SPLIT above.
+    # 'camels' (default): built directly from raw CAMELS-US. 'caravan': older Caravan-derived
+    # extraction. See HP_SPLIT above.
     parser.add_argument('--dataset', type=str, default='camels', choices=['camels', 'caravan'])
     parser.add_argument('--reservoir_size', type=int, default=700)
     parser.add_argument('--spectral_radius', type=float, default=0.4)
@@ -62,7 +65,6 @@ def get_args():
     parser.add_argument('--spinup', type=int, default=1)
     parser.add_argument('--adjacency_density', type=float, default=0.0006)
     return parser.parse_args()
-
 
 args = get_args()
 loc = args.loc
@@ -81,14 +83,14 @@ end_date_cal = HP_SPLIT[dataset]['end_date_cal']
 start_date_eva = HP_SPLIT[dataset]['start_date_eva']
 end_date_eva = HP_SPLIT[dataset]['end_date_eva']
 
-print(f"[hparam_main_HYPER] loc={loc} dataset={dataset!r} "
+print(f"[hparam_main_HYPER] loc={loc} dataset={dataset!r}"
       f"train={start_date_cal}..{end_date_cal} val={start_date_eva}..{end_date_eva}")
 
 ver_name = "ver1_1" if ver == 1 else "ver2_0"
 
-# /2_MERV/HYPER/{dataset}/{loc}/varssim_nocal_og/{ver_name}/ stores its per-basin CSVs as
+# /2_MERV/{dataset}/HYPER/{loc}/varssim_nocal_og/{ver_name}/ stores its per-basin CSVs as
 # varssim_{gauge_id}.csv (the same directory main_HYPER.py reads its "og" input from).
-varssim_dir = f"/data0/funato/hsp2/2_MERV/HYPER/{dataset}/{loc}/varssim_nocal_og/{ver_name}"
+varssim_dir = f"/data0/funato/hsp2/2_MERV/{dataset}/HYPER/{loc}/varssim_nocal_og/{ver_name}"
 
 # Basin list, keyed by gauge_id (matches ealstm_regional_modeling/papercode/utils.py's
 # get_basin_list): read from us_{dataset}_file_num.csv's gauge_id column, stripped of the

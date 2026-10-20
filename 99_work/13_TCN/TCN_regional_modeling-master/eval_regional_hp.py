@@ -64,11 +64,20 @@ DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 # elif GLOBAL_SETTINGS['loc'] == "US":
 #     output_mean = np.array([1.6033382557458762])  # Placeholder mean for US basins
 
-gauge_id_list = get_basin_list(GLOBAL_SETTINGS['loc'])
+# 'camels' matches get_basin_list()'s own default (see papercode/utils.py) -- this script
+# has no --dataset CLI flag, so gauge_id_list below was already implicitly camels-only.
+# load_data_for_basin() previously used the old flat, now-nonexistent
+# /data0/funato/hsp2/2_MERV/varssim_US/ path (pre-dating the camels/caravan split -- see
+# ADAPTATION_TO_CAMELS.md's "Known follow-up" section for the same class of bug in
+# ml_predict_long_format.py) -- every basin silently failed with FileNotFoundError, so the
+# TCN regional camels HP eval produced zero valid eva-period predictions until this was
+# pointed at 2_MERV/camels/varssim_US/ instead.
+DATASET = 'camels'
+gauge_id_list = get_basin_list(GLOBAL_SETTINGS['loc'], dataset=DATASET)
 
 def load_data_for_basin(gauge_id):
     """Load data for a specific basin"""
-    varssim_dir = f"/data0/funato/hsp2/2_MERV/varssim_{GLOBAL_SETTINGS['loc']}"
+    varssim_dir = f"/data0/funato/hsp2/2_MERV/{DATASET}/varssim_{GLOBAL_SETTINGS['loc']}"
     df = pd.read_csv(f"{varssim_dir}/varssim_{gauge_id}.csv")
     df['Date'] = pd.to_datetime(df['Date'])
     df.set_index('Date', inplace=True)

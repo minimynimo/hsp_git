@@ -489,7 +489,7 @@ def main():
             basin: g.set_index('date')['prediction'].sort_index()
             for basin, g in og_df.groupby('basin')
         }
-    save_regional_predictions_long_format("XGB", GLOBAL_SETTINGS["loc"], scenario_predictions, basins)
+    save_regional_predictions_long_format("XGB", GLOBAL_SETTINGS["loc"], scenario_predictions, basins, dataset=cfg.get('dataset', 'camels'))
 
     print("\nRegional XGBoost evaluation completed successfully!")
 

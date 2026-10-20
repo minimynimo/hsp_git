@@ -11,8 +11,10 @@ base_dir = "/data0/funato/hsp2/0_out"
 output_dir = f"/data0/funato/hsp2/0_out/analysis/{loc}/summary_ranking_multi/automated_ranks"
 os.makedirs(output_dir, exist_ok=True)
 
-model_list = ["HBV", "BC", "RF", "XGB", "TCN", "LSTM"]
-# Note: In file paths, BC might be labeled as BC. We handle this mapping below.
+loc_dataset = "camels"
+model_list = ["HBV", "RF", "XGB", "TCN", "LSTM"]
+# Worst rank = number of models (was hard-coded 6 when BC was included)
+worst_rank = len(model_list)
 
 """# --- Helper to map model names to file paths ---
 def get_model_path_name(model_name):
@@ -159,18 +161,18 @@ def calculate_flood_ranks():
     print("\n--- Calculating Flood Condition Ranks (Physical Responsiveness Tests) ---")
     print("Test 1: Peak discharge must increase with precipitation rate (0→10→30→50%) for each duration")
     print("Test 2: Time lag must increase with peak duration (1→3→5 days)")
-    print("Failure in ANY test → Rank 6 | All tests pass → Rank 1")
+    print(f"Failure in ANY test → Rank {worst_rank} | All tests pass → Rank 1")
     print()
-    
+
     ranks = {}
-    
+
     for model in model_list:
-        #path_name = get_model_path_name(model)
-        flood_file = f"{base_dir}/{model}/peak_discharge/peak_discharge_comparison_{model}.csv"
-        
+        flood_file = f"{base_dir}/{model}/{loc}/{loc_dataset}/peak_discharge/peak_discharge_comparison_{model}.csv"
+
         if not os.path.exists(flood_file):
-            print(f"Warning: Flood file not found for {model}")
-            ranks[model] = 6 
+            # No valid synthetic-peak predictions (NOT TESTED, not a physical failure)
+            print(f"Warning: Flood file not found for {model} -> NOT TESTED (Rank {worst_rank})")
+            ranks[model] = worst_rank
             continue
             
         try:
@@ -263,8 +265,8 @@ def calculate_flood_ranks():
                 print(f"  ✓ Test 1: Peak discharge increases with precip rate")
                 print(f"  ✓ Test 2: Time lag increases with peak duration")
             else:
-                ranks[model] = 6
-                print(f"{model} → FAIL (Rank 6)")
+                ranks[model] = worst_rank
+                print(f"{model} → FAIL (Rank {worst_rank})")
                 if not test1_pass:
                     print(f"  ✗ Test 1 FAILED (Discharge response):")
                     for fail_msg in test1_fails:
@@ -284,7 +286,7 @@ def calculate_flood_ranks():
             print(f"Error processing {model}: {e}")
             import traceback
             traceback.print_exc()
-            ranks[model] = 6
+            ranks[model] = worst_rank
 
     return pd.Series(ranks)
 
@@ -305,8 +307,8 @@ ranking_df = pd.DataFrame({
     'Flood_Rank': [flood_ranks.get(m, np.nan) for m in model_list]
 })
 
-# Handle NaNs (default to rank 6 if something went wrong)
-ranking_df = ranking_df.fillna(6)
+# Handle NaNs (default to worst rank if something went wrong)
+ranking_df = ranking_df.fillna(worst_rank)
 
 print("\n" + "="*40)
 print("FINAL AUTOMATED RANKS")

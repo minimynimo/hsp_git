@@ -36,12 +36,13 @@ washout = 0
 #loc, ver = "GB", 2
 loc, ver = "US", 2
 
-# dataset: 'camels' (default) -- built directly from raw CAMELS-US, full 1980-2014 record --
-# or 'caravan', the older Caravan-derived extraction (1987-2006 only). Only affects loc='US'.
-# See BMA.py's module docstring / ealstm_regional_modeling/main_lstm_regional.py's --dataset
-# for the same split, and BMA.py's note that /2_MERV/HYPER/{dataset}/{loc}/ does not currently
-# exist for either dataset (this whole pipeline needs its upstream ensemble input rebuilt
-# before it can run, independent of this --dataset plumbing).
+# dataset: 'camels' (default) -- built directly from raw CAMELS-US -- or 'caravan', the older
+# Caravan-derived extraction. Only affects loc='US'. Both now use the same cal/eva split
+# convention as the other model families (main_random_forest_indiv.py, main_xgboost_indiv.py,
+# main_TCN_indiv.py, main_LSTM_indiv.py). See BMA.py's module docstring /
+# ealstm_regional_modeling/main_lstm_regional.py's --dataset for the same split. Reads its
+# per-basin ensemble CSVs from /2_MERV/{dataset}/HYPER/{loc}/, produced by
+# 2_MERV/create_dataset_HYPER.py from the upstream 47-model ensemble output.
 dataset = "camels"  # "caravan"
 
 
@@ -51,10 +52,10 @@ print(file_tag)
 
 ver_name = "ver1_1" if ver == 1 else "ver2_0"
 
-varssim_dir = f"/data0/funato/hsp2/2_MERV/HYPER/{dataset}/{loc}"
+varssim_dir = f"/data0/funato/hsp2/2_MERV/{dataset}/HYPER/{loc}"
 reshape_input_dir = f"/data0/funato/hsp2/2_MERV/{dataset}/varssim_{loc}"
 
-# Basin list, keyed by gauge_id: /2_MERV/HYPER/{dataset}/{loc}/{scenario}/{ver_name}/ now stores
+# Basin list, keyed by gauge_id: /2_MERV/{dataset}/HYPER/{loc}/{scenario}/{ver_name}/ now stores
 # its per-basin CSVs as varssim_{gauge_id}.csv (not the old sequential varssim{NNN}.csv), so the
 # driver data itself is loaded by gauge_id below. file_num_by_gauge is kept only for the
 # handful of things that still use the legacy sequential id: the BMA_predict_*.csv rows (see
@@ -70,10 +71,10 @@ precip_cols = ['no_precip',
                'peak5_rate0', 'peak5_rate10', 'peak5_rate30', 'peak5_rate50']
 
 if dataset == "camels":
-    start_date_cal = '1981-01-01'
-    end_date_cal = '1995-12-31'
-    start_date_eva = '1996-01-01'
-    end_date_eva = '2010-12-31'
+    start_date_cal = '1987-01-01'
+    end_date_cal = '2000-12-31'
+    start_date_eva = '2001-01-01'
+    end_date_eva = '2006-12-31'
 else:  # caravan
     start_date_cal = '1990-01-01'
     end_date_cal = '2000-12-31'
@@ -206,7 +207,7 @@ def save_reshaped_output(gauge_id, predictions):
     directly in the long-format layout used by the figure code."""
     file_num = file_num_by_gauge[gauge_id]
     # reshape_input_dir (/2_MERV/varssim_{loc}_1993_2006) still uses the legacy sequential
-    # numbering, unlike /2_MERV/HYPER/{loc}'s per-scenario dirs.
+    # numbering, unlike /2_MERV/{dataset}/HYPER/{loc}'s per-scenario dirs.
     base_file = f"{reshape_input_dir}/varssim{file_name(file_num, 3)}.csv"
     if not os.path.exists(base_file):
         print(f"Warning: Base file {base_file} does not exist. Skipping reshape output for gauge {gauge_id}.")

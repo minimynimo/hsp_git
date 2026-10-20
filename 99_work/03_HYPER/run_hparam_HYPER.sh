@@ -7,7 +7,7 @@
 #
 # Usage: ./run_hparam_HYPER.sh <StartCore> <NumCores> [background]
 #   /data0/funato/hsp2/99_work/03_HYPER/run_hparam_HYPER.sh 0 31
-#   /data0/funato/hsp2/99_work/03_HYPER/run_hparam_HYPER.sh 0 60 background
+#   /data0/funato/hsp2/99_work/03_HYPER/run_hparam_HYPER.sh 110 15 background
 #     -> prints the PID and log file to tail, same pattern as run_lstm_hp_tuning.sh's
 #        background self-relaunch.
 
@@ -45,16 +45,15 @@ RESERVOIR_SIZE=(10 50 100 200 300 400 500 700)
 # NOTE: values here must match Python's str(float(x)) exactly (e.g. "0.9", not "0.90") --
 # hparam_main_HYPER.py's file_tag is built from the parsed float, and the completion
 # pre-filter below constructs the same path string from these literals to check it.
-SPECTRAL_RADIUS=(0.85 0.9 0.95 1.0 1.05)
+SPECTRAL_RADIUS=(0.85 0.9 0.95 1.0)
 RIDGE_PARAM=(0.1 0.01 0.001)
 INPUT_SCALE=(0.1 0.5 1.0 5.0 10.0)
 ADJACENCY_DENSITY=(0.05 0.1 0.2 0.3 0.5 1.0)
 SPINUP=(1)
 LOC="US"
-# 'camels' (default): built directly from raw CAMELS-US, full 1980-2014 record --
-# hparam_main_HYPER.py sub-splits its own HP-search window (1981-1990/1991-1995) strictly
-# inside production's 1981-1995 calibration period. 'caravan': older Caravan-derived
-# extraction (1987-2006 only).
+# 'camels' (default): built directly from raw CAMELS-US -- hparam_main_HYPER.py sub-splits
+# its own HP-search window (1990-1998/1999-2000) strictly inside production's 1987-2000
+# calibration period. 'caravan': older Caravan-derived extraction, same HP-search window.
 DATASET="camels"
 
 # ============================================

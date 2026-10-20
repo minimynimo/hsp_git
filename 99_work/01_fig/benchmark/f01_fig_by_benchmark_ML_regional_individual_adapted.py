@@ -13,70 +13,60 @@ benchmark_list = ["KGE", "NSE", "E1", "VE", "RMSE", "MAE"]
 
 fs = 15
 
-# us_file_num.csv is filtered (by us_basin_filter.py) to only the basins with complete
+# us_camels_file_num.csv is filtered (by us_basin_filter.py) to only the basins with complete
 # Obs flow/Precip/Temp/PET data over the full calibration+evaluation period.
-basin_ids = pd.read_csv("/data0/funato/hsp2/3_gis_data/US/0_data/river_basin/dataset_US/us_file_num.csv")["gauge_id"].str.replace("camels_", "", regex=False).astype(int).tolist()
+basin_ids = pd.read_csv("/data0/funato/hsp2/3_gis_data/US/0_data/river_basin/dataset_US/us_camels_file_num.csv")["gauge_id"].str.replace("camels_", "", regex=False).astype(int).tolist()
 
 
 """
-MEMO INDIVIDUAL
-/data0/funato/hsp2/0_out/RF/{loc}/individual/results/RF_results_n100_d10_l10_fsqrt_eva.csv #
-/data0/funato/hsp2/0_out/XGB/{loc}/individual/results/XGB_results_n100_d3_lr0.1_eva.csv
-/data0/funato/hsp2/0_out/TCN/{loc}/individual/results/TCN_predict_f32_k4_d0.2_eva.csv
-/data0/funato/hsp2/0_out/LSTM/{loc}/individual/results/LSTM_results_h32_lr0.001_e100_w270_b256_d0.2_eva.csv #
+MEMO INDIVIDUAL (CAMELS)
+/data0/funato/hsp2/0_out/RF/{loc}/camels/individual/results/RF_results_n300_d10_l20_fsqrt_eva.csv
+/data0/funato/hsp2/0_out/XGB/{loc}/camels/individual/results/XGB_results_n500_d2_lr0.01_ss0.6_cbt1.0_mcw10_eva.csv
+/data0/funato/hsp2/0_out/TCN/{loc}/camels/individual/f16_k5_d0.4_w90/results/TCN_results_f16_k5_d0.4_w90_eva.csv
+/data0/funato/hsp2/0_out/LSTM/{loc}/camels/individual/results/LSTM_results_h32_lr0.001_e100_w270_b64_d0.5_lossnse_eva.csv
 
-MEMO ADAPTED
-/data0/funato/hsp2/0_out/TCN/{loc}/adapted/results/TCN_results_eva.csv
-/data0/funato/hsp2/0_out/LSTM/{loc}/adapted_ealstm/results/LSTM_results_nsFalse_csFalse_hs256_do0.4_e30_sl270_ft5_ftlr0.0001_eva.csv #
-  (canonical true-EA-LSTM adapted output, from ealstm_regional_modeling/adapted.py -- NOT the
-  legacy x_lstm_regional_modeling-master/eval_adapted.py output at .../LSTM/{loc}/adapted/)
+MEMO ADAPTED (CAMELS)
+/data0/funato/hsp2/0_out/TCN/{loc}/camels/adapted/results/TCN_results_n64_k5_d0.2_nsFalse_sl180_eva.csv
+/data0/funato/hsp2/0_out/LSTM/{loc}/camels/adapted/results/LSTM_results_nsFalse_csFalse_hs64_do0.4_e30_sl365_ft5_ftlr0.0001_eva.csv
 
-MEMO REGIONAL
-/data0/funato/hsp2/0_out/RF/{loc}/regional/results/RF_results_n100_d5_s2_l1_mf0.7_ms0.5_w270_eva.csv #
-/data0/funato/hsp2/0_out/XGB/{loc}/regional/results/XGB_results_ns1_n1000_d7_lr0.05_sub0.8_col0.8_sl270_eva.csv
-  (tagged path from XGB_regional_modeling-master/eval_regional.py; the tag encodes no_static
-  plus every hyperparameter so it can never collide with another config's output -- see
-  DEBUG_README.md for the collision bug this replaced)
-/data0/funato/hsp2/0_out/TCN/{loc}/regional/results/TCN_results_n64_k4_d0.4_eva.csv
-/data0/funato/hsp2/0_out/LSTM/{loc}/regional_ealstm/results/LSTM_results_nsFalse_csFalse_hs256_do0.4_e30_sl270_eva.csv #
-  (canonical true-EA-LSTM regional output, from ealstm_regional_modeling/eval.py -- NOT the
-  legacy x_lstm_regional_modeling-master/eval_regional.py output at .../LSTM/{loc}/regional/,
-  which was always run with no_static=True and never exercised the EA-LSTM mechanism)
+MEMO REGIONAL (CAMELS)
+/data0/funato/hsp2/0_out/RF/{loc}/camels/regional/results/RF_results_n300_d30_s5_l20_mfsqrt_ms0.8_w270_nsFalse_eva.csv
+/data0/funato/hsp2/0_out/XGB/{loc}/camels/regional/results/XGB_results_ns0_n1000_d7_lr0.1_sub0.7_col0.7_sl270_eva.csv
+/data0/funato/hsp2/0_out/TCN/{loc}/camels/regional/results/TCN_results_n64_k5_d0.2_nsFalse_sl180_eva.csv
+/data0/funato/hsp2/0_out/LSTM/{loc}/camels/regional/results/LSTM_results_nsFalse_csFalse_hs64_do0.4_e30_sl365_eva.csv
+
+NOTE: under camels/, RF/XGB/TCN/LSTM regional and adapted results live directly under
+regional/ and adapted/ (no _ealstm / _614 suffix -- those only exist under the legacy
+caravan/ tree). TCN individual is the only one written under a hyperparameter-named
+subdirectory (individual/{tag}/results), not a flat individual/results/ dir.
 """
 
-# Tags now match the selected hyperparameters in SELECTED_HYPERPARAMETERS.md (Individual),
-# verified against the actual filenames present on disk under 0_out/{model}/{loc}/individual/.
+# Tags match the selected hyperparameters in SELECTED_HYPERPARAMETERS_camels.md (Individual),
+# verified against the actual filenames present on disk under 0_out/{model}/{loc}/camels/individual/.
 param_idv_tag_dict = {
-    "RF": "_n500_d5_l20_fsqrt",
-    "XGB": "_n500_d2_lr0.01_ss0.5_cbt0.8_mcw20",
-    "TCN": "_f32_k5_d0.5_w90",
-    "LSTM": "_h32_lr0.0005_e100_w365_b64_d0.4"
+    "RF": "_n300_d10_l20_fsqrt",
+    "XGB": "_n500_d2_lr0.01_ss0.6_cbt1.0_mcw10",
+    "TCN": "_f16_k5_d0.4_w90",
+    "LSTM": "_h32_lr0.001_e100_w270_b64_d0.5_lossnse"
 }
 
-# NOTE on LSTM regional/adapted: these tags/paths point at the CANONICAL true-EA-LSTM
-# pipeline (99_work/14_LSTM/ealstm_regional_modeling/{main,eval,adapted}.py), not the legacy
-# x_lstm_regional_modeling-master output (which was always run with no_static=True and never
-# actually exercised the EA-LSTM static-attribute mechanism -- see ANALYSIS_README.md ## LSTM).
-# eval.py/adapted.py tag format: ns{no_static}_cs{concat_static}_hs{hidden}_do{dropout}
-#   _e{epoch}_sl{seq_length}[_ft{ft_epochs}_ftlr{ft_lr} for adapted]. Update these two entries
-# if the production regional/adapted run uses different hyperparameters than the paper
-# defaults baked into ealstm_regional_modeling/main.py (hidden_size=256, dropout=0.4,
-# seq_length=270) or adapted.py (ft_epochs=5, ft_lr=1e-4).
-# Tags now match the selected hyperparameters in SELECTED_HYPERPARAMETERS.md (Regional),
-# verified against the actual filenames present on disk under 0_out/{model}/{loc}/regional*/results.
+# Tags match the selected hyperparameters in SELECTED_HYPERPARAMETERS_camels.md (Regional),
+# verified against the actual filenames present on disk under 0_out/{model}/{loc}/camels/regional/results.
+# NOTE: TCN regional's selected NB_FILTERS is 32 (see SELECTED_HYPERPARAMETERS_camels.md), but
+# only the n64 combo has a production regional run on disk -- using n64 until n32 is (re)trained.
 param_reg_tag_dict = {
-    "RF": "_n500_d15_s5_l10_mfsqrt_ms0.8_w270_nsFalse",
-    "XGB": "_ns0_n1000_d7_lr0.05_sub0.8_col0.7_sl270",
-    "TCN": "_n64_k3_d0.2_nsFalse_sl270",
-    "LSTM": "_nsFalse_csFalse_hs128_do0.2_e30_sl365"
+    "RF": "_n300_d30_s5_l20_mfsqrt_ms0.8_w270_nsFalse",
+    "XGB": "_ns0_n1000_d7_lr0.1_sub0.7_col0.7_sl270",
+    "TCN": "_n64_k5_d0.2_nsFalse_sl180",
+    "LSTM": "_nsFalse_csFalse_hs64_do0.4_e30_sl365"
 }
 
 # Adapted tags match the selected Regional hyperparameters above plus the fine-tune params
 # (TCN adapted reuses the regional checkpoint's tag; LSTM adapted appends ft{epochs}_ftlr{lr}),
-# verified against the actual filenames on disk under 0_out/{model}/{loc}/adapted*/results.
+# verified against the actual filenames on disk under 0_out/{model}/{loc}/camels/adapted/results.
 param_adp_tag_dict = {
-    "TCN": "_n64_k3_d0.2_nsFalse_sl270",
-    "LSTM": "_nsFalse_csFalse_hs128_do0.2_e30_sl365_ft5_ftlr0.0001"
+    "TCN": "_n64_k5_d0.2_nsFalse_sl180",
+    "LSTM": "_nsFalse_csFalse_hs64_do0.4_e30_sl365_ft5_ftlr0.0001"
 }
 
 ###RF
@@ -133,20 +123,16 @@ os.makedirs(output_dir_box, exist_ok=True)
 os.makedirs(output_dir_cdf, exist_ok=True)
 
 def get_file_path(model, train_type):
-    # LSTM regional/adapted results now live under the canonical *_ealstm output dirs
-    # produced by ealstm_regional_modeling/eval.py and adapted.py (see param_reg_tag_dict /
-    # param_adp_tag_dict note above) -- NOT the legacy .../regional/ or .../adapted/ dirs.
-    if model == "LSTM" and train_type == "regional":
-        dir_name = "regional_ealstm"
-    elif model == "LSTM" and train_type == "adapted":
-        dir_name = "adapted_ealstm"
-    elif model == "TCN" and train_type == "individual":
+    # Under camels/, regional/adapted/individual results for all four ML models live
+    # directly under those names (no _ealstm / _614 suffix -- that split only exists under
+    # the legacy caravan/ tree).
+    if model == "TCN" and train_type == "individual":
         # TCN individual runs are written under a hyperparameter-named subdirectory
-        # (e.g. individual/f32_k5_d0.5_w90/results), not a flat individual/results/ dir.
+        # (e.g. individual/f16_k5_d0.4_w90/results), not a flat individual/results/ dir.
         dir_name = f"individual/{param_idv_tag_dict['TCN'].lstrip('_')}"
     else:
         dir_name = train_type
-    base_path = f"/data0/funato/hsp2/0_out/{model}/{loc}/{dir_name}/results"
+    base_path = f"/data0/funato/hsp2/0_out/{model}/{loc}/camels/{dir_name}/results"
     if train_type == "individual":
         param_tag = param_idv_tag_dict.get(model, "")
     elif train_type == "adapted":

@@ -6,7 +6,7 @@ import os
 
 loc = "US"
 
-input_data = f"/data0/funato/hsp2/0_out/analysis/mass_conservation/water_balance_data.csv"
+input_data = f"/data0/funato/hsp2/0_out/analysis/{loc}/mass_conservation/water_balance_data.csv"
 input_df = pd.read_csv(input_data)
 
 output_dir = f"/data0/funato/hsp2/0_out/1_fig/{loc}/mass_conservation"
@@ -28,12 +28,11 @@ input_df['Model'] = input_df['Model'].replace('BC', 'BC')
 observed_df = input_df[input_df['Model'] == 'Observed'].set_index('File_num')['Daily_Mean_ET']
 
 # Calculate ET differences for each model compared to observed
-model_list = ["SACSMA", "BC", "RF", "XGB", "TCN", "LSTM"]
+model_list = ["HBV", "RF", "XGB", "TCN", "LSTM"]
 et_differences = []
 
 color_list = {
-    "SACSMA": "#7B7B7B",    # Kept as requested (Medium Grey)
-    "BC": "#628AE8",     # Kept as requested (Steel Blue)
+    "HBV": "#7B7B7B",    # Kept as requested (Medium Grey)
     "RF":   "#FF7F00",   # Red
     "XGB":  "#9C4803",   # Bright Orange
     "TCN":  "#E41A1C",   # Reddish Purple / Magenta

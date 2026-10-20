@@ -56,13 +56,14 @@ else:  # caravan
 print(f"[main_random_forest_indiv] loc={loc} dataset={dataset!r} "
       f"cal={start_date_cal}..{end_date_cal} eva={start_date_eva}..{end_date_eva}")
 
-# Selected via the individual HP grid search (post shift-alignment-fix rerun, 198 basins,
-# all 54 combos complete) -- see SELECTED_HYPERPARAMETERS.md and DEBUG_README.md §15.8.
-# max_features was a tie between "sqrt" and 0.33; "sqrt" kept for readability.
+# Selected via the camels individual HP re-check (16/16 combos, 638 basins) -- see
+# SELECTED_HYPERPARAMETERS_camels.md. max_features was a tie between "sqrt" and 0.33; "sqrt"
+# kept for readability. max_depth/n_estimators differ from the old caravan selection
+# (was max_depth=5, n_estimators=500 -- see SELECTED_HYPERPARAMETERS_caravan.md).
 max_features = "sqrt"
-n_estimators = 500
+n_estimators = 300
 min_samples_leaf = 20
-max_depth = 5
+max_depth = 10
 
 max_samples = 0.5
 min_samples_split = 2

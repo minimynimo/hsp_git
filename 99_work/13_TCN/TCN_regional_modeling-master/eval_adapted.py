@@ -167,7 +167,9 @@ def get_param_string(run_cfg):
         num_channels = run_cfg.get("num_channels", [25, 50, 100])
         param_channels = f"ch{'-'.join(map(str, num_channels))}"
     
-    nb_filters = run_cfg.get("nb_filters", 64)
+    # main_tcn.py saves the filter count as 'num_filters'; fall back to 'nb_filters' only for
+    # older configs (matches eval_regional.py's get_param_string).
+    nb_filters = run_cfg.get("num_filters", run_cfg.get("nb_filters", 64))
     kernel_size = run_cfg.get("kernel_size", 4)
     dropout = run_cfg.get("dropout", 0.4)
     seq_length = run_cfg.get("seq_length", 30)

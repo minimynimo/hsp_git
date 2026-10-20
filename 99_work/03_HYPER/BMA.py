@@ -11,18 +11,16 @@ benchmark_list = ["KGE","NSE","E1","VE", "d","RMSE","MAE"]
 
 loc = "US"
 
-# dataset: 'camels' (default) -- built directly from raw CAMELS-US, full 1980-2014 record --
-# or 'caravan', the older Caravan-derived extraction (1987-2006 only). Only affects loc='US'.
-# See ealstm_regional_modeling/main_lstm_regional.py's --dataset for the same split.
+# dataset: 'camels' (default) -- built directly from raw CAMELS-US -- or 'caravan', the older
+# Caravan-derived extraction. Only affects loc='US'. Both now use the same cal/eva split as
+# main_HYPER.py / hparam_main_HYPER.py and the other model families (main_random_forest_indiv.py,
+# main_xgboost_indiv.py, main_TCN_indiv.py, main_LSTM_indiv.py). See also
+# ealstm_regional_modeling/main_lstm_regional.py's --dataset for the same split.
 #
 # NOTE: this only changes which per-basin gauge list / cal-eval dates BMA.py uses -- it does
-# NOT by itself make /2_MERV/HYPER/{dataset}/{loc}/{scenario}/{ver_name}/varssim_{gauge_id}.csv
+# NOT by itself make /2_MERV/{dataset}/HYPER/{loc}/{scenario}/{ver_name}/varssim_{gauge_id}.csv
 # exist. That directory (a merged {m01..m47} ensemble-prediction matrix per basin/scenario) is
-# built by some other, separate script not present in this directory, and as of this edit
-# neither /2_MERV/HYPER/US/ nor the old flat /2_MERV/HYPER/US (pre-dataset-split) exists at
-# all -- so this whole BMA/HYPER pipeline cannot actually run yet, for either dataset, until
-# that upstream ensemble-assembly step is regenerated to read from 2_MERV/{dataset}/varssim_US
-# the way 1.create_dataset_plain_camels.py's consumers now do.
+# built by 2_MERV/create_dataset_HYPER.py from the upstream 47-model ensemble output.
 dataset = "camels"  # "caravan"
 
 #ver = 1
@@ -31,9 +29,9 @@ ver = 2
 
 ver_name = 'ver1_1' if ver == 1 else 'ver2_0' if ver == 2 else 'ver3_0'
 
-varssim_dir = f"/data0/funato/hsp2/2_MERV/HYPER/{dataset}/{loc}"
+varssim_dir = f"/data0/funato/hsp2/2_MERV/{dataset}/HYPER/{loc}"
 
-# Basin list, keyed by gauge_id: /2_MERV/HYPER/{dataset}/{loc}/{scenario}/{ver_name}/ stores its
+# Basin list, keyed by gauge_id: /2_MERV/{dataset}/HYPER/{loc}/{scenario}/{ver_name}/ stores its
 # per-basin CSVs as varssim_{gauge_id}.csv (not the old sequential varssim{NNN}.csv), matching
 # what main_HYPER.py / hparam_main_HYPER.py already load from. This script's own output
 # (BMA_weights.csv, BMA_predict_*.csv, BMA_results_*.csv) is now keyed by gauge_id too --
@@ -49,10 +47,10 @@ precip_cols = ['no_precip',
 
 # Define the calibration and evaluation periods
 if dataset == "camels":
-    start_date_cal = '1981-01-01'
-    end_date_cal = '1995-12-31'
-    start_date_eva = '1996-01-01'
-    end_date_eva = '2010-12-31'
+    start_date_cal = '1987-01-01'
+    end_date_cal = '2000-12-31'
+    start_date_eva = '2001-01-01'
+    end_date_eva = '2006-12-31'
 else:  # caravan
     start_date_cal = '1990-01-01'
     end_date_cal = '2000-12-31'

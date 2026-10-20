@@ -15,14 +15,21 @@ LOC="US"  # Location identifier
 # Configuration
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PYTHON_PATH="/data0/funato/.venv/bin/python"
+# 'camels' (default): built directly from raw CAMELS-US. Must match the --dataset the HP
+# runs under runs_tcn/hp/{loc}/{dataset}/ were trained with (main_tcn_hp.py nests its run
+# dirs by dataset) -- this was previously missing here entirely (a pre-existing bug, not
+# introduced by the camels re-check grid edits above), causing every combo to silently
+# report "no valid run directory found" even though runs_tcn/hp/US/camels/... existed.
+DATASET="camels"
 RUNS_BASE="$SCRIPT_DIR/runs_tcn"
-OUTPUT_DIR="/data0/funato/hsp2/0_out/TCN/$LOC/regional/hp"
+OUTPUT_DIR="/data0/funato/hsp2/0_out/TCN/$LOC/$DATASET/regional/hp"
 MODEL_EPOCH=30
 
 # Core assignment for parallel execution. Jobs are bounded to MAX_CONCURRENT_JOBS and reuse cores
-# round-robin (not one taskset range per job) so the grid below (3*3*3*2*3=162 combos) doesn't try
-# to pin past the machine's actual core count - see run_tcn_hp_tuning.sh's analogous memory/CPU
-# oversubscription warning for why an unbounded launch loop is a real failure mode here.
+# round-robin (not one taskset range per job) so the grid below (3*2*3*2*2=72 combos, reduced for
+# the camels HP re-check) doesn't try to pin past the machine's actual core count - see
+# run_tcn_hp_tuning.sh's analogous memory/CPU oversubscription warning for why an unbounded launch
+# loop is a real failure mode here.
 START_CORE=100
 CORES_PER_JOB=5
 AVAILABLE_CORES=$(nproc --all 2>/dev/null || nproc)
@@ -33,11 +40,21 @@ fi
 
 # Hyperparameter grid (must match hp_str in main_tcn_hp.py:
 # f{num_filters}_k{kernel_size}_d{dropout}_lr{learning_rate}_lv{num_levels}_w{seq_length}_ns{no_static})
-NB_FILTERS=(32 64 128)
-KERNEL_SIZES=(3 5 7)
-DROPOUTS=(0.1 0.2 0.3)
-LEARNING_RATES=(0.001 0.0005)
-WINDOW_SIZES=(90 180 270)
+# CAMELS HP re-check -- must match run_tcn_hp_tuning.sh's actual regional training grid exactly
+# (see SELECTED_HYPERPARAMETERS.md "Camels" section), or this script won't find the run dirs.
+NB_FILTERS=(32 64 128) # unchanged -- caravan-selected=64 is the middle of 3
+KERNEL_SIZES=(
+    3
+    5
+    # 7  # camels re-check: dropped -- caravan-selected=3 (lowest of 3), neighbor is 5
+)
+DROPOUTS=(0.1 0.2 0.3) # unchanged -- caravan-selected=0.2 is the middle of 3
+LEARNING_RATES=(0.001 0.0005) # unchanged -- only 2 values, both always tested
+WINDOW_SIZES=(
+    # 90  # camels re-check: dropped -- caravan-selected=270 (highest of 3), neighbor is 180
+    180
+    270
+)
 NUM_LEVELS=6
 NO_STATIC=False
 
@@ -48,7 +65,7 @@ find_run_dir() {
     local d=$3
     local lr=$4
     local w=$5
-    local hp_dir="$RUNS_BASE/hp/$LOC/f${f}_k${k}_d${d}_lr${lr}_lv${NUM_LEVELS}_w${w}_ns${NO_STATIC}"
+    local hp_dir="$RUNS_BASE/hp/$LOC/$DATASET/f${f}_k${k}_d${d}_lr${lr}_lv${NUM_LEVELS}_w${w}_ns${NO_STATIC}"
     
     if [[ ! -d "$hp_dir" ]]; then
         echo "WARNING: HP directory not found: $hp_dir" >&2

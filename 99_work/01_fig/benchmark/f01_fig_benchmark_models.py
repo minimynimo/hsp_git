@@ -8,7 +8,7 @@ loc = "US"
 # create a png file for each benchmark metric. each png should include two figures next to each other, each representing calibration and evaluation results. 
 # for each figure, plot the benchmark metric on the y-axis and the model on the x-axis bt using a box plot 
 # also plot the cdf of the benchmark metric as another set with the x axis as the benchmark metric and the y-axis as the cdf value with labels with different colors for each model
-model_list = ["HBV","HYPER", "RF", "XGB", "TCN", "LSTM"]
+model_list = ["HBV", "RF", "XGB", "TCN", "LSTM"]
 
 output_dir_box = f"/data0/funato/hsp2/0_out/1_fig/{loc}/benchmark/box"
 output_dir_cdf = f"/data0/funato/hsp2/0_out/1_fig/{loc}/benchmark/cdf"
@@ -21,7 +21,7 @@ benchmark_list = ["KGE", "NSE", "E1", "VE", "d", "RMSE", "MAE"]
 
 # us_file_num.csv is filtered (by us_basin_filter.py) to only the basins with complete
 # Obs flow/Precip/Temp/PET data over the full calibration+evaluation period.
-basin_ids = pd.read_csv("/data0/funato/hsp2/3_gis_data/US/0_data/river_basin/dataset_US/us_file_num.csv")["gauge_id"].str.replace("camels_", "", regex=False).astype(int).tolist()
+basin_ids = pd.read_csv("/data0/funato/hsp2/3_gis_data/US/0_data/river_basin/dataset_US/us_camels_file_num.csv")["gauge_id"].str.replace("camels_", "", regex=False).astype(int).tolist()
 
 
 benchmark_limits = {
@@ -55,13 +55,15 @@ color_list = {
     "LSTM": "#9808B2"    # Purple
 }
 
-# Tags match the selected hyperparameters in SELECTED_HYPERPARAMETERS.md (Regional),
-# verified against the actual filenames present under 0_out/{model}/{loc}/regional/results.
+# Tags match the selected hyperparameters in SELECTED_HYPERPARAMETERS_camels.md (Regional),
+# verified against the actual filenames present under 0_out/{model}/{loc}/camels/regional/results.
+# NOTE: TCN regional's selected NB_FILTERS is 32 (see SELECTED_HYPERPARAMETERS_camels.md), but
+# only the n64 combo has a production regional run on disk -- using n64 until n32 is (re)trained.
 param_tag_dict = {
-    "RF": "_n500_d15_s5_l10_mfsqrt_ms0.8_w270_nsFalse",
-    "XGB": "_ns0_n1000_d7_lr0.05_sub0.8_col0.7_sl270",
-    "TCN": "_n64_k3_d0.2_nsFalse_sl270",
-    "LSTM": "_nsFalse_csFalse_hs128_do0.2_e30_sl365"
+    "RF": "_n300_d30_s5_l20_mfsqrt_ms0.8_w270_nsFalse",
+    "XGB": "_ns0_n1000_d7_lr0.1_sub0.7_col0.7_sl270",
+    "TCN": "_n64_k5_d0.2_nsFalse_sl180",
+    "LSTM": "_nsFalse_csFalse_hs64_do0.4_e30_sl365"
 }
 
 
@@ -74,19 +76,26 @@ for benchmark in benchmark_list:
     for model in model_list:
         print(f"Processing model: {model}")
 
-        # LSTM's canonical regional output lives under regional_ealstm (produced by
-        # ealstm_regional_modeling/eval.py), not the legacy no_static-only regional/ dir.
-        regional_dir_name = "regional_ealstm" if model == "LSTM" else "regional"
-        base_path = f"/data0/funato/hsp2/0_out/{model}/{loc}/{regional_dir_name}/results"
+        # camels/regional is the canonical CAMELS-era output dir for all four ML models
+        # (there is no separate _ealstm dir under camels/ -- that split only exists under
+        # the legacy caravan/ tree).
+        base_path = f"/data0/funato/hsp2/0_out/{model}/{loc}/camels/regional/results"
 
         if model == "HYPER":
-            input_file_cal = f"/data0/funato/hsp2/0_out/HYPER/{loc}/results/HYPER_results_cal.csv"
-            input_file_eva = f"/data0/funato/hsp2/0_out/HYPER/{loc}/results/HYPER_results_eva.csv"
+            # NOTE: HYPER/{loc}/results is currently empty on disk -- the only HYPER production
+            # run found (HYPER/{loc}/1993_2006/results, 614 basins, "file_num" column) could not
+            # be confirmed as the CAMELS 637-basin set, so this path is left as-is rather than
+            # guessed. See summary for details.
+            input_file_cal = f"/data0/funato/hsp2/0_out/HYPER/{loc}/camels/results/HYPER_results_cal.csv"
+            input_file_eva = f"/data0/funato/hsp2/0_out/HYPER/{loc}/camels/results/HYPER_results_eva.csv"
             col_name_cal = f"HYPER_{benchmark}_cal"
             col_name_eva = f"HYPER_{benchmark}_eva"
         elif model == "HBV":
-            input_file_cal = f"/data0/funato/hsp2/0_out/HBV/{loc}/results/HBV_results_cal.csv"
-            input_file_eva = f"/data0/funato/hsp2/0_out/HBV/{loc}/results/HBV_results_eva.csv"
+            # NOTE: HBV/{loc}/camels output layout is in flux on disk (a run currently in
+            # progress moved the prior results into a dated 1980_2010/ subfolder), so this
+            # path is left as-is rather than guessed. See summary for details.
+            input_file_cal = f"/data0/funato/hsp2/0_out/HBV/{loc}/camels/results/HBV_results_cal.csv"
+            input_file_eva = f"/data0/funato/hsp2/0_out/HBV/{loc}/camels/results/HBV_results_eva.csv"
             col_name_cal = f"HBV_{benchmark}_cal"
             col_name_eva = f"HBV_{benchmark}_eva"
         else:

@@ -30,12 +30,16 @@ from run_LSTM import load_data
 from run_LSTM import reshape_data
 from lstm_indiv_resume import load_completed_basins
 
+# Selected via the camels individual HP re-check (48/48 combos, 160-basin HP-search subset) --
+# see SELECTED_HYPERPARAMETERS_camels.md. window_size/dropout_rate/learning_rate differ from the
+# old caravan selection (was window_size=365, dropout=0.4, lr=0.0005 -- see
+# SELECTED_HYPERPARAMETERS_caravan.md).
 num_epochs = 100 # Number of training epochs
 hidden_size = 32 # Number of LSTM cells
-learning_rate = 0.0005 # Learning rate used to update the weights
-window_size = 365 # Length of the meteorological record provided to the network
+learning_rate = 0.001 # Learning rate used to update the weights
+window_size = 270 # Length of the meteorological record provided to the network
 batch_size = 64 # Number of samples in each batch
-dropout_rate = 0.4 # Dropout rate of the final fully connected Layer [0.0, 1.0]
+dropout_rate = 0.5 # Dropout rate of the final fully connected Layer [0.0, 1.0]
 
 #loc, ver = "JP", 2
 loc, ver = "US", 2

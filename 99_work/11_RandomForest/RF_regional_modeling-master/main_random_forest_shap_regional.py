@@ -66,8 +66,6 @@ def main():
     parser.add_argument('--run_dir', type=str, required=True, help='RF_regional_modeling-master run_dir to explain')
     parser.add_argument('--n_basins', type=int, default=10, help='Number of basins to sample for the SHAP explanation set')
     parser.add_argument('--n_dates_per_basin', type=int, default=5, help='Number of evenly-spaced eval-period dates per basin')
-    parser.add_argument('--background_basins', type=int, default=30, help='Number of basins to draw the background set from')
-    parser.add_argument('--background_size', type=int, default=50, help='Number of background (training-period) samples for SHAP')
     parser.add_argument('--seed', type=int, default=42)
     args = parser.parse_args()
 
@@ -127,28 +125,22 @@ def main():
     X_explain_df = pd.DataFrame(X_explain, columns=feature_names)
     print(f"Explanation set: {X_explain_df.shape}")
 
-    # --- Background set: training-period samples drawn from a wider basin pool ---
-    print(f"Building background set from {args.background_basins} basins...")
-    background_basins = rng.choice(all_basins, size=min(args.background_basins, len(all_basins)), replace=False)
-    X_bg_list = []
-    for basin in background_basins:
-        static_scaled = None if no_static else static_attrs_scaled[basin]
-        sequences, dates, _ = build_basin_samples(basin, train_start, train_end, run_cfg, basin_scalers, static_scaled)
-        if sequences is None or len(sequences) == 0:
-            continue
-        X_bg_list.append(sequences)
-    X_bg = np.vstack(X_bg_list)
-    if len(X_bg) > args.background_size:
-        bg_idx = rng.choice(len(X_bg), size=args.background_size, replace=False)
-        X_bg = X_bg[bg_idx]
-    X_bg_df = pd.DataFrame(X_bg, columns=feature_names)
-    print(f"Background set: {X_bg_df.shape}")
-
     print("Verifying explained model matches the loaded checkpoint (faithfulness check)...")
     direct_pred = model.predict(X_explain_df.values)
 
-    print("Running SHAP (TreeExplainer)...")
-    explainer = shap.TreeExplainer(model, data=X_bg_df, feature_perturbation="interventional")
+    # feature_perturbation="interventional" (the original choice here, and what every other
+    # model family's regional SHAP script uses) segfaults on this run's model reproducibly --
+    # confirmed 2026-09-22 with shap==0.51.0: same crash with the default 8-core taskset, with
+    # ulimit -s unlimited, and pinned to a single core, so it's not a stack-size or threading
+    # issue. This model's max_depth=30 (the camels-selected regional value, vs. 15 for the
+    # caravan-selected regional model that ran interventional SHAP fine in the past) -- shap's
+    # C TreeExplainer has a known issue with very deep/unbalanced trees under interventional
+    # perturbation. "tree_path_dependent" mode doesn't need (or use) a background dataset at
+    # all -- it estimates coverage from each tree's own training statistics -- so the
+    # background-set-building block that used to sit here is gone along with the now-unused
+    # --background_basins/--background_size args.
+    print("Running SHAP (TreeExplainer, tree_path_dependent)...")
+    explainer = shap.TreeExplainer(model, feature_perturbation="tree_path_dependent")
     shap_values = explainer(X_explain_df)
 
     shap_pred_check = shap_values.base_values + shap_values.values.sum(axis=1)

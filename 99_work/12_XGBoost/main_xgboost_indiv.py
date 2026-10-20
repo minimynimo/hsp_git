@@ -50,15 +50,17 @@ else:  # caravan
 print(f"[main_xgboost_indiv] loc={loc} dataset={dataset!r} "
       f"cal={start_date_cal}..{end_date_cal} eva={start_date_eva}..{end_date_eva}")
 
-# Selected via the individual HP grid search (486/486 combos complete, post shift-alignment-fix
-# rerun) -- see SELECTED_HYPERPARAMETERS.md and DEBUG_README.md §16.13. colsample_bytree was a
-# tie between 0.8 and 0.7; 0.8 kept.
+# Selected via the camels individual HP re-check (96/96 combos, 638 basins) -- see
+# SELECTED_HYPERPARAMETERS_camels.md. subsample/colsample_bytree/min_child_weight differ from
+# the old caravan selection (was ss=0.5, cbt=0.8, mcw=20 -- see
+# SELECTED_HYPERPARAMETERS_caravan.md); this grid's NSE spread is flat/low across the top ~10
+# rows, so treat the winner as fairly arbitrary among close alternatives.
 n_estimators = 500
 max_depth = 2
 learning_rate = 0.01
-subsample = 0.5
-colsample_bytree = 0.8
-min_child_weight = 20
+subsample = 0.6
+colsample_bytree = 1.0
+min_child_weight = 10
 
 param_tag = f"n{n_estimators}_d{max_depth}_lr{learning_rate}_ss{subsample}_cbt{colsample_bytree}_mcw{min_child_weight}"
 

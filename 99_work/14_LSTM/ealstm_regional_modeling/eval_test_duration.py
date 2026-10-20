@@ -545,7 +545,7 @@ def main():
     # needed. The wide cal/eva/synthetic matrices above are still written too, for backward
     # compatibility with anything else that reads them.
     scenario_predictions["og"] = og_series_by_basin
-    save_regional_predictions_long_format("LSTM", loc, scenario_predictions, basins)
+    save_regional_predictions_long_format("LSTM", loc, scenario_predictions, basins, dataset=cfg.get('dataset', 'camels'), regional_subdir="regional_1987_2006")
 
 
 if __name__ == "__main__":

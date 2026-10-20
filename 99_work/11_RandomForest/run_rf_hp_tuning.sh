@@ -45,18 +45,35 @@ if [ ! -f "$PYTHON_CMD" ]; then
 fi
 
 # Hyperparameter grids based on model type (per /data0/funato/hsp2/HYPERPARAMETERS.md)
-if [ "$MODEL_TYPE" == "regional" ]; then # 24
+if [ "$MODEL_TYPE" == "regional" ]; then # 24 -- CAMELS HP re-check: every value here already
+    # falls out of the "selected value + neighbor(s)" rule unchanged (2-value params always keep
+    # both; MIN_SAMPLES_LEAF's caravan-selected=10 is the middle of 3, so all 3 stay), so this
+    # grid is identical to the original caravan regional grid.
     N_ESTIMATORS=(300 500)
     MIN_SAMPLES_LEAF=(5 10 20)
     MAX_DEPTH=(15 30)
     MAX_FEATURES=("sqrt" 0.33)
     SCRIPT_PATH="/data0/funato/hsp2/99_work/11_RandomForest/RF_regional_modeling-master/main_rf_hp.py"
     LOG_DIR="/data0/funato/hsp2/99_work/11_RandomForest/RF_regional_modeling-master/logs"
-elif [ "$MODEL_TYPE" == "individual" ]; then # 54
-    N_ESTIMATORS=(100 300 500)
-    MIN_SAMPLES_LEAF=(5 10 20)
-    MAX_DEPTH=(5 10 15)
-    MAX_FEATURES=("sqrt" 0.33)
+elif [ "$MODEL_TYPE" == "individual" ]; then # 16 -- CAMELS HP re-check (see SELECTED_HYPERPARAMETERS.md
+    # "Camels" section): only the caravan-selected value + its immediate grid neighbor(s) per
+    # parameter are tested, to confirm caravan's selection still wins on camels.
+    N_ESTIMATORS=(
+        # 100  # camels re-check: dropped -- caravan-selected=500 (highest of 3), neighbor is 300
+        300
+        500
+    )
+    MIN_SAMPLES_LEAF=(
+        # 5  # camels re-check: dropped -- caravan-selected=20 (highest of 3), neighbor is 10
+        10
+        20
+    )
+    MAX_DEPTH=(
+        5
+        10
+        # 15  # camels re-check: dropped -- caravan-selected=5 (lowest of 3), neighbor is 10
+    )
+    MAX_FEATURES=("sqrt" 0.33) # unchanged -- only 2 values, both always tested
     SCRIPT_PATH="/data0/funato/hsp2/99_work/11_RandomForest/main_random_forest_indiv_hp.py"
     LOG_DIR="/data0/funato/hsp2/99_work/11_RandomForest/logs"
 else

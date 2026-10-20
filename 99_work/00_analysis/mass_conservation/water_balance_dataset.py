@@ -10,12 +10,18 @@ plt.style.use('default')
 sns.set_palette("husl")
 
 # Configuration
-model_list = ["SACSMA", "BC", "RF", "XGB", "TCN", "LSTM"]
+model_list = ["HBV", "RF", "XGB", "TCN", "LSTM"]
 
 #loc,  file_tot_num = "GB", 424
-loc, file_tot_num = "US", 614
+loc, datasetname = "US", "camels"
 
-start_date_cal = "1993-01-01"
+# us_camels_file_num.csv is filtered (by us_basin_filter.py) to only the basins with complete
+# Obs flow/Precip/Temp/PET data over the full calibration+evaluation period.
+basin_list_df = pd.read_csv(f"/data0/funato/hsp2/3_gis_data/{loc}/0_data/river_basin/dataset_{loc}/us_{datasetname}_file_num.csv")
+basin_list = list(zip(basin_list_df["File_num"], basin_list_df["gauge_id"].str.replace("camels_", "", regex=False)))
+
+# Production camels split (see ADAPTATION_TO_CAMELS.md)
+start_date_cal = "1987-01-01"
 end_date_cal = "2000-12-31"
 start_date_eva = "2001-01-01"
 end_date_eva = "2006-12-31"
@@ -41,13 +47,13 @@ print(f"Evaluation period: {start_date_eva} to {end_date_eva}")
 
 # First, calculate ET using observed data
 print("Processing observed data...")
-for file in range(1, file_tot_num + 1):
+for file, gauge_id in basin_list:
     if file % 50 == 0 or file == 1:
         print(f"  Processing file: {file}")
 
-    
-    # Read SACSMA file for observed data
-    input_file = f"{input_dir_base}/SACSMA/varssim_SACSMA/varssim{file:03d}.csv"
+
+    # Read the camels forcing file (shared by all models) for observed data
+    input_file = f"/data0/funato/hsp2/2_MERV/{datasetname}/varssim_{loc}/varssim_{gauge_id}.csv"
     
     if not os.path.exists(input_file):
         continue
@@ -106,18 +112,16 @@ print(f"Processed observed data for {len([d for d in water_balance_data if d['Mo
 for model in model_list:
     print(f"Processing model: {model}")
     
-    for file in range(1, file_tot_num + 1):
+    for file, gauge_id in basin_list:
         if file % 50 == 0 or file == 1:
             print(f"  Processing file: {file}")
-        
-        
-        # Determine input file path based on model
-        if model == "SACSMA":
-            input_file = f"{input_dir_base}/{model}/varssim_{model}/varssim{file:03d}.csv"
-        elif model == "BC":
-            input_file = f"{input_dir_base}/{model}/varssim_{model}/varssim{file:03d}.csv"
+
+
+        # Determine input file path based on model (camels layout)
+        if model == "HBV":
+            input_file = f"{input_dir_base}/{model}/{loc}/{datasetname}/varssim_{model}/varssim_{gauge_id}.csv"
         else:
-            input_file = f"{input_dir_base}/{model}/GB/regional/varssim_{model}/varssim{file:03d}.csv"
+            input_file = f"{input_dir_base}/{model}/{loc}/{datasetname}/regional/varssim_{model}/varssim_{gauge_id}.csv"
         
         if not os.path.exists(input_file):
             continue

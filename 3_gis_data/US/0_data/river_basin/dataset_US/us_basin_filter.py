@@ -85,10 +85,10 @@ if dataset == "caravan":
     start_date_eva = "2001-01-01"
     end_date_eva = "2006-12-31"
 elif dataset == "camels":
-    start_date_cal = "1981-01-01"
-    end_date_cal = "1995-12-31"
-    start_date_eva = "1996-01-01"
-    end_date_eva = "2010-12-31"
+    start_date_cal = "1987-01-01"
+    end_date_cal = "2000-12-31"
+    start_date_eva = "2001-01-01"
+    end_date_eva = "2006-12-31"
 
 date_range_cal = pd.date_range(start_date_cal, end_date_cal, freq="D")
 date_range_cal_eva = pd.date_range(start_date_cal, end_date_eva, freq="D")

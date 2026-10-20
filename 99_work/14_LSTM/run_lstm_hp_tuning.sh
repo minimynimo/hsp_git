@@ -66,13 +66,24 @@ fi
 #   - learning_rate: {0.001,0.0005,0.0001}
 #   - seq_length: {270,365} (CLI-overridable on this canonical script, unlike the legacy one)
 #   - batch_size: {256,512}
-# Grid size: 3 x 2 x 3 x 2 x 2 = 72 combinations. Compute budget (n_basins/epochs) is fixed at
-# REGIONAL_N_BASINS/REGIONAL_EPOCHS below, matching run_lstm_hp_tuning_regional.sh's defaults.
-REGIONAL_HIDDEN_SIZE=(64 128 256)
-REGIONAL_DROPOUT=(0.2 0.4)
-REGIONAL_LEARNING_RATE=(0.001 0.0005 0.0001)
-REGIONAL_SEQ_LENGTH=(270 365)
-REGIONAL_BATCH_SIZE=(256 512)
+# Grid size: 3 x 2 x 3 x 2 x 2 = 72 combinations (full grid). Compute budget (n_basins/epochs) is
+# fixed at REGIONAL_N_BASINS/REGIONAL_EPOCHS below, matching run_lstm_hp_tuning_regional.sh's
+# defaults.
+#
+# CAMELS HP re-check (see SELECTED_HYPERPARAMETERS.md "Camels" section): only the
+# caravan-selected value + immediate grid neighbor(s) per parameter are tested. Reduced grid
+# size: 3 x 2 x 2 x 2 x 2 = 48 combinations. Kept in sync with
+# ealstm_regional_modeling/run_lstm_hp_tuning_regional.sh's REGIONAL_* arrays, which is the
+# canonical script actually used to launch the regional camels re-check.
+REGIONAL_HIDDEN_SIZE=(64 128 256) # unchanged -- caravan-selected=128 is the middle of 3
+REGIONAL_DROPOUT=(0.2 0.4) # unchanged -- only 2 values, both always tested
+REGIONAL_LEARNING_RATE=(
+    0.001
+    0.0005
+    # 0.0001  # camels re-check: dropped -- caravan-selected=0.001 (highest of 3), neighbor is 0.0005
+)
+REGIONAL_SEQ_LENGTH=(270 365) # unchanged -- only 2 values, both always tested
+REGIONAL_BATCH_SIZE=(256 512) # unchanged -- only 2 values, both always tested
 REGIONAL_N_BASINS=40
 REGIONAL_EPOCHS=10
 REGIONAL_LOC="US"
@@ -89,12 +100,21 @@ REGIONAL_DATASET="camels"
 #   - learning_rate: {0.001,0.0005}
 #   - seq_length: {270,365}
 #   - batch_size: {64,128} (main_LSTM_indiv_hp.py accepts --batch_size, default 256)
-# Grid size: 4 x 2 x 2 x 2 x 2 = 64 combinations.
-INDIVIDUAL_HIDDEN_SIZE=(16 32 64 128)
-INDIVIDUAL_DROPOUT=(0.4 0.5)
-INDIVIDUAL_LEARNING_RATE=(0.001 0.0005)
-INDIVIDUAL_SEQ_LENGTH=(270 365)
-INDIVIDUAL_BATCH_SIZE=(64 128)
+# Grid size: 4 x 2 x 2 x 2 x 2 = 64 combinations (full grid).
+#
+# CAMELS HP re-check (see SELECTED_HYPERPARAMETERS.md "Camels" section): only the
+# caravan-selected value + immediate grid neighbor(s) per parameter are tested. Reduced grid
+# size: 3 x 2 x 2 x 2 x 2 = 48 combinations.
+INDIVIDUAL_HIDDEN_SIZE=(
+    16
+    32
+    64
+    # 128  # camels re-check: dropped -- caravan-selected=32 (2nd of 4), neighbors are 16 and 64
+)
+INDIVIDUAL_DROPOUT=(0.4 0.5) # unchanged -- only 2 values, both always tested
+INDIVIDUAL_LEARNING_RATE=(0.001 0.0005) # unchanged -- only 2 values, both always tested
+INDIVIDUAL_SEQ_LENGTH=(270 365) # unchanged -- only 2 values, both always tested
+INDIVIDUAL_BATCH_SIZE=(64 128) # unchanged -- only 2 values, both always tested
 # 'camels' (default): built directly from raw CAMELS-US, full 1980-2014 record --
 # main_LSTM_indiv_hp.py sub-splits its own HP-search train/val window (1990-1998/1999-2000)
 # strictly inside production's 1987-2000 calibration period. 'caravan': older Caravan-derived

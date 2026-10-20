@@ -10,8 +10,8 @@ loc = "US"
 fs = 20
 
 # Configuration
-model_list = ["HBV", "BC","RF", "XGB", "TCN", "LSTM"]  # Can be expanded if needed
-input_dir = f"/data0/funato/hsp2/0_out/analysis/no_precip_discharge"
+model_list = ["HBV", "RF", "XGB", "TCN", "LSTM"]  # Can be expanded if needed
+input_dir = f"/data0/funato/hsp2/0_out/analysis/{loc}/no_precip_discharge"
 output_fig_dir = f"/data0/funato/hsp2/0_out/1_fig/{loc}/no_precip_discharge_dailymean_use"
 
 # Ensure output directory exists
@@ -89,7 +89,7 @@ for median in bp3['medians']:
     median.set_color('black')
     median.set_linewidth(2)
 #plt.title('Daily Mean Discharge', fontsize=fs)
-plt.ylabel('Daily Mean Discharge [m³/s]', fontsize=fs)
+plt.ylabel('Daily Mean Discharge [mm/d]', fontsize=fs)
 plt.xlabel('Model', fontsize=fs)
 plt.tick_params(labelsize=fs)
 plt.ylim(-0.1, max([np.max(all_discharge_data[model]) for model in valid_models])*1.01)

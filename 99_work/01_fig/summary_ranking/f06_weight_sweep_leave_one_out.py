@@ -27,10 +27,9 @@ TERNARY_RESOLUTION = 100
 TERNARY_SCALE = 100.0 
 
 # Model names and the color palette
-model_list = ["HBV", "BC", "RF", "XGB", "TCN", "LSTM"]
+model_list = ["HBV", "RF", "XGB", "TCN", "LSTM"]
 color_list = {
     "HBV": "#7B7B7B",    # Medium Grey
-    "BC": "#628AE8",   # Steel Blue
     "RF": "#FF7F00",      # Orange
     "XGB": "#9C4803",    # Dark Orange
     "TCN": "#E41A1C",     # Red
@@ -39,7 +38,7 @@ color_list = {
 fs = 20 
 
 # --- Input Data: Plausibility Ranks ---
-rank_file = "/data0/funato/hsp2/0_out/analysis/summary_ranking_multi/automated_ranks/automated_plausibility_ranks.csv"
+rank_file = f"/data0/funato/hsp2/0_out/analysis/{loc}/summary_ranking_multi/automated_ranks/automated_plausibility_ranks.csv"
 
 if not os.path.exists(rank_file):
     print(f"Error: Rank file not found at {rank_file}")

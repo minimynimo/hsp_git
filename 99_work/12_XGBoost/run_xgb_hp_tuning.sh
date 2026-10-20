@@ -22,15 +22,20 @@
 # and taskset ranges are now derived strictly from StartCore/NumCores, and ModelType selects
 # exactly one grid.
 #
-# Grid is the authoritative one from /data0/funato/hsp2/HYPERPARAMETERS.md (see DEBUG_README.md
-# for the correction from the old, narrower grid this script used to sweep):
+# Grid was originally the full one from /data0/funato/hsp2/HYPERPARAMETERS.md (see
+# DEBUG_README.md for the correction from the old, narrower grid this script used to sweep):
 #
-#   Individual: N_ESTIMATORS{500,1000} x SUBSAMPLE{0.5,0.6,0.7} x COLSAMPLE_BY_TREE{0.7,0.8,1.0}
+#   Individual (full): N_ESTIMATORS{500,1000} x SUBSAMPLE{0.5,0.6,0.7} x COLSAMPLE_BY_TREE{0.7,0.8,1.0}
 #               x LEARNING_RATE{0.01,0.05,0.1} x MAX_DEPTH{2,3,4} x MIN_CHILD_WEIGHT{5,10,20}
 #               = 486 combinations
-#   Regional:   N_ESTIMATORS{500,1000} x SUBSAMPLE{0.7,0.8,1.0} x COLSAMPLE_BY_TREE{0.7,0.8,1.0}
+#   Regional (full):   N_ESTIMATORS{500,1000} x SUBSAMPLE{0.7,0.8,1.0} x COLSAMPLE_BY_TREE{0.7,0.8,1.0}
 #               x LEARNING_RATE{0.01,0.05,0.1} x MAX_DEPTH{3,5,7} x MIN_CHILD_WEIGHT{1,3,5}
 #               = 486 combinations
+#
+# CAMELS HP re-check (current state, see SELECTED_HYPERPARAMETERS.md "Camels" section): reduced
+# to the caravan-selected value + immediate grid neighbor(s) per parameter -- Individual = 96
+# combinations, Regional = 144 combinations. See the *_COLSAMPLE_BYTREE/*_LEARNING_RATES/
+# *_SUBSAMPLE/*_MAX_DEPTHS/*_MIN_CHILD_WEIGHT arrays below for exactly which values were dropped.
 
 if [ "$#" -ne 3 ]; then
     echo "Usage: $0 <StartCore> <NumCores> <ModelType>"
@@ -88,15 +93,52 @@ CORES_PER_JOB=2
 MAX_PARALLEL_JOBS=$(( NUM_CORES / CORES_PER_JOB ))
 if [ "$MAX_PARALLEL_JOBS" -lt 1 ]; then MAX_PARALLEL_JOBS=1; fi
 
-N_ESTIMATORS=(500 1000)
-COLSAMPLE_BYTREE=(0.7 0.8 1.0)
-LEARNING_RATES=(0.01 0.05 0.1)
-REGIONAL_SUBSAMPLE=(0.7 0.8 1.0)
-INDIVIDUAL_SUBSAMPLE=(0.5 0.6 0.7)
-REGIONAL_MAX_DEPTHS=(3 5 7)
-INDIVIDUAL_MAX_DEPTHS=(2 3 4)
-REGIONAL_MIN_CHILD_WEIGHT=(1 3 5)
-INDIVIDUAL_MIN_CHILD_WEIGHT=(5 10 20)
+# CAMELS HP re-check (see SELECTED_HYPERPARAMETERS.md "Camels" section): only the
+# caravan-selected value + its immediate grid neighbor(s) per parameter are tested, to confirm
+# caravan's selection still wins on camels. COLSAMPLE_BYTREE and LEARNING_RATES used to be single
+# arrays shared by both model types; they're now split per model type like SUBSAMPLE/MAX_DEPTHS/
+# MIN_CHILD_WEIGHT below, since the caravan-selected value (and therefore which neighbor(s) to
+# keep) differs between individual and regional.
+N_ESTIMATORS=(500 1000) # unchanged -- only 2 values, both always tested (both model types)
+REGIONAL_COLSAMPLE_BYTREE=(
+    0.7
+    0.8
+    # 1.0  # camels re-check: dropped -- caravan-selected=0.7 (lowest of 3), neighbor is 0.8
+)
+INDIVIDUAL_COLSAMPLE_BYTREE=(0.7 0.8 1.0) # unchanged -- caravan-selected=0.8, tied with 0.7;
+    # 0.8 is the middle value of 3, whose neighbor rule alone already requires all 3
+REGIONAL_LEARNING_RATES=(0.01 0.05 0.1) # unchanged -- caravan-selected=0.05 is the middle of 3
+INDIVIDUAL_LEARNING_RATES=(
+    0.01
+    0.05
+    # 0.1  # camels re-check: dropped -- caravan-selected=0.01 (lowest of 3), neighbor is 0.05
+)
+REGIONAL_SUBSAMPLE=(0.7 0.8 1.0) # unchanged -- caravan-selected=0.8 is the middle of 3
+INDIVIDUAL_SUBSAMPLE=(
+    0.5
+    0.6
+    # 0.7  # camels re-check: dropped -- caravan-selected=0.5 (lowest of 3), neighbor is 0.6
+)
+REGIONAL_MAX_DEPTHS=(
+    # 3  # camels re-check: dropped -- caravan-selected=7 (highest of 3), neighbor is 5
+    5
+    7
+)
+INDIVIDUAL_MAX_DEPTHS=(
+    2
+    3
+    # 4  # camels re-check: dropped -- caravan-selected=2 (lowest of 3), neighbor is 3
+)
+REGIONAL_MIN_CHILD_WEIGHT=(
+    # 1  # camels re-check: dropped -- caravan-selected=5 (highest of 3), neighbor is 3
+    3
+    5
+)
+INDIVIDUAL_MIN_CHILD_WEIGHT=(
+    # 5  # camels re-check: dropped -- caravan-selected=20 (highest of 3), neighbor is 10
+    10
+    20
+)
 
 # 'camels' (default): built directly from raw CAMELS-US, full 1980-2014 record -- both
 # main_xgb_hp.py and main_xgboost_indiv_hp.py sub-split their own HP-search window
@@ -104,9 +146,10 @@ INDIVIDUAL_MIN_CHILD_WEIGHT=(5 10 20)
 # older Caravan-derived extraction (1987-2006 only).
 DATASET="camels"
 
+TOTAL_XGB_COMBINATIONS=$(( ${#N_ESTIMATORS[@]} * ${#MAX_DEPTHS[@]} * ${#LEARNING_RATES[@]} * ${#SUBSAMPLE[@]} * ${#COLSAMPLE_BYTREE[@]} * ${#MIN_CHILD_WEIGHT[@]} ))
 echo "Starting XGBoost Hyperparameter Tuning ($MODEL_TYPE)"
 echo "========================================"
-echo "Combinations: 486"
+echo "Combinations: $TOTAL_XGB_COMBINATIONS"
 echo "Core budget: $NUM_CORES cores (${START_CORE}-$((START_CORE + NUM_CORES - 1)))"
 echo "Max parallel jobs: $MAX_PARALLEL_JOBS (${CORES_PER_JOB} cores/job)"
 echo ""
@@ -122,6 +165,8 @@ wait_for_slot() {
 
 if [ "$MODEL_TYPE" = "regional" ]; then
     SCRIPT="$REGIONAL_SCRIPT"
+    COLSAMPLE_BYTREE=("${REGIONAL_COLSAMPLE_BYTREE[@]}")
+    LEARNING_RATES=("${REGIONAL_LEARNING_RATES[@]}")
     SUBSAMPLE=("${REGIONAL_SUBSAMPLE[@]}")
     MAX_DEPTHS=("${REGIONAL_MAX_DEPTHS[@]}")
     MIN_CHILD_WEIGHT=("${REGIONAL_MIN_CHILD_WEIGHT[@]}")
@@ -134,6 +179,8 @@ if [ "$MODEL_TYPE" = "regional" ]; then
     SEED_ARGS=(--seed 42)
 else
     SCRIPT="$INDIVIDUAL_SCRIPT"
+    COLSAMPLE_BYTREE=("${INDIVIDUAL_COLSAMPLE_BYTREE[@]}")
+    LEARNING_RATES=("${INDIVIDUAL_LEARNING_RATES[@]}")
     SUBSAMPLE=("${INDIVIDUAL_SUBSAMPLE[@]}")
     MAX_DEPTHS=("${INDIVIDUAL_MAX_DEPTHS[@]}")
     MIN_CHILD_WEIGHT=("${INDIVIDUAL_MIN_CHILD_WEIGHT[@]}")
@@ -158,7 +205,7 @@ for n_est in "${N_ESTIMATORS[@]}"; do
                         core_offset=$((core_offset + 1))
 
                         LOG_FILE="${LOG_DIR}/hp_tuning_${MODEL_TYPE}_n${n_est}_d${max_d}_lr${lr}_ss${ss}_cbt${cbt}_mcw${mcw}.log"
-                        echo "${MODEL_TYPE} job ${job_id}/486: n=${n_est} d=${max_d} lr=${lr} ss=${ss} cbt=${cbt} mcw=${mcw} (cores ${core_start}-${core_end})"
+                        echo "${MODEL_TYPE} job ${job_id}/${TOTAL_XGB_COMBINATIONS}: n=${n_est} d=${max_d} lr=${lr} ss=${ss} cbt=${cbt} mcw=${mcw} (cores ${core_start}-${core_end})"
 
                         taskset -c ${core_start}-${core_end} $PYTHON $SCRIPT "${EXTRA_ARGS[@]}" \
                             --n_estimators "$n_est" \

@@ -251,9 +251,18 @@ def get_args() -> Dict:
     parser.add_argument('--kernel_size', type=int, default=3)
     parser.add_argument('--num_filters', type=int, default=64)
     parser.add_argument('--num_channels', type=int, nargs='+', default=None)
+    # Override for GLOBAL_SETTINGS['seq_length'] (270) -- added because the camels regional HP
+    # re-check (SELECTED_HYPERPARAMETERS_camels.md) selected window_size=180, different from
+    # caravan's 270, and seq_length previously had no CLI knob at all (cfg.update(GLOBAL_SETTINGS)
+    # below would silently clobber it otherwise). Left as None by default so a caller that never
+    # passes --seq_length keeps today's unchanged 270 behavior.
+    parser.add_argument('--seq_length', type=int, default=None)
 
     cfg = vars(parser.parse_args())
+    seq_length_override = cfg.pop('seq_length')
     cfg.update(GLOBAL_SETTINGS)
+    if seq_length_override is not None:
+        cfg['seq_length'] = seq_length_override
     cfg.update(DATASET_SETTINGS[cfg["dataset"]])
     # Ensure TCN channel definition matches eval_regional/eval_adapted logic.
     # If num_filters/num_levels are provided, derive num_channels from them.

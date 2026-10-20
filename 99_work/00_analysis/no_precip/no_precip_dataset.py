@@ -2,12 +2,20 @@ import os
 import pandas as pd
 import numpy as np
 
-model_list = ["HBV","BC", "RF", "XGB", "TCN","LSTM"]
+model_list = ["HBV", "RF", "XGB", "TCN","LSTM"]
 
 #loc, file_tot_num = "GB", 424
-loc, file_tot_num = "US", 614
+loc, datasetname = "US", "camels"
 
-start_date_cal = "1993-01-01"
+# us_camels_file_num.csv is filtered (by us_basin_filter.py) to only the basins with complete
+# Obs flow/Precip/Temp/PET data over the full calibration+evaluation period.
+basin_list_df = pd.read_csv(f"/data0/funato/hsp2/3_gis_data/{loc}/0_data/river_basin/dataset_{loc}/us_{datasetname}_file_num.csv")
+basin_list = list(zip(basin_list_df["File_num"], basin_list_df["gauge_id"].str.replace("camels_", "", regex=False)))
+
+# Production camels split (see ADAPTATION_TO_CAMELS.md). NOTE: HBV's zero-precip forcing starts
+# 2001-01-01, while the camels ML forcing (2_MERV/camels/varssim_US) is zero from 1996-01-01;
+# both are zero over start_date_zero..end_date_eva, so this window is comparable.
+start_date_cal = "1987-01-01"
 end_date_cal = "2000-12-31"
 start_date_eva = "2001-01-01"
 end_date_eva = "2006-12-31"
@@ -24,13 +32,13 @@ os.makedirs(output_dir, exist_ok=True)
 for model in model_list:
     model_discharge_values = []
     
-    for file in range(1, file_tot_num + 1):
+    for file, gauge_id in basin_list:
         if file % 50 == 0 or file == 1:
             print(f"Processing model: {model}, file number: {file}")
-        if model == "HBV" or model == "BC":
-            input_file = f"/data0/funato/hsp2/0_out/{model}/varssim_{model}/varssim{file:03d}.csv"
+        if model == "HBV":
+            input_file = f"/data0/funato/hsp2/0_out/{model}/{loc}/{datasetname}/varssim_{model}/varssim_{gauge_id}.csv"
         else:
-            input_file = f"/data0/funato/hsp2/0_out/{model}/{loc}/regional/varssim_{model}/varssim{file:03d}.csv"
+            input_file = f"/data0/funato/hsp2/0_out/{model}/{loc}/{datasetname}/regional/varssim_{model}/varssim_{gauge_id}.csv"
 
         if not os.path.exists(input_file):
             print(f"File {input_file} does not exist. Skipping.")

@@ -7,17 +7,16 @@ import seaborn as sns
 loc = "US"
 
 fs = 20
-input_data = f"/data0/funato/hsp2/0_out/analysis/mass_conservation/mass_bias_data.csv"
+input_data = f"/data0/funato/hsp2/0_out/analysis/{loc}/mass_conservation/mass_bias_data.csv"
 input_df = pd.read_csv(input_data)
 
 output_dir = f"/data0/funato/hsp2/0_out/1_fig/{loc}/mass_conservation"
 os.makedirs(output_dir, exist_ok=True)
 
-model_list = ["SACSMA", "BC", "RF", "XGB", "TCN", "LSTM"]
+model_list = ["HBV", "RF", "XGB", "TCN", "LSTM"]
 
 color_list = {
-    "SACSMA": "#7B7B7B",    # Kept as requested (Medium Grey)
-    "BC": "#628AE8",  # Kept as requested (Steel Blue)
+    "HBV": "#7B7B7B",    # Kept as requested (Medium Grey)
     "RF":   "#FF7F00",   # Red
     "XGB":  "#9C4803",   # Bright Orange
     "TCN":  "#E41A1C",   # Reddish Purple / Magenta

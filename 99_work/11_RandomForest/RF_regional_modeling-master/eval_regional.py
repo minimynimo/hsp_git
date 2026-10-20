@@ -383,14 +383,17 @@ def evaluate_synthetic_data(model, run_cfg, basins, static_attrs=None):
 
     for scenario_col in syn_precip_cols:
         print(f"\nProcessing scenario: {scenario_col}")
-        
+        # Peak scenarios only have synthetic forcing for the 41-day window injected at the start
+        # of the eval period (2_MERV/1.create_dataset_plain_camels.py); same cutoff as XGB/LSTM.
+        syn_end = pd.to_datetime('2001-02-10') if 'peak' in scenario_col else end_date
+
         basin_predictions = {}
         basin_dates = {}
-        
+
         for basin in tqdm(basins, desc=f"Processing basins for {scenario_col}"):
             try:
                 predictions, dates = evaluate_synthetic_basin_period(
-                    model, basin, scenario_col, start_date, end_date, run_cfg, static_attrs, run_cfg.get("basin_scalers"))
+                    model, basin, scenario_col, start_date, syn_end, run_cfg, static_attrs, run_cfg.get("basin_scalers"))
                 
                 if predictions is not None:
                     basin_predictions[basin] = predictions
@@ -592,7 +595,7 @@ def main():
     # needed. The wide cal/eva/synthetic matrices above are still written too, for backward
     # compatibility with anything else that reads them.
     scenario_predictions["og"] = og_series_by_basin
-    save_regional_predictions_long_format("RF", GLOBAL_SETTINGS["loc"], scenario_predictions, gauge_id_list)
+    save_regional_predictions_long_format("RF", GLOBAL_SETTINGS["loc"], scenario_predictions, gauge_id_list, dataset=run_cfg.get('dataset', 'camels'))
 
     print("\nRegional evaluation completed successfully!")
 

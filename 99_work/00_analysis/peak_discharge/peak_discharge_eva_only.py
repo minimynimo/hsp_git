@@ -6,32 +6,43 @@ import matplotlib.dates as mdates
 import seaborn as sns # Import seaborn for plotting
 
 # Configuration for model and directories
-loc = "US"
+loc, datasetname = "US", "camels"
 
-model_name = "HBV"
-model_name = "BC"  # Change to "XGB" or "TCN" as needed
-model_list = ["HBV", "BC", "RF", "XGB", "TCN", "LSTM"]
+model_list = ["HBV", "RF", "XGB", "TCN", "LSTM"]
+
+# us_camels_file_num.csv is filtered (by us_basin_filter.py) to only the basins with complete
+# Obs flow/Precip/Temp/PET data over the full calibration+evaluation period.
+basin_list_df = pd.read_csv(f"/data0/funato/hsp2/3_gis_data/{loc}/0_data/river_basin/dataset_{loc}/us_{datasetname}_file_num.csv")
+basin_list = list(zip(basin_list_df["File_num"], basin_list_df["gauge_id"].str.replace("camels_", "", regex=False)))
 
 for model_name in model_list:
     print(f"Processing model: {model_name}")
 
-    if model_name == "BC" or model_name == "HBV":
-        input_dir = f"/data0/funato/hsp2/0_out/{model_name}/varssim_{model_name}"
+    if model_name == "HBV":
+        input_dir = f"/data0/funato/hsp2/0_out/{model_name}/{loc}/{datasetname}/varssim_{model_name}"
     else:
-        input_dir = f"/data0/funato/hsp2/0_out/{model_name}/{loc}/regional/varssim_{model_name}"
-        
-    output_dir = f"/data0/funato/hsp2/0_out/{model_name}/{loc}/peak_discharge"
+        input_dir = f"/data0/funato/hsp2/0_out/{model_name}/{loc}/{datasetname}/regional/varssim_{model_name}"
+
+    output_dir = f"/data0/funato/hsp2/0_out/{model_name}/{loc}/{datasetname}/peak_discharge"
 
     os.makedirs(output_dir, exist_ok=True)
-
-    file_tot_num = 424 # Total number of files to process
 
     # Evaluation period definition
     # IMPORTANT: Peak discharge and flow analysis now focuses on the impact of precipitation peaks.
     # The script first identifies the precipitation peak date, then only looks for discharge peaks
     # that occur on or after that precipitation peak date (e.g., 2001-01-11 onwards).
-    start_date_eva = "2001-01-01"
-    end_date_eva = "2001-02-10" # This short period will limit 'annual' analysis to year 2001's subset
+    # NOTE (camels): the synthetic peak window is not the same for every model's forcing --
+    # HBV's own varssim forcing perturbs 2001-01-01..2001-02-10, while the shared camels ML forcing
+    # (2_MERV/camels/varssim_US) still perturbs 1996-01-01..1996-02-10 (old 1996-2010 eval split).
+    # The window is therefore detected per basin as Jan 1 - Feb 10 of the year in which
+    # syn_peak1_rate50 differs from syn_peak1_rate0; basins whose predictions do not cover that
+    # window (RF/XGB/TCN, which only predicted 2001-2006) are skipped.
+    window_end_mmdd = "02-10"
+
+    sim_discharge_cols = ['peak1_rate0','peak1_rate10', 'peak1_rate30', 'peak1_rate50',
+                          'peak3_rate0','peak3_rate10', 'peak3_rate30', 'peak3_rate50',
+                          'peak5_rate0','peak5_rate10', 'peak5_rate30', 'peak5_rate50']
+    n_skipped_no_pred = 0
 
     # Columns representing different simulated discharge scenarios
     # 'up_peak1_rate0' is now the baseline simulation, analogous to 'og' before.
@@ -41,21 +52,33 @@ for model_name in model_list:
 
     all_comparison_results = [] # List to store yearly results for all files
 
-    for file_num in range(1, file_tot_num + 1):
+    for file_num, gauge_id in basin_list:
         # Print progress for every 50 files or the first one
         if file_num % 50 == 0 or file_num == 1:
             print(f"Processing file number: {file_num}")
-        
+
         yearly_results = []  # List to collect results for each year of the current file
 
-        input_file = f"{input_dir}/varssim{file_num:03d}.csv"
-        
+        input_file = f"{input_dir}/varssim_{gauge_id}.csv"
+
         # Skip file if it doesn't exist
         if not os.path.exists(input_file):
             print(f"File not found: {input_file}. Skipping.")
             continue
 
         input_df = pd.read_csv(input_file, parse_dates=['Date'])
+        # HBV's varssim has a duplicated syn_no_precip column; keep the first of any duplicate
+        input_df = input_df.loc[:, ~input_df.columns.duplicated()]
+
+        # Locate the synthetic peak window in this basin's forcing
+        perturbed = input_df[(input_df['syn_peak1_rate50'] != input_df['syn_peak1_rate0']) &
+                             input_df['syn_peak1_rate50'].notna()]
+        if perturbed.empty:
+            print(f"No synthetic peak perturbation in file {file_num}. Skipping.")
+            continue
+        window_year = perturbed['Date'].dt.year.iloc[0]
+        start_date_eva = f"{window_year}-01-01"
+        end_date_eva = f"{window_year}-{window_end_mmdd}"
 
         # Filter data to the evaluation period
         eval_period_df = input_df[(input_df['Date'] >= pd.to_datetime(start_date_eva)) &
@@ -64,6 +87,13 @@ for model_name in model_list:
         if eval_period_df.empty:
             print(f"No data for evaluation period in file {file_num}. Skipping.")
             continue
+
+        # Skip basins whose model predictions do not cover the peak window
+        if not all(c in eval_period_df.columns for c in sim_discharge_cols) or \
+                eval_period_df[sim_discharge_cols].isna().all().any():
+            n_skipped_no_pred += 1
+            continue
+        eval_period_df = eval_period_df.dropna(subset=sim_discharge_cols + ['Obs_flow_at_peak'])
         
         # Get unique years in the evaluation period for looping
         # This will typically be just [2001] given your current start/end dates
@@ -190,6 +220,8 @@ for model_name in model_list:
         if yearly_results: # Ensure yearly_results is not empty before creating DataFrame
             results_df = pd.DataFrame(yearly_results)
             all_comparison_results.append(results_df)
+
+    print(f"{model_name}: skipped {n_skipped_no_pred} basins whose predictions do not cover the synthetic peak window")
 
     # Concatenate all results into a single DataFrame
     output_file = f"{output_dir}/peak_discharge_comparison_{model_name}.csv"

@@ -102,11 +102,25 @@ if [ "$MODEL_TYPE" == "regional" ]; then
     # large NumCores (e.g. 20) WILL try to run that many ~90GB jobs at once and get most of them
     # OOM-killed - this already happened once. On a machine also running other sweeps (RF/XGB
     # etc.), keep NumCores for 'regional' small (3-5) regardless of how many CPU cores are free.
-    NUM_FILTERS=(32 64 128)
-    KERNEL_SIZE=(3 5 7)
-    DROPOUT=(0.1 0.2 0.3)
-    LEARNING_RATE=(0.001 0.0005)
-    WINDOW_SIZE=(90 180 270)
+    # CAMELS HP re-check (see SELECTED_HYPERPARAMETERS.md "Camels" section): only the
+    # caravan-selected value + immediate grid neighbor(s) per parameter are tested. LAYERS
+    # (NUM_LEVELS, fixed at 6 = the dilation schedule) is deliberately NOT reduced -- it was
+    # never a single-selected-value parameter to begin with. WINDOW_SIZE is swept here even
+    # though HYPERPARAMETERS.md doesn't list it as a grid dimension; its caravan-selected value
+    # comes from SELECTED_HYPERPARAMETERS.md's WINDOW_SIZE row.
+    NUM_FILTERS=(32 64 128) # unchanged -- caravan-selected=64 is the middle of 3
+    KERNEL_SIZE=(
+        3
+        5
+        # 7  # camels re-check: dropped -- caravan-selected=3 (lowest of 3), neighbor is 5
+    )
+    DROPOUT=(0.1 0.2 0.3) # unchanged -- caravan-selected=0.2 is the middle of 3
+    LEARNING_RATE=(0.001 0.0005) # unchanged -- only 2 values, both always tested
+    WINDOW_SIZE=(
+        # 90  # camels re-check: dropped -- caravan-selected=270 (highest of 3), neighbor is 180
+        180
+        270
+    )
     NUM_LEVELS=6
     SCRIPT_PATH="/data0/funato/hsp2/99_work/13_TCN/TCN_regional_modeling-master/main_tcn_hp.py"
     LOG_DIR="/data0/funato/hsp2/99_work/13_TCN/TCN_regional_modeling-master/logs"
@@ -116,11 +130,22 @@ if [ "$MODEL_TYPE" == "regional" ]; then
     # extraction (1987-2006 only).
     DATASET="camels"
 elif [ "$MODEL_TYPE" == "individual" ]; then
-    NUM_FILTERS=(16 32)
-    KERNEL_SIZE=(3 5)
-    DROPOUT=(0.3 0.4 0.5)
-    LEARNING_RATE=(0.001 0.0005)
-    WINDOW_SIZE=(90 180 270)
+    # CAMELS HP re-check (see SELECTED_HYPERPARAMETERS.md "Camels" section): only the
+    # caravan-selected value + immediate grid neighbor(s) per parameter are tested. LAYERS
+    # (NUM_LEVELS, fixed at 6) is deliberately NOT reduced -- see the regional block's comment.
+    NUM_FILTERS=(16 32) # unchanged -- only 2 values, both always tested
+    KERNEL_SIZE=(3 5) # unchanged -- only 2 values, both always tested
+    DROPOUT=(
+        # 0.3  # camels re-check: dropped -- caravan-selected=0.5 (highest of 3), neighbor is 0.4
+        0.4
+        0.5
+    )
+    LEARNING_RATE=(0.001 0.0005) # unchanged -- only 2 values, both always tested
+    WINDOW_SIZE=(
+        90
+        180
+        # 270  # camels re-check: dropped -- caravan-selected=90 (lowest of 3), neighbor is 180
+    )
     NUM_LEVELS=6
     SCRIPT_PATH="/data0/funato/hsp2/99_work/13_TCN/main_TCN_indiv_hp.py"
     LOG_DIR="/data0/funato/hsp2/99_work/13_TCN/logs"
